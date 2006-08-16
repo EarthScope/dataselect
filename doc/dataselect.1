@@ -1,0 +1,138 @@
+.TH MSPRUNE 2006/08/03
+.SH NAME
+Mini-SEED data pruning - remove redundant data
+
+.SH SYNOPSIS
+.nf
+msprune [options] file1 [file2 file3 ...]
+
+.fi
+.SH DESCRIPTION
+\fBmsprune\fP removes redundant data either from a specified set of
+data files or a POD structure.  By default input data files are
+replaced and optionally backup versions are retained.
+
+The default pruning is done at the data record level and the most
+overlap remaining will be less than a record.  The -S option will
+instruct msprune to unpack, trim and pack one of the overlapping
+"boundary" records such that the time-series is continuous (no overlap
+remaining).
+
+When removing data records or samples the time coverage of different
+time-series the concept of priority is used to determine from which
+time-series data should be removed if overlaps are detected.  When the
+-B (best quality) option is used the priority is given to the highest
+quality data.  When -B is not used or the qualities are the same the
+priority is given to the longest time-series.
+
+As a side effect of the pruning process the output data records are
+sorted by network, station, location, channel (and potentially by
+quality) and finally by start time within a file.
+
+If '-' is specified standard input will be read.  Multiple input files
+will be processed all together.
+
+When a input file is full SEED including both SEED headers and data
+records all of the headers will be skipped and completely unprocessed.
+
+.SH OPTIONS
+
+.IP "-V         "
+Print program version and exit.
+
+.IP "-h         "
+Print program usage and exit.
+
+.IP "-v         "
+Be more verbose.  This flag can be used multiple times ("-v -v" or
+"-vv") for more verbosity.
+
+.IP "-s         "
+Print a basic summary including the number of records and the number
+of samples they included after processing all input records.
+
+.IP "-Q \fQDR\fP"
+Re-stamp all output data records with the specified SEED quality code:
+either Q, D or R.
+
+.IP "-tt \fIsecs\fP"
+Specify a time tolerance for constructing continous trace
+segments. The tolerance is specified in seconds.  The default
+tolerance is 1/2 of the sample period.
+
+.IP "-rt \fIdiff\fP"
+Specify a sample rate tolerance for constructing continous trace
+segments. The tolerance is specified as the difference between two
+sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
+0.0001).
+
+.IP "-ts \fItime\fP"
+Limit processing to Mini-SEED records that start after \fItime\fP.
+The format of the \fItime\fP arguement
+is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
+commas (,), colons (:) or periods (.).
+
+.IP "-te \fItime\fP"
+Limit processing to Mini-SEED records that end before \fItime\fP.
+The format of the \fItime\fP arguement
+is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
+commas (,), colons (:) or periods (.).
+
+.IP "-o \fIfile\fP"
+Write all output data to output \fIfile\fP instead of replacing the
+original files.  When this option is used no backups will be created
+and the original files will not be modified in any way.
+
+.IP "-r \fIbytes\fP"
+Specify the intput record length in \fIbytes\fP.  By default the
+length of every Mini-SEED record is automatically detected, this
+option forces the record length.  The option is required when the
+input records do not contain a 1000 Blockette.
+
+.IP "-B         "
+Prioritize the pruning process based on the SEED data quality
+indicator: (highest) Q > D > R (lowest).  In other words, when
+overlapping data records are removed priority will be given to those
+with a higher quality indicator.
+
+.IP "-S         "
+Suture partially overlapping data segments by unpacking the lower
+priority data record, trimming the approriate number of samples and
+packing the record again.
+
+.IP "-n            "
+Do not keep backups of the original data files.  By default all input
+files will be renamed with a '.orig' suffix and the output files will
+replace the originals.  Use of this option will result in the complete
+removal of the original data files.
+
+.IP "-m            "
+Print a file modification summary after processing an input group.
+For files specified on the command line all files constitute a group.
+For POD structure processing input files are grouped by channel and
+processed separately.  By default this summary will only include the
+files that were modified, if the verbose option is used the summary
+will include all files processed.
+
+.IP "-POD \fIreqfile\fP \fIdatadir\fP"
+Prune a POD data structure based on the supplied request file and data
+directory.  The request file is re-written and a backup of the original
+should remain ('.orig' is appended to the original).
+
+.SH THE PRUNING PROCESS
+
+The pruning algorithm used is independant of the file structure.  Data
+from all input files is parsed and a map created for every data record
+and their relationship in continuous time series.
+
+Each data record time coverage in each continuous time-series is
+compared to the time coverage of every other continous time-series.
+When overlap is detected, data is removed from the lower priority
+time-series until the overlap is minimized or completely removed (see
+the -S option).
+
+.SH AUTHOR
+.nf
+Chad Trabant
+IRIS Data Management Center
+.fi
