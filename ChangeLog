@@ -1,3 +1,10 @@
+2006.230:
+	- Add regex match/reject options using libc POSIX routines.
+	Include ability to specify files containing regexs if the
+	pattern is specified with a first '@' character.
+	- Rework usage and options quite a bit, remove the -a and
+	options, all record lengths are automatically detected.
+
 2006.224:
 	- Start with msprune 0.9.2.
 	- Add dsarchive.[ch] code from msrouter 1.9.

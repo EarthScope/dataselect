@@ -21,14 +21,17 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.226
+ * modified 2006.230
  ***************************************************************************/
-
-// Add regex read test and match/reject
 
 // How to keep track of re-ordered records?
 
 // Go over sample-level pruning logic, use tolerance, test and re-test
+
+// Sharp splitting on time boundaries?
+
+/* _ISOC9X_SOURCE needed to get a declaration for llabs on some archs */
+#define _ISOC9X_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1312,7 +1315,8 @@ readfiles (void)
   hptime_t recstarttime;
   hptime_t recendtime;
   
-  char srcname[100];
+  char basesrc[50];
+  char srcname[50];
   char stime[30];
   
   int infilenamelen;
@@ -1368,24 +1372,49 @@ readfiles (void)
 	  recstarttime = msr_starttime (msr);
 	  recendtime = msr_endtime (msr);
 	  
-	  msr_srcname (msr, srcname);
+	  /* Generate the srcname and add the quality code */
+	  msr_srcname (msr, basesrc);
+	  snprintf (srcname, sizeof(srcname), "%s_%c", basesrc, msr->dataquality);
+	  
+	  /* Generate an ASCII start time string */
 	  ms_hptime2seedtimestr (recstarttime, stime);
 	  
 	  /* Check if record matches start/end time criteria */
 	  if ( starttime != HPTERROR && (recstarttime < starttime) )
 	    {
 	      if ( verbose >= 3 )
-		fprintf (stderr, "Skipping %s, %s\n", srcname, stime);
+		fprintf (stderr, "Skipping (starttime) %s, %s\n", srcname, stime);
 	      continue;
 	    }
 	  
 	  if ( endtime != HPTERROR && (recendtime > endtime) )
 	    {
 	      if ( verbose >= 3 )
-		fprintf (stderr, "Skipping %s, %s\n", srcname, stime);
+		fprintf (stderr, "Skipping (endtime) %s, %s\n", srcname, stime);
 	      continue;
 	    }
+	  
+	  /* Check if record is matched/rejected by the regex's */
+	  if ( match )
+	    {
+	      if ( regexec ( match, srcname, 0, 0, 0) != 0 )
+		{
+		  if ( verbose >= 3 )
+		    fprintf (stderr, "Skipping (match) %s, %s\n", srcname, stime);
+		  continue;
+		}
+	    }
 
+	  if ( reject )
+	    {
+	      if ( regexec ( reject, srcname, 0, 0, 0) == 0 )
+		{
+		  if ( verbose >= 3 )
+		    fprintf (stderr, "Skipping (reject) %s, %s\n", srcname, stime);
+		  continue;
+		}
+	    }
+	  
 	  if ( verbose > 2 )
 	    msr_print (msr, verbose - 3);
 	  
@@ -1667,8 +1696,8 @@ static int
 processparam (int argcount, char **argvec)
 {
   int optind;
-  char *matchpattern;
-  char *rejectpattern;
+  char *matchpattern = 0;
+  char *rejectpattern = 0;
   char *tptr;
   
   /* Process all command line arguments */
