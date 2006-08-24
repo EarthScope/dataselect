@@ -3,32 +3,15 @@
  *
  * Opens one or more user specified files, applys filtering criteria
  * and outputs any matched data while time-ordering the data and
- * optionally pruning any overlap.
- *
- * CHAD
- * By default the pruning is done at the data record level and the
- * most overlap remaining will be a partial record.  The -S option
- * will instruct msprune to unpack, trim and pack the overlapping
- * "boundary" records such that the time-series is continuous (no
- * overlap).
- *
- * The approach is to first read all the input data files creating a
- * map of continuous traces and all associated data records.  Then the
- * trace data is pruned to remove all the redundant data leaving
- * only unique time coverage data with a maximum of partial record
- * overlaps.  These pruned continous traces are written to the
- * output file(s).
+ * optionally pruning any overlap (at record or sample level) and
+ * splitting records on day, hour or minute boundaries.
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.230
+ * modified 2006.236
  ***************************************************************************/
 
-// How to keep track of re-ordered records?
-
-// Go over sample-level pruning logic, use tolerance, test and re-test
-
-// Sharp splitting on time boundaries?
+// Go over sample-level pruning logic, USE TOLERANCE, test and re-test
 
 /* _ISOC9X_SOURCE needed to get a declaration for llabs on some archs */
 #define _ISOC9X_SOURCE
@@ -83,6 +66,7 @@ typedef struct Filelink_s {
   char    *outfilename;    /* Output file name */
   FILE    *outfp;          /* Output file descriptor */
   int      reordercount;   /* Number of records re-ordered */
+  int      recsplitcount;  /* Number of records split */
   int      recrmcount;     /* Number of records removed */
   int      rectrimcount;   /* Number of records trimed */
   hptime_t earliest;       /* Earliest data time in this file */
@@ -165,6 +149,7 @@ static int      reclen        = -1;   /* Input data record length, autodetected 
 static flag     modsummary    = 0;    /* Print modification summary after all processing */
 static hptime_t starttime     = HPTERROR;  /* Limit to records after starttime */
 static hptime_t endtime       = HPTERROR;  /* Limit to records before endtime */
+static char     splitboundary = 0;    /* Split records on day(d), hour(h) or minute(m) boundaries */
 
 static regex_t *match         = 0;    /* Compiled match regex */
 static regex_t *reject        = 0;    /* Compiled reject regex */
@@ -765,7 +750,7 @@ writetraces (MSTraceGroup *mstg)
 	      break;
 	    }
 	  
-	  /* Trim data from the record if suturing data */
+	  /* Trim data from the record if new start or end times are specifed */
 	  if ( rec->newstart || rec->newend )
 	    {
 	      if ( trimrecord (rec, recordbuf) )
@@ -927,7 +912,7 @@ trimrecord (Record *rec, char *recordbuf)
   int packedsamples;
   int packedrecords;
   int retcode;
-
+  
   if ( ! rec || ! recordbuf )
     return -1;
   
@@ -1134,7 +1119,7 @@ prunetraces (MSTraceGroup *mstg)
  * lptrace = lower priority MSTrace (LP)
  * hptrace = higher priority MSTrace (HP)
  *
- * Returns the number of trimmed Records on success and -1 on error.
+ * Returns the number of Record modifications on success and -1 on error.
  ***************************************************************************/
 static int
 trimtraces (MSTrace *lptrace, MSTrace *hptrace)
@@ -1145,31 +1130,51 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
   TimeSegment *ts = 0;
   TimeSegment *tsp = 0;
   TimeSegment *newts;
-  hptime_t hpdelta;
+  hptime_t hpdelta, hptimetol;
+  hptime_t effstarttime, effendtime;
   int newsegment;
-  
+
   char srcname[50];
   char stime[30];
   char etime[30];
-  int trimmed = 0;
+  int modcount = 0;
   
   if ( ! lptrace || ! hptrace )
     return -1;
   
+  /* Determine sample period in high precision time ticks */
+  hpdelta = ( hptrace->samprate ) ? (hptime_t) (HPTMODULUS / hptrace->samprate) : 0;
+  
+  /* Determine time tolerance in high precision time ticks */
+  hptimetol = ( timetol == -1 ) ? (hpdelta / 2) : (hptime_t) (HPTMODULUS * timetol);
+  
   /* Build a TimeSegment list of coverage in the HP MSTrace.  Records
-   * are in time order and, if adjacent, represent continuous data
-   * otherwise they wouldn't be in the MSTrace. */
+   * are in time order otherwise they wouldn't be in the MSTrace.
+   * This re-calculation of the time coverage is done as an
+   * optimization to avoid the need for each record in the HP MSTrace
+   * to be compared to each record in the LP MSTrace.  The optimizaion
+   * becomes less effective as gaps in the HP MSTrace coverage
+   * increase. */
   recmap = (RecordMap *) hptrace->private;
   rec = recmap->first;
   newsegment = 1;
   while ( rec )
     {
+      /* Check if record has been marked as non-contributing */
       if ( rec->reclen == 0 )
 	{
-	  newsegment = 1;
 	  rec = rec->next;
 	  continue;
 	}
+      
+      /* Determine effective record start and end times */
+      effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
+      effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
+      
+      /* Create a new segment if a break in the time-series is detected */
+      if ( tsp )
+	if ( llabs((tsp->endtime + hpdelta) - effstarttime) > hptimetol )
+	  newsegment = 1;
       
       if ( newsegment )
 	{
@@ -1184,10 +1189,10 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 	  tsp = newts;
 	  tsp->next = 0;
 	  
-	  tsp->starttime = rec->starttime;
+	  tsp->starttime = effstarttime;
 	}
       
-      tsp->endtime = rec->endtime;
+      tsp->endtime = effendtime;
       
       rec = rec->next;
     }
@@ -1201,9 +1206,13 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
       tsp = ts;
       while ( tsp )
 	{
+	  /* Determine effective record start and end times for comparison */
+	  effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
+	  effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
+	  
 	  /* Mark Record if it is completely overlaped by HP data */
-	  if ( rec->starttime >= tsp->starttime &&
-	       rec->endtime <= tsp->endtime )
+	  if ( effstarttime >= tsp->starttime &&
+	       effendtime <= tsp->endtime )
 	    {
 	      if ( verbose )
 		{
@@ -1216,28 +1225,28 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 	      
 	      rec->flp->recrmcount++;
 	      rec->reclen = 0;
-	      trimmed++;
+	      modcount++;
 	    }
 	  
-	  /* Determine the new start/end times if suturing the data */
+	  /* Determine the new start/end times if pruning at the sample level */
 	  if ( prunedata == 2 && rec->reclen != 0 )
 	    {
-	      hpdelta = ( hptrace->samprate ) ? (hptime_t ) (HPTMODULUS / hptrace->samprate) : 0;
-	      
 	      /* Record overlaps beginning of HP coverage */
-	      if ( rec->starttime <= hptrace->starttime &&
-		   rec->endtime >= hptrace->starttime )
+	      if ( effstarttime <= hptrace->starttime &&
+		   effendtime >= hptrace->starttime )
 		{
 		  rec->newend = hptrace->starttime - hpdelta;
 		  rec->flp->rectrimcount++;
+		  modcount++;	  
 		}
 	      
 	      /* Record overlaps end of HP coverage */
-	      if ( rec->starttime <= hptrace->endtime &&
-		   rec->endtime >= hptrace->endtime )
+	      if ( effstarttime <= hptrace->endtime &&
+		   effendtime >= hptrace->endtime )
 		{
 		  rec->newstart = hptrace->endtime + hpdelta;
 		  rec->flp->rectrimcount++;
+		  modcount++;
 		}
 	    }
 	  
@@ -1257,7 +1266,7 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
       free (ts);
     }
   
-  return trimmed;
+  return modcount;
 } /* End of trimtraces() */
 
 
@@ -1311,6 +1320,9 @@ readfiles (void)
   
   RecordMap *recmap;
   Record *rec;
+  Record *nextrec;
+  Record *recs;
+  
   off_t fpos;
   hptime_t recstarttime;
   hptime_t recendtime;
@@ -1453,7 +1465,7 @@ readfiles (void)
 		}
 	    }
 	  
-	  /* Create and populate new record structure */
+	  /* Create and populate new Record structure */
 	  rec = (Record *) malloc (sizeof(Record));
 	  rec->flp = flp;
 	  rec->offset = fpos;
@@ -1466,43 +1478,119 @@ readfiles (void)
 	  rec->prev = 0;
 	  rec->next = 0;
 	  
-	  /* Add record details to end of the RecordMap */
-	  if ( whence == 1 )
+	  recs = rec;
+	  
+	  /* Create extra Record structures if splitting on a time boundary */
+	  if ( splitboundary )
 	    {
-	      recmap = (RecordMap *) mst->private;
+	      BTime startbtime;
+	      hptime_t boundary = HPTERROR;
+	      hptime_t effstarttime;
+	      hptime_t hpdelta = ( msr->samprate ) ? (hptime_t) (HPTMODULUS / msr->samprate) : 0;
 	      
-	      rec->prev = recmap->last;
-	      recmap->last->next = rec;
-	      
-	      recmap->last = rec;
-	      recmap->recordcnt++;
-	    }
-	  /* Add record details to beginning of the RecordMap */
-	  else if ( whence == 2 )
+	      for (;;)
+		{
+		  effstarttime = (rec->newstart) ? rec->newstart : rec->starttime;
+		  ms_hptime2btime (effstarttime, &startbtime);
+		  
+		  /* Determine next split boundary */
+		  if ( splitboundary == 'd' ) /* Days */
+		    {
+		      startbtime.day += 1;
+		      startbtime.hour = startbtime.min = startbtime.sec = startbtime.fract = 0;
+		      boundary = ms_btime2hptime (&startbtime);
+		    }
+		  else if ( splitboundary == 'h' ) /* Hours */
+		    {
+		      startbtime.hour += 1;
+		      startbtime.min = startbtime.sec = startbtime.fract = 0;
+		      boundary = ms_btime2hptime (&startbtime);
+		    }
+		  else if ( splitboundary == 'm' ) /* Minutes */
+		    {
+		      startbtime.min += 1;
+		      startbtime.sec = startbtime.fract = 0;
+		      boundary = ms_btime2hptime (&startbtime);
+		    }
+		  else
+		    {
+		      fprintf (stderr, "ERROR split boundary code unrecognized: '%c'\n", splitboundary);
+		      break;
+		    }
+		  
+		  /* If end time is beyond the boundary create a new Record */
+		  if ( rec->endtime > boundary )
+		    {
+		      nextrec = (Record *) malloc (sizeof(Record));
+		      memcpy (nextrec, rec, sizeof(Record));
+		      
+		      /* Set current Record and next Record new boundary times */
+		      rec->newend = boundary - hpdelta;
+		      nextrec->newstart = boundary;
+		      
+		      /* Insert the new Record and set as current */
+		      rec->next = nextrec;
+		      nextrec->prev = rec;
+		      rec = nextrec;
+		      
+		      flp->recsplitcount++;
+		    }
+		  /* Otherwise we are done */
+		  else
+		    {
+		      break;
+		    }
+		}
+	    } /* Done splitting on time boundary */
+	  
+	  rec = recs;
+	  while ( rec )
 	    {
-	      recmap = (RecordMap *) mst->private;
+	      nextrec = rec->next;
+
+	      /* Add record details to end of the RecordMap */
+	      if ( whence == 1 )
+		{
+		  recmap = (RecordMap *) mst->private;
+		  
+		  rec->prev = recmap->last;
+		  rec->next = 0;
+		  recmap->last->next = rec;
+		  
+		  recmap->last = rec;
+		  recmap->recordcnt++;
+		}
+	      /* Add record details to beginning of the RecordMap */
+	      else if ( whence == 2 )
+		{
+		  recmap = (RecordMap *) mst->private;
+		  
+		  rec->prev = 0;
+		  rec->next = recmap->first;
+		  recmap->first->prev = rec;
+		  
+		  recmap->first = rec;
+		  recmap->recordcnt++;
+		  
+		  /* Increment reordered count */
+		  flp->reordercount++;
+		}
+	      /* First record for this MSTrace, allocate RecordMap */
+	      else
+		{
+		  if ( mst->private )
+		    fprintf (stderr, "ERROR, supposedly first record, but RecordMap not empty\n");
+		  
+		  rec->prev = rec->next = 0;
+		  recmap = (RecordMap *) malloc (sizeof(RecordMap));
+		  recmap->first = rec;
+		  recmap->last = rec;
+		  recmap->recordcnt = 1;
+		  
+		  mst->private = recmap;
+		}
 	      
-	      rec->next = recmap->first;
-	      recmap->first->prev = rec;
-	      
-	      recmap->first = rec;
-	      recmap->recordcnt++;
-	      
-	      /* Increment reordered count */
-	      flp->reordercount++;
-	    }
-	  /* First record for this MSTrace, allocate RecordMap */
-	  else
-	    {
-	      if ( mst->private )
-		fprintf (stderr, "ERROR, supposedly first record, but RecordMap not empty\n");
-	      
-	      recmap = (RecordMap *) malloc (sizeof(RecordMap));
-	      recmap->first = rec;
-	      recmap->last = rec;
-	      recmap->recordcnt = 1;
-	      
-	      mst->private = recmap;
+	      rec = nextrec;
 	    }
 	  
 	  totalrecs++;
@@ -1583,7 +1671,7 @@ printmodsummary (flag nomods)
 {
   Filelink *flp;
   
-  printf ("Record modification summary:\n");
+  printf ("File modification summary:\n");
   
   flp = filelist;
   
@@ -1596,11 +1684,11 @@ printmodsummary (flag nomods)
 	}
       
       if ( ! outputfile )
-	printf (" reordered: %3d, removed: %3d, trimmed: %3d :: %s\n",
-		flp->reordercount, flp->recrmcount, flp->rectrimcount, flp->outfilename);
+	printf (" Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
+		flp->reordercount, flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->outfilename);
       else
-	printf (" reordered: %3d, removed: %3d, trimmed: %3d :: %s\n",
-		flp->reordercount, flp->recrmcount, flp->rectrimcount, flp->infilename);
+	printf (" Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
+		flp->reordercount, flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->infilename);
       
       flp = flp->next;
     }
@@ -1722,21 +1810,6 @@ processparam (int argcount, char **argvec)
 	{
 	  verbose += strspn (&argvec[optind][1], "v");
 	}
-      else if (strcmp (argvec[optind], "-sum") == 0)
-	{
-	  basicsum = 1;
-	}
-      else if (strcmp (argvec[optind], "-Q") == 0)
-        {
-          tptr = getoptval(argcount, argvec, optind++);
-          restampqind = *tptr;
-          
-          if ( ! MS_ISDATAINDICATOR (restampqind) )
-            {
-              fprintf(stderr, "ERROR Invalid data indicator: '%c'\n", restampqind);
-              exit (1);
-            }
-        }
       else if (strcmp (argvec[optind], "-tt") == 0)
 	{
 	  timetol = strtod (getoptval(argcount, argvec, optind++), NULL);
@@ -1744,6 +1817,10 @@ processparam (int argcount, char **argvec)
       else if (strcmp (argvec[optind], "-rt") == 0)
 	{
 	  sampratetol = strtod (getoptval(argcount, argvec, optind++), NULL);
+	}
+      else if (strcmp (argvec[optind], "-E") == 0)
+	{
+	  bestquality = 0;
 	}
       else if (strcmp (argvec[optind], "-ts") == 0)
 	{
@@ -1765,14 +1842,6 @@ processparam (int argcount, char **argvec)
 	{
 	  rejectpattern = getoptval(argcount, argvec, optind++);
 	}
-      else if (strcmp (argvec[optind], "-Pr") == 0)
-	{
-	  prunedata = 1;
-	}
-      else if (strcmp (argvec[optind], "-Ps") == 0 || strcmp (argvec[optind], "-P") == 0)
-	{
-	  prunedata = 2;
-	}
       else if (strcmp (argvec[optind], "-R") == 0)
         {
           replaceinput = 1;
@@ -1790,34 +1859,41 @@ processparam (int argcount, char **argvec)
           if ( addarchive(getoptval(argcount, argvec, optind++), NULL) == -1 )
             return -1;
         }
-      else if (strcmp (argvec[optind], "-CHAN") == 0)
-        {
-          if ( addarchive(getoptval(argcount, argvec, optind++), CHANLAYOUT) == -1 )
-            return -1;
-        }
-      else if (strcmp (argvec[optind], "-CDAY") == 0)
-        {
-          if ( addarchive(getoptval(argcount, argvec, optind++), CDAYLAYOUT) == -1 )
-            return -1;
-        }
-      else if (strcmp (argvec[optind], "-BUD") == 0)
-        {
-          if ( addarchive(getoptval(argcount, argvec, optind++), BUDLAYOUT) == -1 )
-            return -1;
-        }
-      else if (strcmp (argvec[optind], "-CSS") == 0)
-        {
-          if ( addarchive(getoptval(argcount, argvec, optind++), CSSLAYOUT) == -1 )
-            return -1;
-        }
-      else if (strcmp (argvec[optind], "-E") == 0)
+      else if (strcmp (argvec[optind], "-Pr") == 0)
 	{
-	  bestquality = 0;
+	  prunedata = 1;
 	}
-      else if (strcmp (argvec[optind], "-n") == 0)
+      else if (strcmp (argvec[optind], "-Ps") == 0 || strcmp (argvec[optind], "-P") == 0)
+	{
+	  prunedata = 2;
+	}
+      else if (strcmp (argvec[optind], "-Sd") == 0)
+	{
+	  splitboundary = 'd';
+	}
+      else if (strcmp (argvec[optind], "-Sh") == 0)
+	{
+	  splitboundary = 'h';
+	}
+      else if (strcmp (argvec[optind], "-Sm") == 0)
+	{
+	  splitboundary = 'm';
+	}
+      else if (strcmp (argvec[optind], "-Q") == 0)
         {
-          nobackups = 1;
+          tptr = getoptval(argcount, argvec, optind++);
+          restampqind = *tptr;
+          
+          if ( ! MS_ISDATAINDICATOR (restampqind) )
+            {
+              fprintf(stderr, "ERROR Invalid data indicator: '%c'\n", restampqind);
+              exit (1);
+            }
         }
+      else if (strcmp (argvec[optind], "-sum") == 0)
+	{
+	  basicsum = 1;
+	}
       else if (strcmp (argvec[optind], "-mod") == 0)
         {
           modsummary = 1;
@@ -1839,6 +1915,26 @@ processparam (int argcount, char **argvec)
 	      fprintf (stderr, "ERROR Option -POD requires two values, try -h for usage\n");
 	      exit (1);
 	    }
+        }
+      else if (strcmp (argvec[optind], "-CHAN") == 0)
+        {
+          if ( addarchive(getoptval(argcount, argvec, optind++), CHANLAYOUT) == -1 )
+            return -1;
+        }
+      else if (strcmp (argvec[optind], "-CDAY") == 0)
+        {
+          if ( addarchive(getoptval(argcount, argvec, optind++), CDAYLAYOUT) == -1 )
+            return -1;
+        }
+      else if (strcmp (argvec[optind], "-BUD") == 0)
+        {
+          if ( addarchive(getoptval(argcount, argvec, optind++), BUDLAYOUT) == -1 )
+            return -1;
+        }
+      else if (strcmp (argvec[optind], "-CSS") == 0)
+        {
+          if ( addarchive(getoptval(argcount, argvec, optind++), CSSLAYOUT) == -1 )
+            return -1;
         }
       else if (strncmp (argvec[optind], "-", 1) == 0 &&
 	       strlen (argvec[optind]) > 1 )
@@ -1996,6 +2092,7 @@ addfile (char *filename, ReqRec *reqrec)
   newlp->outfilename = 0;
   newlp->outfp = 0;
   newlp->reordercount = 0;
+  newlp->recsplitcount = 0;
   newlp->recrmcount = 0;
   newlp->rectrimcount = 0;
   newlp->earliest = 0;
@@ -2265,6 +2362,7 @@ usage (int level)
 	   " ## Options ##\n"
 	   " -V           Report program version\n"
 	   " -h           Show this usage message\n"
+	   " -H           Show usage message with 'format' details (see -A option)\n"
 	   " -v           Be more verbose, multiple flags can be used\n"
 	   " -tt secs     Specify a time tolerance for continuous traces\n"
 	   " -rt diff     Specify a sample rate tolerance for continuous traces\n"
@@ -2285,15 +2383,17 @@ usage (int level)
 	   " -A format    Write all records is a custom directory/file layout (try -H)\n"
 	   " -Pr          Prune data at the record level using 'best' quality priority\n"
 	   " -Ps          Prune data at the sample level using 'best' quality priority\n"
+	   " -S[dhm]      Split records on day, hour or minute boundaries\n"
 	   " -Q DRQ       Re-stamp output data records with specified quality: D, R or Q\n"
            "\n"
 	   " ## Diagnostic output ##\n"
 	   " -sum         Print a basic summary after reading all input files\n"
 	   " -mod         Print summary of file modifications after processing\n"
+	   "\n"
+	   " ## Input data ##\n"
 	   " -POD reqfile datadir\n"
 	   "              Prune data from a POD structure\n"
-	   "\n"
-	   " file#        File of Mini-SEED records\n"
+	   " file#        Files(s) of Mini-SEED records\n"
 	   "\n");
 
   if  ( level )
