@@ -1391,22 +1391,25 @@ readfiles (void)
 	  /* Generate an ASCII start time string */
 	  ms_hptime2seedtimestr (recstarttime, stime);
 	  
-	  /* Check if record matches start/end time criteria */
-	  if ( starttime != HPTERROR && (recstarttime < starttime) )
+	  // Prune to sample if pruning...
+	  
+	  /* Check if record matches start time criteria */
+	  if ( (starttime != HPTERROR) && (starttime < recstarttime) )
 	    {
 	      if ( verbose >= 3 )
 		fprintf (stderr, "Skipping (starttime) %s, %s\n", srcname, stime);
 	      continue;
 	    }
-	  
-	  if ( endtime != HPTERROR && (recendtime > endtime) )
+	      
+	  /* Check if record matches end time criteria */
+	  if ( (endtime != HPTERROR) && (recendtime > endtime) )
 	    {
 	      if ( verbose >= 3 )
 		fprintf (stderr, "Skipping (endtime) %s, %s\n", srcname, stime);
 	      continue;
 	    }
 	  
-	  /* Check if record is matched/rejected by the regex's */
+	  /* Check if record is matched by the match regex */
 	  if ( match )
 	    {
 	      if ( regexec ( match, srcname, 0, 0, 0) != 0 )
@@ -1417,6 +1420,7 @@ readfiles (void)
 		}
 	    }
 
+	  /* Check if record is rejected by the reject regex */
 	  if ( reject )
 	    {
 	      if ( regexec ( reject, srcname, 0, 0, 0) == 0 )
@@ -1479,6 +1483,24 @@ readfiles (void)
 	  rec->next = 0;
 	  
 	  recs = rec;
+	  
+	  /* If pruning at the sample level trim right at the start/end times */
+	  if ( prunedata == 's' )
+	    {
+	      /* If the Record crosses the start time */
+	      if ( starttime != HPTERROR && (starttime > recstarttime) && (starttime < recendtime) )
+		{
+		  if ( rec->newstart && rec->newstart < starttime )
+		    CHAD, think about this...
+		    rec->newstart = starttime;
+		}
+	      /* If the Record crosses the end time */
+	      if ( endtme != HPTERROR && (endtime > recstarttime) && (endtime < recendtime) )
+		{
+		  if ( rec->newend && rec->newend > endtime )
+		    rec->newend = endtime;
+		}
+	    }
 	  
 	  /* Create extra Record structures if splitting on a time boundary */
 	  if ( splitboundary )
@@ -1543,6 +1565,7 @@ readfiles (void)
 		}
 	    } /* Done splitting on time boundary */
 	  
+	  /* Add all Record entries into the RecordMap */
 	  rec = recs;
 	  while ( rec )
 	    {
