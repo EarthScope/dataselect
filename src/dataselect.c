@@ -8,10 +8,14 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.236
+ * modified 2006.240
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
+
+// trimrecord does not take start/end as boundaries but explicit times!!  rework for boundaries.
+
+// Splitting on a day boundary doesn't work in fringe case, figure that out.
 
 /* _ISOC9X_SOURCE needed to get a declaration for llabs on some archs */
 #define _ISOC9X_SOURCE
@@ -141,7 +145,7 @@ static void usage (int level);
 static flag     verbose       = 0;
 static flag     basicsum      = 0;    /* Controls printing of basic summary */
 static flag     bestquality   = 1;    /* Use Q, D, R quality to retain the "best" data when pruning */
-static flag     prunedata     = 0;    /* Prune data: 1 = record level, 2 = sample level */
+static flag     prunedata     = 0;    /* Prune data: 'r= record level, 's' = sample level */
 static double   timetol       = -1.0; /* Time tolerance for continuous traces */
 static double   sampratetol   = -1.0; /* Sample rate tolerance for continuous traces */
 static char     restampqind   = 0;    /* Re-stamp data record/quality indicator */
@@ -849,9 +853,15 @@ writetraces (MSTraceGroup *mstg)
   while ( flp )
     {
       if ( ! ofp && verbose )
-	fprintf (stderr, "Wrote %d bytes to file %s\n",
-		 flp->byteswritten, flp->outfilename);
-      
+	{
+	  if ( replaceinput )
+	    fprintf (stderr, "Wrote %d bytes from file %s (was %s)\n",
+		     flp->byteswritten, flp->infilename, flp->outfilename);
+	  else
+	    fprintf (stderr, "Wrote %d bytes from file %s\n",
+		     flp->byteswritten, flp->infilename);
+	}
+
       if ( flp->infp )
 	{
 	  fclose (flp->infp);
@@ -922,12 +932,13 @@ trimrecord (Record *rec, char *recordbuf)
        (rec->newend && (rec->newend >= rec->endtime || rec->newend <= rec->starttime)) )
     {
       fprintf (stderr, "ERROR: problem with new start/end record times, skipping.\n");
+      fprintf (stderr, "  Original record from %s\n", rec->flp->infilename);
       ms_hptime2seedtimestr (rec->starttime, stime);
       ms_hptime2seedtimestr (rec->endtime, etime);
-      fprintf (stderr, "     Start: %s       End: %s\n", stime, etime);
+      fprintf (stderr, "      Start: %s       End: %s\n", stime, etime);
       ms_hptime2seedtimestr (rec->newstart, stime);
       ms_hptime2seedtimestr (rec->newend, etime);
-      fprintf (stderr, " New start: %s   New end: %s\n", stime, etime);
+      fprintf (stderr, "  New start: %s   New end: %s\n", stime, etime);
     }
   
   /* Unpack data record */
@@ -1229,7 +1240,7 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 	    }
 	  
 	  /* Determine the new start/end times if pruning at the sample level */
-	  if ( prunedata == 2 && rec->reclen != 0 )
+	  if ( prunedata == 's' && rec->reclen != 0 )
 	    {
 	      /* Record overlaps beginning of HP coverage */
 	      if ( effstarttime <= hptrace->starttime &&
@@ -1371,7 +1382,7 @@ readfiles (void)
       
       if ( verbose )
 	{
-	  if ( ! outputfile ) 
+	  if ( replaceinput ) 
 	    fprintf (stderr, "Processing: %s (was %s)\n", flp->infilename, flp->outfilename);
 	  else
 	    fprintf (stderr, "Processing: %s\n", flp->infilename);
@@ -1490,15 +1501,22 @@ readfiles (void)
 	      /* If the Record crosses the start time */
 	      if ( starttime != HPTERROR && (starttime > recstarttime) && (starttime < recendtime) )
 		{
+		  //CHAD, think about this...
 		  if ( rec->newstart && rec->newstart < starttime )
-		    CHAD, think about this...
-		    rec->newstart = starttime;
+		    {
+		      fprintf (stderr, "DB: HERE-start\n");
+		      rec->newstart = starttime;
+		    }
 		}
 	      /* If the Record crosses the end time */
-	      if ( endtme != HPTERROR && (endtime > recstarttime) && (endtime < recendtime) )
+	      if ( endtime != HPTERROR && (endtime > recstarttime) && (endtime < recendtime) )
 		{
+		  //CHAD, think about this...
 		  if ( rec->newend && rec->newend > endtime )
-		    rec->newend = endtime;
+		    {
+		      fprintf (stderr, "DB: HERE-end\n");
+		      rec->newend = endtime;
+		    }
 		}
 	    }
 	  
@@ -1706,7 +1724,7 @@ printmodsummary (flag nomods)
 	  continue;
 	}
       
-      if ( ! outputfile )
+      if ( replaceinput )
 	printf (" Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
 		flp->reordercount, flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->outfilename);
       else
@@ -1884,11 +1902,11 @@ processparam (int argcount, char **argvec)
         }
       else if (strcmp (argvec[optind], "-Pr") == 0)
 	{
-	  prunedata = 1;
+	  prunedata = 'r';
 	}
       else if (strcmp (argvec[optind], "-Ps") == 0 || strcmp (argvec[optind], "-P") == 0)
 	{
-	  prunedata = 2;
+	  prunedata = 's';
 	}
       else if (strcmp (argvec[optind], "-Sd") == 0)
 	{
