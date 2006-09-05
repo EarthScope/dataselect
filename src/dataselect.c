@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.240
+ * modified 2006.248
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -1331,8 +1331,9 @@ readfiles (void)
   
   RecordMap *recmap;
   Record *rec;
-  Record *nextrec;
-  Record *recs;
+  
+  RecordMap newrecmap;
+  Record *newrec;
   
   off_t fpos;
   hptime_t recstarttime;
@@ -1493,7 +1494,10 @@ readfiles (void)
 	  rec->prev = 0;
 	  rec->next = 0;
 	  
-	  recs = rec;
+	  /* Populate a new record map */
+	  newrecmap.recordcnt = 1;
+	  newrecmap.fisrt = rec;
+	  newrecmap.last = rec;
 	  
 	  /* If pruning at the sample level trim right at the start/end times */
 	  if ( prunedata == 's' )
@@ -1561,17 +1565,21 @@ readfiles (void)
 		  /* If end time is beyond the boundary create a new Record */
 		  if ( rec->endtime > boundary )
 		    {
-		      nextrec = (Record *) malloc (sizeof(Record));
-		      memcpy (nextrec, rec, sizeof(Record));
+		      newrec = (Record *) malloc (sizeof(Record));
+		      memcpy (newrec, rec, sizeof(Record));
 		      
 		      /* Set current Record and next Record new boundary times */
 		      rec->newend = boundary - hpdelta;
-		      nextrec->newstart = boundary;
+		      newrec->newstart = boundary;
 		      
-		      /* Insert the new Record and set as current */
-		      rec->next = nextrec;
-		      nextrec->prev = rec;
-		      rec = nextrec;
+		      /* Update new record map */
+		      newrecmap.recordcnt++;
+		      newrecmap.last = newrec;
+		      
+		      /* Insert the new Record in chain and set as current */
+		      rec->next = newrec;
+		      newrec->prev = rec;
+		      rec = newrec;
 		      
 		      flp->recsplitcount++;
 		    }
@@ -1583,6 +1591,8 @@ readfiles (void)
 		}
 	    } /* Done splitting on time boundary */
 	  
+	  CHAD, merge the newrecmap with the existing recmap or replace, might need to realloc newrecmap...
+
 	  /* Add all Record entries into the RecordMap */
 	  rec = recs;
 	  while ( rec )
