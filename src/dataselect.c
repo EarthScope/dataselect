@@ -8,14 +8,10 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.248
+ * modified 2006.249
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
-
-// trimrecord does not take start/end as boundaries but explicit times!!  rework for boundaries.
-
-// Splitting on a day boundary doesn't work in fringe case, figure that out.
 
 /* _ISOC9X_SOURCE needed to get a declaration for llabs on some archs */
 #define _ISOC9X_SOURCE
@@ -83,7 +79,7 @@ typedef struct Filelink_s {
 typedef struct Archive_s {
   DataStream  datastream;
   struct Archive_s *next;
-} Archive;
+} Archive; 
 
 /* Mini-SEED record information structures */
 typedef struct Record_s {
@@ -132,6 +128,7 @@ static int readfiles (void);
 static MSTraceGroup *reinitgroup (MSTraceGroup *mstg);
 static void printmodsummary (flag nomods);
 static void printtracemap (MSTraceGroup *mstg);
+static void printrecordmap (RecordMap *recmap, flag details);
 
 static int processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
@@ -903,8 +900,10 @@ writetraces (MSTraceGroup *mstg)
  * trimrecord():
  *
  * Unpack a data record and trim samples, either from the beginning or
- * the end, to fit the Record.newstart and/or Record.newend times and
- * pack the record.
+ * the end, to fit the Record.newstart and/or Record.newend boundary
+ * times and pack the record.  Record.newstart and Record.newend are
+ * treated as arbitrary boundaries, this routine calculates which
+ * samples fit within the new boundaries.
  *
  * Return 0 on success and -1 on failure.
  ***************************************************************************/
@@ -912,6 +911,7 @@ static int
 trimrecord (Record *rec, char *recordbuf)
 {
   MSRecord *msr = 0;
+  hptime_t hpdelta;
   
   char srcname[50];
   char stime[30];
@@ -928,8 +928,8 @@ trimrecord (Record *rec, char *recordbuf)
   
   /* Sanity check for new start/end times */
   if ( (rec->newstart && rec->newend && rec->newstart >= rec->newend) ||
-       (rec->newstart && (rec->newstart <= rec->starttime || rec->newstart >= rec->endtime)) ||
-       (rec->newend && (rec->newend >= rec->endtime || rec->newend <= rec->starttime)) )
+       (rec->newstart && (rec->newstart < rec->starttime || rec->newstart >= rec->endtime)) ||
+       (rec->newend && (rec->newend > rec->endtime || rec->newend <= rec->starttime)) )
     {
       fprintf (stderr, "ERROR: problem with new start/end record times, skipping.\n");
       fprintf (stderr, "  Original record from %s\n", rec->flp->infilename);
@@ -960,15 +960,34 @@ trimrecord (Record *rec, char *recordbuf)
       fprintf (stderr, " New start: %s   New end: %s\n", stime, etime);
     }
   
+  /* Determine sample period in high precision time ticks */
+  hpdelta = ( msr->samprate ) ? (hptime_t) (HPTMODULUS / msr->samprate) : 0;
+  
   /* Remove samples from the beginning of the record */
-  if ( rec->newstart )
+  if ( rec->newstart && hpdelta )
     {
-      trimsamples = (int) (((rec->newstart - rec->starttime) / HPTMODULUS) * msr->samprate + 0.5);
+      hptime_t newstarttime;
+      
+      /* Determine new start time and the number of samples to trim */
+      trimsamples = 0;
+      newstarttime = rec->starttime;
+      
+      while ( newstarttime < rec->newstart && trimsamples < msr->samplecnt )
+	{
+	  newstarttime += hpdelta;
+	  trimsamples++;
+	}
+      
+      if ( trimsamples >= msr->samplecnt )
+	fprintf (stderr, "ERROR, all %d samples trimmed from record\n", trimsamples);
       
       if ( verbose > 2 )
-	fprintf (stderr, "Removing %d samples from the start\n", trimsamples);
+	{
+	  ms_hptime2seedtimestr (newstarttime, stime);
+	  fprintf (stderr, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
+	}
       
-      msr->starttime = rec->newstart;
+      msr->starttime = newstarttime;
       
       samplesize = get_samplesize (msr->sampletype);
       
@@ -981,13 +1000,29 @@ trimrecord (Record *rec, char *recordbuf)
     }
   
   /* Remove samples from the end of the record */
-  if ( rec->newend )
+  if ( rec->newend && hpdelta )
     {
-      trimsamples = (int) (((rec->endtime - rec->newend) / HPTMODULUS) * msr->samprate + 0.5);
+      hptime_t newendtime;
+      
+      /* Determine new start time and the number of samples to trim */
+      trimsamples = 0;
+      newendtime = rec->endtime;
+      
+      while ( newendtime > rec->newend && trimsamples < msr->samplecnt )
+	{
+	  newendtime -= hpdelta;
+	  trimsamples++;
+	}
+      
+      if ( trimsamples >= msr->samplecnt )
+	fprintf (stderr, "ERROR, all %d samples trimmed from record\n", trimsamples);
       
       if ( verbose > 2 )
-	fprintf (stderr, "Removing %d samples from the end\n", trimsamples);
-      
+	{
+	  ms_hptime2seedtimestr (newendtime, etime);
+	  fprintf (stderr, "Removing %d samples from the end, new end time: %s\n", trimsamples, etime);
+	}
+
       msr->numsamples -= trimsamples;
       msr->samplecnt -= trimsamples;
     }
@@ -996,7 +1031,7 @@ trimrecord (Record *rec, char *recordbuf)
   packedrecords = msr_pack (msr, &record_handler, &packedsamples, 1, verbose-1);
   
   /* Clean up MSRecord */
-  msr_free (&msr);  
+  msr_free (&msr);
   
   return 0;
 }  /* End of trimrecord() */
@@ -1496,7 +1531,7 @@ readfiles (void)
 	  
 	  /* Populate a new record map */
 	  newrecmap.recordcnt = 1;
-	  newrecmap.fisrt = rec;
+	  newrecmap.first = rec;
 	  newrecmap.last = rec;
 	  
 	  /* If pruning at the sample level trim right at the start/end times */
@@ -1530,7 +1565,6 @@ readfiles (void)
 	      BTime startbtime;
 	      hptime_t boundary = HPTERROR;
 	      hptime_t effstarttime;
-	      hptime_t hpdelta = ( msr->samprate ) ? (hptime_t) (HPTMODULUS / msr->samprate) : 0;
 	      
 	      for (;;)
 		{
@@ -1569,7 +1603,7 @@ readfiles (void)
 		      memcpy (newrec, rec, sizeof(Record));
 		      
 		      /* Set current Record and next Record new boundary times */
-		      rec->newend = boundary - hpdelta;
+		      rec->newend = boundary;
 		      newrec->newstart = boundary;
 		      
 		      /* Update new record map */
@@ -1591,57 +1625,47 @@ readfiles (void)
 		}
 	    } /* Done splitting on time boundary */
 	  
-	  CHAD, merge the newrecmap with the existing recmap or replace, might need to realloc newrecmap...
+	  /* Add the new Record(s) to the RecordMap associated with the MSTrace */
 
-	  /* Add all Record entries into the RecordMap */
-	  rec = recs;
-	  while ( rec )
+	  /* Add new Record(s) to end of the RecordMap */
+	  if ( whence == 1 )
 	    {
-	      nextrec = rec->next;
-
-	      /* Add record details to end of the RecordMap */
-	      if ( whence == 1 )
-		{
-		  recmap = (RecordMap *) mst->private;
-		  
-		  rec->prev = recmap->last;
-		  rec->next = 0;
-		  recmap->last->next = rec;
-		  
-		  recmap->last = rec;
-		  recmap->recordcnt++;
-		}
-	      /* Add record details to beginning of the RecordMap */
-	      else if ( whence == 2 )
-		{
-		  recmap = (RecordMap *) mst->private;
-		  
-		  rec->prev = 0;
-		  rec->next = recmap->first;
-		  recmap->first->prev = rec;
-		  
-		  recmap->first = rec;
-		  recmap->recordcnt++;
-		  
-		  /* Increment reordered count */
-		  flp->reordercount++;
-		}
-	      /* First record for this MSTrace, allocate RecordMap */
-	      else
-		{
-		  if ( mst->private )
-		    fprintf (stderr, "ERROR, supposedly first record, but RecordMap not empty\n");
-		  
-		  rec->prev = rec->next = 0;
-		  recmap = (RecordMap *) malloc (sizeof(RecordMap));
-		  recmap->first = rec;
-		  recmap->last = rec;
-		  recmap->recordcnt = 1;
-		  
-		  mst->private = recmap;
-		}
+	      recmap = (RecordMap *) mst->private;
 	      
-	      rec = nextrec;
+	      recmap->last->next = newrecmap.first;
+	      newrecmap.first->prev = recmap->last;
+
+	      recmap->last = newrecmap.last;
+	      
+	      recmap->recordcnt += newrecmap.recordcnt;
+	    }
+	  /* Add new Record(s) to beginning of the RecordMap */
+	  else if ( whence == 2 )
+	    {
+	      recmap = (RecordMap *) mst->private;
+	      
+	      recmap->first->prev = newrecmap.last;
+	      newrecmap.last->next = recmap->first;
+	      
+	      recmap->first = newrecmap.first;
+	      
+	      recmap->recordcnt += newrecmap.recordcnt;
+	      
+	      /* Increment reordered count */
+	      flp->reordercount++;
+	    }
+	  /* First Record(s) for this MSTrace, allocate RecordMap */
+	  else
+	    {
+	      if ( mst->private )
+		fprintf (stderr, "ERROR, supposedly first record, but RecordMap not empty\n");
+	      
+	      recmap = (RecordMap *) malloc (sizeof(RecordMap));
+	      recmap->first = newrecmap.first;
+	      recmap->last = newrecmap.last;
+	      recmap->recordcnt = newrecmap.recordcnt;
+	      
+	      mst->private = recmap;
 	    }
 	  
 	  totalrecs++;
@@ -1761,13 +1785,9 @@ printtracemap (MSTraceGroup *mstg)
   char stime[30];
   char etime[30];
   int tracecnt = 0;
-  RecordMap *recmap;
-  Record *rec;
   
   if ( ! mstg )
-    {
-      return;
-    }
+    return;
   
   mst = mstg->traces;
   
@@ -1796,21 +1816,7 @@ printtracemap (MSTraceGroup *mstg)
 	}
       else
 	{
-	  recmap = (RecordMap *) mst->private;
-	  rec = recmap->first;
-	  
-	  printf ("Record map contains %lld records:\n", recmap->recordcnt);
-	  
-	  while ( rec )
-	    {
-	      ms_hptime2seedtimestr (rec->starttime, stime);
-	      ms_hptime2seedtimestr (rec->endtime, etime);
-	      
-	      printf ("  Filename: %s  Offset: %llu  RecLen: %d\n    Start: %s\n    End: %s\n",
-		      rec->flp->infilename, (long long unsigned)rec->offset, rec->reclen, stime, etime);
-	      
-	      rec = rec->next;
-	    }
+	  printrecordmap ((RecordMap *) mst->private, 0);
 	}
       
       tracecnt++;
@@ -1823,6 +1829,46 @@ printtracemap (MSTraceGroup *mstg)
   printf ("End of MSTrace Map: %d trace(s)\n\n", tracecnt);
   
 }  /* End of printtracemap() */
+
+
+/***************************************************************************
+ * printrecordmap():
+ *
+ * Print record map to stdout.
+ ***************************************************************************/
+static void
+printrecordmap (RecordMap *recmap, flag details)
+{
+  char stime[30];
+  char etime[30];
+  Record *rec;
+  
+  if ( ! recmap )
+    return;
+  
+  rec = recmap->first;
+  
+  printf ("Record map contains %lld records:\n", recmap->recordcnt);
+  
+  while ( rec )
+    {
+      printf ("  Filename: %s  Offset: %llu  RecLen: %d  Quality: %c\n",
+	      rec->flp->infilename, (long long unsigned)rec->offset, rec->reclen, rec->quality);
+      
+      ms_hptime2seedtimestr (rec->starttime, stime);
+      ms_hptime2seedtimestr (rec->endtime, etime);
+      fprintf (stderr, "      Start: %s       End: %s\n", stime, etime);
+
+      if ( details )
+	{
+	  ms_hptime2seedtimestr (rec->newstart, stime);
+	  ms_hptime2seedtimestr (rec->newend, etime);
+	  fprintf (stderr, "  New start: %s   New end: %s\n", stime, etime);
+	}
+      
+      rec = rec->next;
+    }
+}  /* End of printrecordmap() */
 
 
 /***************************************************************************
