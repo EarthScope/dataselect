@@ -902,8 +902,9 @@ writetraces (MSTraceGroup *mstg)
  * Unpack a data record and trim samples, either from the beginning or
  * the end, to fit the Record.newstart and/or Record.newend boundary
  * times and pack the record.  Record.newstart and Record.newend are
- * treated as arbitrary boundaries, this routine calculates which
- * samples fit within the new boundaries.
+ * treated as arbitrary boundaries, not as explicit new start/end
+ * times, this routine calculates which samples fit within the new
+ * boundaries.
  *
  * Return 0 on success and -1 on failure.
  ***************************************************************************/
@@ -931,14 +932,16 @@ trimrecord (Record *rec, char *recordbuf)
        (rec->newstart && (rec->newstart < rec->starttime || rec->newstart >= rec->endtime)) ||
        (rec->newend && (rec->newend > rec->endtime || rec->newend <= rec->starttime)) )
     {
-      fprintf (stderr, "ERROR: problem with new start/end record times, skipping.\n");
+      fprintf (stderr, "ERROR: problem with new start/end record bound times, skipping.\n");
       fprintf (stderr, "  Original record from %s\n", rec->flp->infilename);
       ms_hptime2seedtimestr (rec->starttime, stime);
       ms_hptime2seedtimestr (rec->endtime, etime);
-      fprintf (stderr, "      Start: %s       End: %s\n", stime, etime);
-      ms_hptime2seedtimestr (rec->newstart, stime);
-      ms_hptime2seedtimestr (rec->newend, etime);
-      fprintf (stderr, "  New start: %s   New end: %s\n", stime, etime);
+      fprintf (stderr, "       Start: %s       End: %s\n", stime, etime);
+      if ( rec->newstart == 0 ) strcpy (stime, "NONE");
+      else ms_hptime2seedtimestr (rec->newstart, stime);
+      if ( rec->newend == 0 ) strcpy (etime, "NONE");
+      else ms_hptime2seedtimestr (rec->newend, etime);
+      fprintf (stderr, " Start bound: %-24s End bound: %-24s\n", stime, etime);
     }
   
   /* Unpack data record */
@@ -954,10 +957,12 @@ trimrecord (Record *rec, char *recordbuf)
       fprintf (stderr, "Triming record: %s (%c)\n", srcname, msr->dataquality);
       ms_hptime2seedtimestr (rec->starttime, stime);
       ms_hptime2seedtimestr (rec->endtime, etime);
-      fprintf (stderr, "     Start: %s       End: %s\n", stime, etime);
-      ms_hptime2seedtimestr (rec->newstart, stime);
-      ms_hptime2seedtimestr (rec->newend, etime);
-      fprintf (stderr, " New start: %s   New end: %s\n", stime, etime);
+      fprintf (stderr, "       Start: %s        End: %s\n", stime, etime);
+      if ( rec->newstart == 0 ) strcpy (stime, "NONE");
+      else ms_hptime2seedtimestr (rec->newstart, stime);
+      if ( rec->newend == 0 ) strcpy (etime, "NONE");
+      else ms_hptime2seedtimestr (rec->newend, etime);
+      fprintf (stderr, " Start bound: %-24s  End bound: %-24s\n", stime, etime);
     }
   
   /* Determine sample period in high precision time ticks */
@@ -1281,16 +1286,18 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 	      if ( effstarttime <= hptrace->starttime &&
 		   effendtime >= hptrace->starttime )
 		{
-		  rec->newend = hptrace->starttime - hpdelta;
+		  /* Set Record new end time boundary including specified time tolerance */
+		  rec->newend = hptrace->starttime - hpdelta + hptimetol;
 		  rec->flp->rectrimcount++;
-		  modcount++;	  
+		  modcount++;
 		}
 	      
 	      /* Record overlaps end of HP coverage */
 	      if ( effstarttime <= hptrace->endtime &&
 		   effendtime >= hptrace->endtime )
 		{
-		  rec->newstart = hptrace->endtime + hpdelta;
+		  /* Set Record new start time boundary including specified time tolerance */
+		  rec->newstart = hptrace->endtime + hpdelta - hptimetol;
 		  rec->flp->rectrimcount++;
 		  modcount++;
 		}
@@ -1543,7 +1550,6 @@ readfiles (void)
 		  //CHAD, think about this...
 		  if ( rec->newstart && rec->newstart < starttime )
 		    {
-		      fprintf (stderr, "DB: HERE-start\n");
 		      rec->newstart = starttime;
 		    }
 		}
@@ -1553,7 +1559,6 @@ readfiles (void)
 		  //CHAD, think about this...
 		  if ( rec->newend && rec->newend > endtime )
 		    {
-		      fprintf (stderr, "DB: HERE-end\n");
 		      rec->newend = endtime;
 		    }
 		}
@@ -1857,13 +1862,15 @@ printrecordmap (RecordMap *recmap, flag details)
       
       ms_hptime2seedtimestr (rec->starttime, stime);
       ms_hptime2seedtimestr (rec->endtime, etime);
-      fprintf (stderr, "      Start: %s       End: %s\n", stime, etime);
+      fprintf (stderr, "       Start: %s       End: %s\n", stime, etime);
 
       if ( details )
 	{
-	  ms_hptime2seedtimestr (rec->newstart, stime);
-	  ms_hptime2seedtimestr (rec->newend, etime);
-	  fprintf (stderr, "  New start: %s   New end: %s\n", stime, etime);
+	  if ( rec->newstart == 0 ) strcpy (stime, "NONE");
+	  else ms_hptime2seedtimestr (rec->newstart, stime);
+	  if ( rec->newend == 0 ) strcpy (etime, "NONE" );
+	  else ms_hptime2seedtimestr (rec->newend, etime);
+	  fprintf (stderr, " Start bound: %-24s End bound: %-24s\n", stime, etime);
 	}
       
       rec = rec->next;
