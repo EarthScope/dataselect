@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.249
+ * modified 2006.254
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -1445,8 +1445,6 @@ readfiles (void)
 	  /* Generate an ASCII start time string */
 	  ms_hptime2seedtimestr (recstarttime, stime);
 	  
-	  // Prune to sample if pruning...
-	  
 	  /* Check if record matches start time criteria */
 	  if ( (starttime != HPTERROR) && (starttime < recstarttime) )
 	    {
@@ -1547,20 +1545,13 @@ readfiles (void)
 	      /* If the Record crosses the start time */
 	      if ( starttime != HPTERROR && (starttime > recstarttime) && (starttime < recendtime) )
 		{
-		  //CHAD, think about this...
-		  if ( rec->newstart && rec->newstart < starttime )
-		    {
-		      rec->newstart = starttime;
-		    }
+		  rec->newstart = starttime;
 		}
+	      
 	      /* If the Record crosses the end time */
 	      if ( endtime != HPTERROR && (endtime > recstarttime) && (endtime < recendtime) )
 		{
-		  //CHAD, think about this...
-		  if ( rec->newend && rec->newend > endtime )
-		    {
-		      rec->newend = endtime;
-		    }
+		  rec->newend = endtime;
 		}
 	    }
 	  
