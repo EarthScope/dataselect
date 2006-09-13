@@ -1938,11 +1938,11 @@ processparam (int argcount, char **argvec)
 	  if ( endtime == HPTERROR )
 	    return -1;
 	}
-      else if (strcmp (argvec[optind], "-m") == 0)
+      else if (strcmp (argvec[optind], "-M") == 0)
 	{
 	  matchpattern = getoptval(argcount, argvec, optind++);
 	}
-      else if (strcmp (argvec[optind], "-r") == 0)
+      else if (strcmp (argvec[optind], "-R") == 0)
 	{
 	  rejectpattern = getoptval(argcount, argvec, optind++);
 	}
@@ -2476,8 +2476,8 @@ usage (int level)
 	   " -ts time     Limit to records that start after time\n"
 	   " -te time     Limit to records that end before time\n"
 	   "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
-	   " -m match     Limit to records matching the specified regular expression\n"
-	   " -r reject    Limit to records not matchint the specfied regular expression\n"
+	   " -M match     Limit to records matching the specified regular expression\n"
+	   " -R reject    Limit to records not matchint the specfied regular expression\n"
 	   "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
 	   "\n"
 	   " ## Output options ##\n"
