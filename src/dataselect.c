@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.254
+ * modified 2006.294
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -31,7 +31,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.1"
+#define VERSION "0.1b"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -1756,10 +1756,10 @@ printmodsummary (flag nomods)
       
       if ( replaceinput )
 	printf (" Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
-		flp->reordercount, flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->outfilename);
+		flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->outfilename);
       else
 	printf (" Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
-		flp->reordercount, flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->infilename);
+		flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->infilename);
       
       flp = flp->next;
     }
