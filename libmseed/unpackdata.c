@@ -13,7 +13,7 @@
  *  (previously) ORFEUS/EC-Project MEREDIAN
  *  (currently) IRIS Data Management Center
  *
- *  modified: 2006.173
+ *  modified: 2006.292
  ************************************************************************/
 
 /*
@@ -210,8 +210,8 @@ int msr_unpack_steim1
   
   if ( swapflag )
     {
-      gswap4 (px0);
-      gswap4 (pxn);
+      gswap4a (px0);
+      gswap4a (pxn);
     }
   
   if ( verbose > 2 )
@@ -223,7 +223,7 @@ int msr_unpack_steim1
     {
       
       ctrl = pf->ctrl;
-      if ( swapflag ) gswap4 (&ctrl);
+      if ( swapflag ) gswap4a (&ctrl);
 
       for (wn = 0; wn < VALS_PER_FRAME; wn++)
 	{
@@ -248,10 +248,10 @@ int msr_unpack_steim1
 	      /* Next 4 bytes are 2 2-byte differences */
 	      for (i=0; i < 2 && nd < num_samples; i++, nd++)
 		{
-		  if (swapflag)
+		  if ( swapflag )
 		    {
 		      stmp = pf->w[wn].hw[i];
-		      if ( swapflag ) gswap2 (&stmp);
+		      gswap2a (&stmp);
 		      *diff++ = stmp;
 		    }
 		  else *diff++ = pf->w[wn].hw[i];
@@ -260,10 +260,10 @@ int msr_unpack_steim1
 	      
 	    case STEIM1_FULLWORD_MASK:
 	      /* Next 4 bytes are 1 4-byte difference */
-	      if (swapflag)
+	      if ( swapflag )
 		{
 		  itmp = pf->w[wn].fw;
-		  if ( swapflag ) gswap4 (&itmp);
+		  gswap4a (&itmp);
 		  *diff++ = itmp;
 		}
 	      else *diff++ = pf->w[wn].fw;
@@ -376,8 +376,8 @@ int msr_unpack_steim2
   
   if ( swapflag )
     {
-      gswap4 (px0);
-      gswap4 (pxn);
+      gswap4a (px0);
+      gswap4a (pxn);
     }
   
   if ( verbose > 2 )
@@ -389,7 +389,7 @@ int msr_unpack_steim2
     {
       
       ctrl = pf->ctrl;
-      if ( swapflag ) gswap4 (&ctrl);
+      if ( swapflag ) gswap4a (&ctrl);
       
       for (wn = 0; wn < VALS_PER_FRAME; wn++)
 	{
@@ -411,7 +411,7 @@ int msr_unpack_steim2
 	      
 	    case STEIM2_123_MASK:
 	      val = pf->w[wn].fw;
-	      if ( swapflag ) gswap4 (&val);
+	      if ( swapflag ) gswap4a (&val);
 	      dnib =  val >> 30 & 0x3;
 	      switch (dnib)
 		{
@@ -437,7 +437,7 @@ int msr_unpack_steim2
 	      
 	    case STEIM2_567_MASK:
 	      val = pf->w[wn].fw;
-	      if ( swapflag ) gswap4 (&val);
+	      if ( swapflag ) gswap4a (&val);
 	      dnib =  val >> 30 & 0x3;
 	      switch (dnib)
 		{

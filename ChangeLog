@@ -1,3 +1,6 @@
+2006.295:
+	- Update to libmseed 2.0pre2.
+
 2006.235:
 	- Add -S[dhm] options to split records on day, hour and
 	minute boundaries.

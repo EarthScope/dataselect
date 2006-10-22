@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.294
+ * modified 2006.295
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -701,7 +701,7 @@ writetraces (MSTraceGroup *mstg)
   
   while ( mst && ! stopflag )
     {
-      recmap = (RecordMap *) mst->private;
+      recmap = (RecordMap *) mst->prvtptr;
       rec = recmap->first;
       
       while ( rec && ! stopflag )
@@ -953,7 +953,7 @@ trimrecord (Record *rec, char *recordbuf)
   
   if ( verbose > 1 )
     {
-      msr_srcname (msr, srcname);
+      msr_srcname (msr, srcname, 0);
       fprintf (stderr, "Triming record: %s (%c)\n", srcname, msr->dataquality);
       ms_hptime2seedtimestr (rec->starttime, stime);
       ms_hptime2seedtimestr (rec->endtime, etime);
@@ -1164,7 +1164,7 @@ prunetraces (MSTraceGroup *mstg)
  * lower priority MSTrace is then compared to each TimeSegment to see
  * if it's completely overlapped.
  *
- * The record map chain (MSTrace->private->first pointer) must be time
+ * The record map chain (MSTrace->prvtptr->first pointer) must be time
  * ordered.
  *
  * lptrace = lower priority MSTrace (LP)
@@ -1206,7 +1206,7 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
    * to be compared to each record in the LP MSTrace.  The optimizaion
    * becomes less effective as gaps in the HP MSTrace coverage
    * increase. */
-  recmap = (RecordMap *) hptrace->private;
+  recmap = (RecordMap *) hptrace->prvtptr;
   rec = recmap->first;
   newsegment = 1;
   while ( rec )
@@ -1250,7 +1250,7 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
   
   /* Traverse the Record chain for the LP MSTrace and mark Records
    * that are completely overlapped by the HP MSTrace coverage */
-  recmap = (RecordMap *) lptrace->private;
+  recmap = (RecordMap *) lptrace->prvtptr;
   rec = recmap->first;
   while ( rec )
     {
@@ -1381,7 +1381,6 @@ readfiles (void)
   hptime_t recstarttime;
   hptime_t recendtime;
   
-  char basesrc[50];
   char srcname[50];
   char stime[30];
   
@@ -1396,7 +1395,7 @@ readfiles (void)
   /* Read all input files and construct continuous traces, using the
    * libmseed MSTrace and MSTraceGroup functionality.  For each trace
    * maintain a list of each data record that contributed to the
-   * trace, implemented as a RecordMap struct (MSTrace->private) where
+   * trace, implemented as a RecordMap struct (MSTrace->prvtptr) where
    * a linked list of Record structs is maintained.  The records are
    * listed in time order.
    */
@@ -1438,9 +1437,8 @@ readfiles (void)
 	  recstarttime = msr_starttime (msr);
 	  recendtime = msr_endtime (msr);
 	  
-	  /* Generate the srcname and add the quality code */
-	  msr_srcname (msr, basesrc);
-	  snprintf (srcname, sizeof(srcname), "%s_%c", basesrc, msr->dataquality);
+	  /* Generate the srcname with the quality code */
+	  msr_srcname (msr, srcname, 1);
 	  
 	  /* Generate an ASCII start time string */
 	  ms_hptime2seedtimestr (recstarttime, stime);
@@ -1499,7 +1497,7 @@ readfiles (void)
 	   * 2 = Beginning of MSTrace
 	   */
 	  whence = 0;
-	  if ( mst->private )
+	  if ( mst->prvtptr )
 	    {
 	      if ( mst->endtime == recendtime )
 		whence = 1;
@@ -1626,7 +1624,7 @@ readfiles (void)
 	  /* Add new Record(s) to end of the RecordMap */
 	  if ( whence == 1 )
 	    {
-	      recmap = (RecordMap *) mst->private;
+	      recmap = (RecordMap *) mst->prvtptr;
 	      
 	      recmap->last->next = newrecmap.first;
 	      newrecmap.first->prev = recmap->last;
@@ -1638,7 +1636,7 @@ readfiles (void)
 	  /* Add new Record(s) to beginning of the RecordMap */
 	  else if ( whence == 2 )
 	    {
-	      recmap = (RecordMap *) mst->private;
+	      recmap = (RecordMap *) mst->prvtptr;
 	      
 	      recmap->first->prev = newrecmap.last;
 	      newrecmap.last->next = recmap->first;
@@ -1653,7 +1651,7 @@ readfiles (void)
 	  /* First Record(s) for this MSTrace, allocate RecordMap */
 	  else
 	    {
-	      if ( mst->private )
+	      if ( mst->prvtptr )
 		fprintf (stderr, "ERROR, supposedly first record, but RecordMap not empty\n");
 	      
 	      recmap = (RecordMap *) malloc (sizeof(RecordMap));
@@ -1661,7 +1659,7 @@ readfiles (void)
 	      recmap->last = newrecmap.last;
 	      recmap->recordcnt = newrecmap.recordcnt;
 	      
-	      mst->private = recmap;
+	      mst->prvtptr = recmap;
 	    }
 	  
 	  totalrecs++;
@@ -1709,7 +1707,7 @@ reinitgroup (MSTraceGroup *mstg)
   
   while ( mst )
     {
-      recmap = (RecordMap *) mst->private;
+      recmap = (RecordMap *) mst->prvtptr;
       rec = recmap->first;
       
       while (rec)
@@ -1719,8 +1717,8 @@ reinitgroup (MSTraceGroup *mstg)
 	  rec = nextrec;
 	}
       
-      free (mst->private);
-      mst->private = 0;
+      free (mst->prvtptr);
+      mst->prvtptr = 0;
       
       mst = mst->next;
     }
@@ -1806,13 +1804,13 @@ printtracemap (MSTraceGroup *mstg)
       printf ("%-15s %-24s %-24s %-4.4g %-d\n",
 	      srcname, stime, etime, mst->samprate, mst->samplecnt);
       
-      if ( ! mst->private )
+      if ( ! mst->prvtptr )
 	{
 	  fprintf (stderr, "  No record map associated with this MSTrace.\n");
 	}
       else
 	{
-	  printrecordmap ((RecordMap *) mst->private, 0);
+	  printrecordmap ((RecordMap *) mst->prvtptr, 0);
 	}
       
       tracecnt++;

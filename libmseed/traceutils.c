@@ -5,7 +5,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center
  *
- * modified: 2006.208
+ * modified: 2006.292
  ***************************************************************************/
 
 #include <stdio.h>
@@ -32,8 +32,8 @@ mst_init ( MSTrace *mst )
       if ( mst->datasamples )
 	free (mst->datasamples);
 
-      if ( mst->private )
-	free (mst->private);
+      if ( mst->prvtptr )
+	free (mst->prvtptr);
     }
   else
     {
@@ -68,8 +68,8 @@ mst_free ( MSTrace **ppmst )
         free ((*ppmst)->datasamples);
 
       /* Free private memory if present */
-      if ( (*ppmst)->private )
-        free ((*ppmst)->private);
+      if ( (*ppmst)->prvtptr )
+        free ((*ppmst)->prvtptr);
       
       free (*ppmst);
       
@@ -243,7 +243,7 @@ mst_findadjacent ( MSTraceGroup *mstg, flag *whence, char dataquality,
 		}
 	    }
 	  /* Otherwise check against the specified sample rate tolerance */
-	  else if ( ms_dabs (samprate - mst->samprate) > sampratetol )
+	  else if ( ms_dabs(samprate - mst->samprate) > sampratetol )
 	    {
 	      mst = mst->next;
 	      continue;
@@ -705,7 +705,7 @@ mst_groupheal ( MSTraceGroup *mstg, double timetol, double sampratetol )
 		}
 	    }
 	  /* Otherwise check against the specified sample rates tolerance */
-	  else if ( ms_dabs (searchtrace->samprate - curtrace->samprate) > sampratetol )
+	  else if ( ms_dabs(searchtrace->samprate - curtrace->samprate) > sampratetol )
 	    {
 	      prevtrace = searchtrace;
 	      continue;

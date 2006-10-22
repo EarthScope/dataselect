@@ -4,14 +4,13 @@
  *
  * Written by Chad Trabant, ORFEUS/EC-Project MEREDIAN
  *
- * modified: 2006.172
+ * modified: 2006.291
  ***************************************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <ctype.h>
 #include <errno.h>
 
 #include "libmseed.h"
@@ -22,32 +21,6 @@
 static int readpackinfo (int chksumlen, int hdrlen, int sizelen, FILE *stream);
 static int myfread (char *buf, int size, int num, FILE *stream);
 static int ateof (FILE *stream);
-
-
-/* Check SEED data record header values at known byte offsets to
- * determine if the memory contains a valid record.
- * 
- * Offset = Value
- * [0-5]  = Digits, SEED sequence number
- *     6  = Data record quality indicator
- *     7  = Space or NULL [not valid SEED]
- *     24 = Start hour (0-23)
- *     25 = Start minute (0-59)
- *     26 = Start second (0-60)
- *
- * Usage: MS_ISVALIDHEADER (char *X)
- */
-#define MS_ISVALIDHEADER(X) (isdigit ((unsigned char) *(X)) &&              \
-			     isdigit ((unsigned char) *(X+1)) &&            \
-			     isdigit ((unsigned char) *(X+2)) &&            \
-			     isdigit ((unsigned char) *(X+3)) &&            \
-			     isdigit ((unsigned char) *(X+4)) &&            \
-			     isdigit ((unsigned char) *(X+5)) &&            \
-			     MS_ISDATAINDICATOR(*(X+6)) &&                  \
-			     (*(X+7) == ' ' || *(X+7) == '\0') &&           \
-			     (int)(*(X+24)) >= 0 && (int)(*(X+24)) <= 23 && \
-			     (int)(*(X+25)) >= 0 && (int)(*(X+25)) <= 59 && \
-			     (int)(*(X+26)) >= 0 && (int)(*(X+26)) <= 60)
 
 
 /**********************************************************************
@@ -241,7 +214,7 @@ ms_readmsr (MSRecord **ppmsr, char *msfile, int reclen, off_t *fpos,
 
 	      if ( recordcount == 0 )
 		{
-		  if ( verbose )
+		  if ( verbose > 0 )
 		    fprintf (stderr, "%s: No data records read, not SEED?\n", msfile);
 		  retcode = MS_NOTSEED;
 		}
@@ -292,7 +265,7 @@ ms_readmsr (MSRecord **ppmsr, char *msfile, int reclen, off_t *fpos,
 		{
 		  char infostr[30];
 		  
-		  if ( verbose )
+		  if ( verbose > 0 )
 		    fprintf (stderr, "Detected packed file (%3.3s: type %d)\n", rawrec, packtype);
 		  
 		  /* Assuming data size length is 8 bytes at the end of the pack info */
@@ -383,7 +356,7 @@ ms_readmsr (MSRecord **ppmsr, char *msfile, int reclen, off_t *fpos,
 
 	      if ( recordcount == 0 )
 		{
-		  if ( verbose )
+		  if ( verbose > 0 )
 		    fprintf (stderr, "%s: No data records read, not SEED?\n", msfile);
 		  retcode = MS_NOTSEED;
 		}
@@ -473,7 +446,7 @@ ms_readmsr (MSRecord **ppmsr, char *msfile, int reclen, off_t *fpos,
 	  
 	  if ( recordcount == 0 )
 	    {
-	      if ( verbose )
+	      if ( verbose > 0 )
 		fprintf (stderr, "%s: No data records read, not SEED?\n", msfile);
 	      retcode = MS_NOTSEED;
 	    }
@@ -556,8 +529,8 @@ ms_readmsr (MSRecord **ppmsr, char *msfile, int reclen, off_t *fpos,
  * detected.
  *
  * Returns MS_NOERROR and populates an MSTraceGroup struct at *ppmstg
- * on successful read, returns MS_ENDOFFILE on EOF, otherwise returns
- * a libmseed error code (listed in libmseed.h).
+ * on successful read, otherwise returns a libmseed error code (listed
+ * in libmseed.h).
  *********************************************************************/
 int
 ms_readtraces (MSTraceGroup **ppmstg, char *msfile, int reclen,
@@ -565,7 +538,7 @@ ms_readtraces (MSTraceGroup **ppmstg, char *msfile, int reclen,
 	       flag skipnotdata, flag dataflag, flag verbose)
 {
   MSRecord *msr = 0;
-  int retcode = MS_NOERROR;
+  int retcode;
   
   if ( ! ppmstg )
     return MS_GENERROR;
@@ -585,6 +558,10 @@ ms_readtraces (MSTraceGroup **ppmstg, char *msfile, int reclen,
     {
       mst_addmsrtogroup (*ppmstg, msr, dataquality, timetol, sampratetol);
     }
+  
+  /* Reset return code to MS_NOERROR on successful read by ms_readmsr() */
+  if ( retcode == MS_ENDOFFILE )
+    retcode = MS_NOERROR;
   
   ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
   
