@@ -1,3 +1,9 @@
+2006.296: 2.0pre3
+	- Add 'quality' flag argument to mst_srcname() to control the 
+	addition of the quality indicator in the srcname.
+	- Add 'quality' flag argument to mst_groupsort() to control the
+	inclusion of quality indicator in the sorting.
+
 2006.292: 2.0pre2
 	- Use memory-aligned swap functions in unpackdata.c for speed.
 
