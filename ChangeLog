@@ -1,7 +1,9 @@
-2006.296:
+2006.296: 0.2
 	- Update to libmseed 2.0pre3.
+	- Do not sort MSTraceGroup using the quality indicator so output
+	files include data in time order ungrouped from quality.
 
-2006.235:
+2006.235: 0.1
 	- Add -S[dhm] options to split records on day, hour and
 	minute boundaries.
 

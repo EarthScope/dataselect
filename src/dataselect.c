@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.295
+ * modified 2006.296
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -31,7 +31,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.1b"
+#define VERSION "0.2"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -621,7 +621,7 @@ static MSTraceGroup *
 processtraces (void)
 {
   /* Sort trace group by srcname, sample rate, starttime and descending end time */
-  mst_groupsort (mstg);
+  mst_groupsort (mstg, 0);
   
   if ( verbose > 2 )
     printtracemap (mstg);
@@ -1267,7 +1267,7 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 	    {
 	      if ( verbose )
 		{
-		  mst_srcname (lptrace, srcname);
+		  mst_srcname (lptrace, srcname, 1);
 		  ms_hptime2seedtimestr (rec->starttime, stime);
 		  ms_hptime2seedtimestr (rec->endtime, etime);
 		  fprintf (stderr, "Removing Record %s (%c) :: %s  %s\n",
@@ -1791,7 +1791,7 @@ printtracemap (MSTraceGroup *mstg)
   
   while ( mst )
     {
-      mst_srcname (mst, srcname);
+      mst_srcname (mst, srcname, 1);
       
       /* Create formatted time strings */
       if ( ms_hptime2seedtimestr (mst->starttime, stime) == NULL )
