@@ -2473,7 +2473,7 @@ usage (int level)
 	   " -rep         Replace input files, default leaves .orig files\n"
 	   " -nb          Do not keep backups of original input files if replacing them\n"
 	   " -o file      Specify a single output file\n"
-	   " -A format    Write all records is a custom directory/file layout (try -H)\n"
+	   " -A format    Write all records in a custom directory/file layout (try -H)\n"
 	   " -Pr          Prune data at the record level using 'best' quality priority\n"
 	   " -Ps          Prune data at the sample level using 'best' quality priority\n"
 	   " -S[dhm]      Split records on day, hour or minute boundaries\n"
