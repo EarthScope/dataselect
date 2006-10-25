@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.296
+ * modified 2006.297
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -122,6 +122,7 @@ static void record_handler (char *record, int reclen);
 
 static int prunetraces (MSTraceGroup *mstg);
 static int trimtraces (MSTrace *lptrace, MSTrace *hptrace);
+static void reconcile_tracetimes (MSTraceGroup *mstg);
 static int qcompare (const char quality1, const char quality2);
 
 static int readfiles (void);
@@ -628,7 +629,15 @@ processtraces (void)
   
   /* Prune data */
   if ( prunedata )
-    prunetraces (mstg);
+    {
+      prunetraces (mstg);
+      
+      /* Reconcile MSTrace times with associated record maps */
+      reconcile_tracetimes (mstg);
+      
+      /* Re-sort trace group by srcname, sample rate, starttime and descending end time */
+      mst_groupsort (mstg, 0);
+    }
   
   /* Write all MSTrace associated records to output file(s) */
   writetraces (mstg);
@@ -992,8 +1001,6 @@ trimrecord (Record *rec, char *recordbuf)
 	  fprintf (stderr, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
 	}
       
-      msr->starttime = newstarttime;
-      
       samplesize = get_samplesize (msr->sampletype);
       
       memmove (msr->datasamples,
@@ -1002,6 +1009,8 @@ trimrecord (Record *rec, char *recordbuf)
       
       msr->numsamples -= trimsamples;
       msr->samplecnt -= trimsamples;
+      msr->starttime = newstarttime;
+      rec->starttime = newstarttime;
     }
   
   /* Remove samples from the end of the record */
@@ -1030,6 +1039,7 @@ trimrecord (Record *rec, char *recordbuf)
 
       msr->numsamples -= trimsamples;
       msr->samplecnt -= trimsamples;
+      rec->endtime = newendtime;
     }
   
   /* Pack the data record into the global record buffer used by writetraces() */
@@ -1265,7 +1275,7 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 	  if ( effstarttime >= tsp->starttime &&
 	       effendtime <= tsp->endtime )
 	    {
-	      if ( verbose )
+	      if ( verbose > 1 )
 		{
 		  mst_srcname (lptrace, srcname, 1);
 		  ms_hptime2seedtimestr (rec->starttime, stime);
@@ -1321,6 +1331,63 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
   
   return modcount;
 } /* End of trimtraces() */
+
+
+/***************************************************************************
+ * reconcile_tracetimes():
+ *
+ * Reconcile the start and end times of the traces in a specified
+ * trace group with the list of records in an associated record map.
+ * In other words, set the start and end times of each MSTrace in the
+ * MSTraceGroup according to the starttime of the first and end time
+ * of the last contributing records in the associated record map.
+ *
+ ***************************************************************************/
+static void
+reconcile_tracetimes (MSTraceGroup *mstg)
+{
+  MSTrace *mst;
+  RecordMap *recmap;
+  Record *rec;
+  Record *first = 0;
+  Record *last = 0;
+  
+  if ( ! mstg )
+    return;
+  
+  if ( ! mstg->traces )
+    return;
+  
+  mst = mstg->traces;
+  
+  while ( mst )
+    {
+      recmap = (RecordMap *) mst->prvtptr;
+      
+      /* Find first and last contributing records (reclen != 0) */
+      rec = recmap->first;      
+      while ( rec )
+	{
+	  if ( rec->reclen > 0 && first == 0 )
+	    first = rec;
+	  
+	  if ( rec->reclen > 0 )
+	    last = rec;
+	  
+	  rec = rec->next;
+	}
+      
+      if ( first )
+	mst->starttime = first->starttime;
+      
+      if ( last )
+	mst->endtime = last->endtime;
+      
+      mst = mst->next;
+    }
+  
+  return;
+}  /* End of reconcile_tracetimes() */
 
 
 /***************************************************************************
