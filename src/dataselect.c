@@ -31,7 +31,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.3"
+#define VERSION "0.4"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -174,6 +174,9 @@ static MSTraceGroup *mstg = 0;        /* Global MSTraceGroup */
 int
 main ( int argc, char **argv )
 {  
+  /* Set default error message prefix */
+  ms_loginit (NULL, NULL, NULL, "ERROR:");
+
   /* Process input parameters */
   if (processparam (argc, argv) < 0)
     return 1;
@@ -181,16 +184,16 @@ main ( int argc, char **argv )
   if ( podreqfile && poddatadir )
     {
       if ( verbose > 2 )
-	fprintf (stderr, "Pruning POD structure:\nrequest file: %s, data dir: %s\n",
-		 podreqfile, poddatadir);
+	ms_log (1, "Pruning POD structure:\nrequest file: %s, data dir: %s\n",
+		podreqfile, poddatadir);
       
       if ( processpod (podreqfile, poddatadir) )
-	fprintf (stderr, "ERROR processing POD structure\n");
+	ms_log (2, "Cannot processing POD structure\n");
     }
   else
     {
       if ( verbose > 2 )
-	fprintf (stderr, "Pruning input files\n");
+	ms_log (1, "Pruning input files\n");
       
       /* Read and process all files specified on the command line */
       readfiles ();
@@ -323,7 +326,7 @@ processpod (char *requestfile, char *datadir)
     }
   
   if ( verbose > 1 )
-    fprintf (stderr, "Renaming and rewriting request file (h.)\n");
+    ms_log (1, "Renaming and rewriting request file (h.)\n");
   
   /* Remove request records that have no time coverage, i.e. all data pruned */
   reciter = reqrecs;
@@ -353,8 +356,8 @@ processpod (char *requestfile, char *datadir)
   snprintf (tmpfilename, sizeof(tmpfilename), "%s.orig", requestfile);
   
   if ( rename (requestfile, tmpfilename) )
-    fprintf (stderr, "ERROR renaming %s -> %s : '%s'\n",
-	     tmpfilename, requestfile, strerror(errno));
+    ms_log (2, "ERROR renaming %s -> %s : '%s'\n",
+	    tmpfilename, requestfile, strerror(errno));
   
   /* Write the request file */
   if ( writereqfile(requestfile, reqrecs) )
@@ -380,7 +383,7 @@ setofilelimit (int limit)
   /* Get the current soft open file limit */
   if ( getrlimit (RLIMIT_NOFILE, &rlim) == -1 )
     {
-      fprintf (stderr, "ERROR getrlimit failed to get open file limit\n");
+      ms_log (2, "getrlimit() failed to get open file limit\n");
       return -1;
     }
   
@@ -389,12 +392,12 @@ setofilelimit (int limit)
       rlim.rlim_cur = (rlim_t) limit;
       
       if ( verbose > 1 )
-	fprintf (stderr, "Setting open file limit to %d\n",
-		 (int) rlim.rlim_cur);
+	ms_log (1, "Setting open file limit to %d\n",
+		(int) rlim.rlim_cur);
       
       if ( setrlimit (RLIMIT_NOFILE, &rlim) == -1 )
 	{
-	  fprintf (stderr, "ERROR setrlimit failed to set open file limit\n");
+	  ms_log (2, "ERROR setrlimit failed to set open file limit\n");
 	  return -1;
 	}
     }
@@ -436,12 +439,12 @@ readreqfile (char *requestfile)
   char tmpfilename[1024];
 
   if ( verbose )
-    fprintf (stderr, "Reading request file: %s\n", requestfile);
+    ms_log (1, "Reading request file: %s\n", requestfile);
   
   if ( ! (rf = fopen (requestfile, "rb")) )
     {
-      fprintf (stderr, "ERROR Cannot open request file '%s': %s\n",
-	       requestfile, strerror(errno));
+      ms_log (2, "Cannot open request file '%s': %s\n",
+	      requestfile, strerror(errno));
       return NULL;
     }
   
@@ -450,7 +453,7 @@ readreqfile (char *requestfile)
       if ( strparse(reqline, "\t", &list) != 10 )
 	{
 	  if ( verbose > 2 )
-	    fprintf (stderr, "ERROR skipping request line: '%s'\n", reqline);
+	    ms_log (1, "skipping request line: '%s'\n", reqline);
 	  continue;
 	}
       
@@ -493,7 +496,7 @@ readreqfile (char *requestfile)
       /* Check for file access */
       if ( access(tmpfilename, F_OK) )
 	{
-	  fprintf (stderr, "Cannot find file '%s', keeping a placeholder\n", tmpfilename);
+	  ms_log (2, "Cannot find file '%s', keeping a placeholder\n", tmpfilename);
 	  newrr->pruned = 1;
 	}
       
@@ -544,7 +547,7 @@ readreqfile (char *requestfile)
     }
   
   if ( verbose )
-    fprintf (stderr, "Read %d request records (lines)\n", reqreccnt);
+    ms_log (1, "Read %d request records (lines)\n", reqreccnt);
   
   fclose (rf);
   
@@ -572,12 +575,12 @@ writereqfile (char *requestfile, ReqRec *rrlist)
   int reqreccnt = 0;
 
   if ( verbose )
-    fprintf (stderr, "Writing request file: %s\n", requestfile);
+    ms_log (1, "Writing request file: %s\n", requestfile);
   
   if ( ! (rf = fopen (requestfile, "wb")) )
     {
-      fprintf (stderr, "ERROR Cannot open request file '%s': %s\n",
-	       requestfile, strerror(errno));
+      ms_log (2, "Cannot open request file '%s': %s\n",
+	      requestfile, strerror(errno));
       return -1;
     }
   
@@ -604,7 +607,7 @@ writereqfile (char *requestfile, ReqRec *rrlist)
   fclose (rf);
   
   if ( verbose )
-    fprintf (stderr, "Wrote %d request records (lines)\n", reqreccnt);
+    ms_log (1, "Wrote %d request records (lines)\n", reqreccnt);
 
   return 0;
 } /* End of writereqfile() */
@@ -700,8 +703,8 @@ writetraces (MSTraceGroup *mstg)
         }
       else if ( (ofp = fopen (outputfile, mode)) == NULL )
         {
-          fprintf (stderr, "ERROR Cannot open output file: %s (%s)\n",
-                   outputfile, strerror(errno));
+          ms_log (2, "Cannot open output file: %s (%s)\n",
+		  outputfile, strerror(errno));
           return;
         }
     }
@@ -725,8 +728,8 @@ writetraces (MSTraceGroup *mstg)
 	  /* Make sure the record buffer is large enough */
 	  if ( rec->reclen > sizeof(recordbuf) )
 	    {
-	      fprintf (stderr, "ERROR Record length (%d bytes) larger than buffer (%llu bytes)\n",
-		       rec->reclen, (long long unsigned int)sizeof(recordbuf));
+	      ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
+		      rec->reclen, (long long unsigned int)sizeof(recordbuf));
 	      stopflag = 1;
 	      break;
 	    }
@@ -735,8 +738,8 @@ writetraces (MSTraceGroup *mstg)
 	  if ( ! rec->flp->infp )
 	    if ( ! (rec->flp->infp = fopen (rec->flp->infilename, "rb")) )
 	      {
-		fprintf (stderr, "ERROR opening '%s' for reading: %s\n",
-			 rec->flp->infilename, strerror(errno));
+		ms_log (2, "Cannot open '%s' for reading: %s\n",
+			rec->flp->infilename, strerror(errno));
 		stopflag = 1;
 		break;
 	      }
@@ -744,8 +747,8 @@ writetraces (MSTraceGroup *mstg)
 	  /* Seek to record offset */
 	  if ( lmp_fseeko (rec->flp->infp, rec->offset, SEEK_SET) == -1 )
 	    {
-	      fprintf (stderr, "ERROR Cannot seek in '%s': %s\n",
-		       rec->flp->infilename, strerror(errno));
+	      ms_log (2, "Cannot seek in '%s': %s\n",
+		      rec->flp->infilename, strerror(errno));
 	      stopflag = 1;
 	      break;
 	    }
@@ -753,9 +756,9 @@ writetraces (MSTraceGroup *mstg)
 	  /* Read record into buffer */
 	  if ( fread (recordbuf, rec->reclen, 1, rec->flp->infp) != 1 )
 	    {
-	      fprintf (stderr, "ERROR reading %d bytes at offset %llu from '%s'\n",
-		       rec->reclen, (long long unsigned)rec->offset,
-		       rec->flp->infilename);
+	      ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
+		      rec->reclen, (long long unsigned)rec->offset,
+		      rec->flp->infilename);
 	      stopflag = 1;
 	      break;
 	    }
@@ -774,7 +777,7 @@ writetraces (MSTraceGroup *mstg)
           if ( restampqind )
             {
               if ( verbose > 1 )
-                fprintf (stderr, "Re-stamping data quality indicator to '%c'\n", restampqind);
+                ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
               
               *(recordbuf + 6) = restampqind;
             }
@@ -784,7 +787,7 @@ writetraces (MSTraceGroup *mstg)
 	    {
 	      if ( fwrite (recordbuf, rec->reclen, 1, ofp) != 1 )
 		{
-		  fprintf (stderr, "ERROR writing to '%s'\n", outputfile);
+		  ms_log (2, "Cannot write to '%s'\n", outputfile);
 		  stopflag = 1;
 		  break;
 		}
@@ -797,7 +800,7 @@ writetraces (MSTraceGroup *mstg)
 	      
 	      if ( msr_unpack (recordbuf, rec->reclen, &msr, 0, verbose) != MS_NOERROR )
 		{
-		  fprintf (stderr, "ERROR unpacking Mini-SEED, cannot write to archive\n");
+		  ms_log (2, "Cannot unpack Mini-SEED, cannot write to archive\n");
 		}
 	      else
 		{
@@ -818,15 +821,15 @@ writetraces (MSTraceGroup *mstg)
 	      if ( ! rec->flp->outfp )
 		if ( ! (rec->flp->outfp = fopen (rec->flp->outfilename, "wb")) )
 		  {
-		    fprintf (stderr, "ERROR opening '%s' for writing: %s\n",
-			     rec->flp->outfilename, strerror(errno));
+		    ms_log (2, "Cannot open '%s' for writing: %s\n",
+			    rec->flp->outfilename, strerror(errno));
 		    stopflag = 1;
 		    break;
 		  }
 	      
 	      if ( fwrite (recordbuf, rec->reclen, 1, rec->flp->outfp) != 1 )
 		{
-		  fprintf (stderr, "ERROR writing to '%s'\n", rec->flp->outfilename);
+		  ms_log (2, "Cannot write to '%s'\n", rec->flp->outfilename);
 		  stopflag = 1;
 		  break;
 		}
@@ -861,11 +864,11 @@ writetraces (MSTraceGroup *mstg)
       if ( ! ofp && verbose )
 	{
 	  if ( replaceinput )
-	    fprintf (stderr, "Wrote %d bytes from file %s (was %s)\n",
-		     flp->byteswritten, flp->infilename, flp->outfilename);
+	    ms_log (1, "Wrote %d bytes from file %s (was %s)\n",
+		    flp->byteswritten, flp->infilename, flp->outfilename);
 	  else
-	    fprintf (stderr, "Wrote %d bytes from file %s\n",
-		     flp->byteswritten, flp->infilename);
+	    ms_log (1, "Wrote %d bytes from file %s\n",
+		    flp->byteswritten, flp->infilename);
 	}
 
       if ( flp->infp )
@@ -882,8 +885,8 @@ writetraces (MSTraceGroup *mstg)
       
       if ( nobackups && ! ofp )
 	if ( unlink (flp->infilename) )
-	  fprintf (stderr, "ERROR removing '%s': %s\n",
-		   flp->infilename, strerror(errno));
+	  ms_log (2, "Cannot remove '%s': %s\n",
+		  flp->infilename, strerror(errno));
       
       flp = flp->next;
     }
@@ -897,8 +900,8 @@ writetraces (MSTraceGroup *mstg)
 
   if ( verbose )
     {
-      fprintf (stderr, "Wrote %d bytes of %d records to output file(s)\n",
-	       totalbytesout, totalrecsout);
+      ms_log (1, "Wrote %d bytes of %d records to output file(s)\n",
+	      totalbytesout, totalrecsout);
     }
   
   return;
@@ -941,37 +944,37 @@ trimrecord (Record *rec, char *recordbuf)
        (rec->newstart && (rec->newstart < rec->starttime || rec->newstart >= rec->endtime)) ||
        (rec->newend && (rec->newend > rec->endtime || rec->newend <= rec->starttime)) )
     {
-      fprintf (stderr, "ERROR: problem with new start/end record bound times, skipping.\n");
-      fprintf (stderr, "  Original record from %s\n", rec->flp->infilename);
+      ms_log (2, "Problem with new start/end record bound times, skipping.\n");
+      ms_log (2, "  Original record from %s\n", rec->flp->infilename);
       ms_hptime2seedtimestr (rec->starttime, stime);
       ms_hptime2seedtimestr (rec->endtime, etime);
-      fprintf (stderr, "       Start: %s       End: %s\n", stime, etime);
+      ms_log (2, "       Start: %s       End: %s\n", stime, etime);
       if ( rec->newstart == 0 ) strcpy (stime, "NONE");
       else ms_hptime2seedtimestr (rec->newstart, stime);
       if ( rec->newend == 0 ) strcpy (etime, "NONE");
       else ms_hptime2seedtimestr (rec->newend, etime);
-      fprintf (stderr, " Start bound: %-24s End bound: %-24s\n", stime, etime);
+      ms_log (2, " Start bound: %-24s End bound: %-24s\n", stime, etime);
     }
   
   /* Unpack data record */
   if ( (retcode = msr_unpack(recordbuf, rec->reclen, &msr, 1, verbose-1)) != MS_NOERROR )
     {
-      fprintf (stderr, "ERROR: cannot unpacking Mini-SEED record: %s\n", ms_errorstr(retcode));
+      ms_log (2, "Cannot unpack Mini-SEED record: %s\n", ms_errorstr(retcode));
       return -1;
     }
   
   if ( verbose > 1 )
     {
       msr_srcname (msr, srcname, 0);
-      fprintf (stderr, "Triming record: %s (%c)\n", srcname, msr->dataquality);
+      ms_log (1, "Triming record: %s (%c)\n", srcname, msr->dataquality);
       ms_hptime2seedtimestr (rec->starttime, stime);
       ms_hptime2seedtimestr (rec->endtime, etime);
-      fprintf (stderr, "       Start: %s        End: %s\n", stime, etime);
+      ms_log (1, "       Start: %s        End: %s\n", stime, etime);
       if ( rec->newstart == 0 ) strcpy (stime, "NONE");
       else ms_hptime2seedtimestr (rec->newstart, stime);
       if ( rec->newend == 0 ) strcpy (etime, "NONE");
       else ms_hptime2seedtimestr (rec->newend, etime);
-      fprintf (stderr, " Start bound: %-24s  End bound: %-24s\n", stime, etime);
+      ms_log (1, " Start bound: %-24s  End bound: %-24s\n", stime, etime);
     }
   
   /* Determine sample period in high precision time ticks */
@@ -993,12 +996,12 @@ trimrecord (Record *rec, char *recordbuf)
 	}
       
       if ( trimsamples >= msr->samplecnt )
-	fprintf (stderr, "ERROR, all %d samples trimmed from record\n", trimsamples);
+	ms_log (2, "All %d samples trimmed from record ??\n", trimsamples);
       
       if ( verbose > 2 )
 	{
 	  ms_hptime2seedtimestr (newstarttime, stime);
-	  fprintf (stderr, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
+	  ms_log (1, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
 	}
       
       samplesize = ms_samplesize (msr->sampletype);
@@ -1029,12 +1032,12 @@ trimrecord (Record *rec, char *recordbuf)
 	}
       
       if ( trimsamples >= msr->samplecnt )
-	fprintf (stderr, "ERROR, all %d samples trimmed from record\n", trimsamples);
+	ms_log (2, "All %d samples trimmed from record ??\n", trimsamples);
       
       if ( verbose > 2 )
 	{
 	  ms_hptime2seedtimestr (newendtime, etime);
-	  fprintf (stderr, "Removing %d samples from the end, new end time: %s\n", trimsamples, etime);
+	  ms_log (1, "Removing %d samples from the end, new end time: %s\n", trimsamples, etime);
 	}
 
       msr->numsamples -= trimsamples;
@@ -1105,7 +1108,7 @@ prunetraces (MSTraceGroup *mstg)
     return -1;
   
   if ( verbose )
-    fprintf (stderr, "Pruning MSTrace data\n");
+    ms_log (1, "Pruning MSTrace data\n");
   
   /* Compare each MSTrace to every other MSTrace */
   mst = mstg->traces;
@@ -1280,8 +1283,8 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 		  mst_srcname (lptrace, srcname, 1);
 		  ms_hptime2seedtimestr (rec->starttime, stime);
 		  ms_hptime2seedtimestr (rec->endtime, etime);
-		  fprintf (stderr, "Removing Record %s (%c) :: %s  %s\n",
-			   srcname, rec->quality, stime, etime);
+		  ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
+			  srcname, rec->quality, stime, etime);
 		}
 	      
 	      rec->flp->recrmcount++;
@@ -1483,8 +1486,8 @@ readfiles (void)
 	  
 	  if ( rename (flp->outfilename, flp->infilename) )
 	    {
-	      fprintf (stderr, "ERROR renaming %s -> %s : '%s'\n",
-		       flp->outfilename, flp->infilename, strerror(errno));
+	      ms_log (2, "Cannot rename %s -> %s : '%s'\n",
+		      flp->outfilename, flp->infilename, strerror(errno));
 	      return 1;
 	    }
 	}
@@ -1492,9 +1495,9 @@ readfiles (void)
       if ( verbose )
 	{
 	  if ( replaceinput ) 
-	    fprintf (stderr, "Processing: %s (was %s)\n", flp->infilename, flp->outfilename);
+	    ms_log (1, "Processing: %s (was %s)\n", flp->infilename, flp->outfilename);
 	  else
-	    fprintf (stderr, "Processing: %s\n", flp->infilename);
+	    ms_log (1, "Processing: %s\n", flp->infilename);
 	}
       
       /* Loop over the input file */
@@ -1514,7 +1517,7 @@ readfiles (void)
 	  if ( (starttime != HPTERROR) && (starttime < recstarttime) )
 	    {
 	      if ( verbose >= 3 )
-		fprintf (stderr, "Skipping (starttime) %s, %s\n", srcname, stime);
+		ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
 	      continue;
 	    }
 	      
@@ -1522,7 +1525,7 @@ readfiles (void)
 	  if ( (endtime != HPTERROR) && (recendtime > endtime) )
 	    {
 	      if ( verbose >= 3 )
-		fprintf (stderr, "Skipping (endtime) %s, %s\n", srcname, stime);
+		ms_log (1, "Skipping (endtime) %s, %s\n", srcname, stime);
 	      continue;
 	    }
 	  
@@ -1532,7 +1535,7 @@ readfiles (void)
 	      if ( regexec ( match, srcname, 0, 0, 0) != 0 )
 		{
 		  if ( verbose >= 3 )
-		    fprintf (stderr, "Skipping (match) %s, %s\n", srcname, stime);
+		    ms_log (1, "Skipping (match) %s, %s\n", srcname, stime);
 		  continue;
 		}
 	    }
@@ -1543,7 +1546,7 @@ readfiles (void)
 	      if ( regexec ( reject, srcname, 0, 0, 0) == 0 )
 		{
 		  if ( verbose >= 3 )
-		    fprintf (stderr, "Skipping (reject) %s, %s\n", srcname, stime);
+		    ms_log (1, "Skipping (reject) %s, %s\n", srcname, stime);
 		  continue;
 		}
 	    }
@@ -1554,7 +1557,7 @@ readfiles (void)
 	  /* Add record to the MSTraceGroup */
 	  if ( ! (mst = mst_addmsrtogroup (mstg, msr, bestquality, timetol, sampratetol)) )
 	    {
-	      fprintf (stderr, "ERROR adding record to trace group, %s, %s\n", srcname, stime);
+	      ms_log (2, "Cannot add record to trace group, %s, %s\n", srcname, stime);
 	    }
 	  
 	  /* Determine where the record fit this MSTrace
@@ -1580,7 +1583,7 @@ readfiles (void)
 		}
 	      else
 		{
-		  fprintf (stderr, "ERROR determining where record fit relative to trace\n");
+		  ms_log (2, "Cannot determine where record fit relative to trace\n");
 		  msr_print (msr, 1);
 		  continue;
 		}
@@ -1653,7 +1656,7 @@ readfiles (void)
 		    }
 		  else
 		    {
-		      fprintf (stderr, "ERROR split boundary code unrecognized: '%c'\n", splitboundary);
+		      ms_log (2, "Split boundary code unrecognized: '%c'\n", splitboundary);
 		      break;
 		    }
 		  
@@ -1719,7 +1722,7 @@ readfiles (void)
 	  else
 	    {
 	      if ( mst->prvtptr )
-		fprintf (stderr, "ERROR, supposedly first record, but RecordMap not empty\n");
+		ms_log (2, "Supposedly first record, but RecordMap not empty\n");
 	      
 	      recmap = (RecordMap *) malloc (sizeof(RecordMap));
 	      recmap->first = newrecmap.first;
@@ -1734,7 +1737,7 @@ readfiles (void)
 	}
       
       if ( retcode != MS_ENDOFFILE )
-	fprintf (stderr, "ERROR reading %s: %s\n", flp->infilename, ms_errorstr(retcode));
+	ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr(retcode));
       
       /* Make sure everything is cleaned up */
       ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
@@ -1744,7 +1747,7 @@ readfiles (void)
     } /* End of looping over file list */
   
   if ( basicsum )
-    printf ("Files: %d, Records: %d, Samples: %d\n", totalfiles, totalrecs, totalsamps);
+    ms_log (0, "Files: %d, Records: %d, Samples: %d\n", totalfiles, totalrecs, totalsamps);
   
   return 0;
 }  /* End of readfiles() */
@@ -1807,7 +1810,7 @@ printmodsummary (flag nomods)
 {
   Filelink *flp;
   
-  printf ("File modification summary:\n");
+  ms_log (0, "File modification summary:\n");
   
   flp = filelist;
   
@@ -1820,10 +1823,10 @@ printmodsummary (flag nomods)
 	}
       
       if ( replaceinput )
-	printf (" Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
+	ms_log (0, " Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
 		flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->outfilename);
       else
-	printf (" Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
+	ms_log (0, " Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
 		flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->infilename);
       
       flp = flp->next;
@@ -1853,8 +1856,8 @@ printtracemap (MSTraceGroup *mstg)
   mst = mstg->traces;
   
   /* Print out the appropriate header */
-  fprintf (stderr, "\nMSTrace Map:\n");
-  fprintf (stderr, "   Source              Start sample             End sample        Hz   Samples\n");
+  ms_log (0, "\nMSTrace Map:\n");
+  ms_log (0, "   Source              Start sample             End sample        Hz   Samples\n");
   
   while ( mst )
     {
@@ -1862,18 +1865,18 @@ printtracemap (MSTraceGroup *mstg)
       
       /* Create formatted time strings */
       if ( ms_hptime2seedtimestr (mst->starttime, stime) == NULL )
-	fprintf (stderr, "ERROR converting trace start time for %s\n", srcname);
+	ms_log (2, "Cannot convert trace start time for %s\n", srcname);
       
       if ( ms_hptime2seedtimestr (mst->endtime, etime) == NULL )
-	fprintf (stderr, "ERROR converting trace end time for %s\n", srcname);
+	ms_log (2, "Cannot convert trace end time for %s\n", srcname);
       
       /* Print MSTrace header */
-      printf ("%-15s %-24s %-24s %-4.4g %-d\n",
+      ms_log (0, "%-15s %-24s %-24s %-4.4g %-d\n",
 	      srcname, stime, etime, mst->samprate, mst->samplecnt);
       
       if ( ! mst->prvtptr )
 	{
-	  fprintf (stderr, "  No record map associated with this MSTrace.\n");
+	  ms_log (2, "No record map associated with this MSTrace.\n");
 	}
       else
 	{
@@ -1885,9 +1888,9 @@ printtracemap (MSTraceGroup *mstg)
     }
   
   if ( tracecnt != mstg->numtraces )
-    fprintf (stderr, "ERROR printtracemap(): number of traces in trace group is inconsistent\n");
+    ms_log (2, "printtracemap(): number of traces in trace group is inconsistent\n");
   
-  printf ("End of MSTrace Map: %d trace(s)\n\n", tracecnt);
+  ms_log (0, "End of MSTrace Map: %d trace(s)\n\n", tracecnt);
   
 }  /* End of printtracemap() */
 
@@ -1909,16 +1912,16 @@ printrecordmap (RecordMap *recmap, flag details)
   
   rec = recmap->first;
   
-  printf ("Record map contains %lld records:\n", recmap->recordcnt);
+  ms_log (0, "Record map contains %lld records:\n", recmap->recordcnt);
   
   while ( rec )
     {
-      printf ("  Filename: %s  Offset: %llu  RecLen: %d  Quality: %c\n",
+      ms_log (0, "  Filename: %s  Offset: %llu  RecLen: %d  Quality: %c\n",
 	      rec->flp->infilename, (long long unsigned)rec->offset, rec->reclen, rec->quality);
       
       ms_hptime2seedtimestr (rec->starttime, stime);
       ms_hptime2seedtimestr (rec->endtime, etime);
-      fprintf (stderr, "       Start: %s       End: %s\n", stime, etime);
+      ms_log (0, "       Start: %s       End: %s\n", stime, etime);
 
       if ( details )
 	{
@@ -1926,7 +1929,7 @@ printrecordmap (RecordMap *recmap, flag details)
 	  else ms_hptime2seedtimestr (rec->newstart, stime);
 	  if ( rec->newend == 0 ) strcpy (etime, "NONE" );
 	  else ms_hptime2seedtimestr (rec->newend, etime);
-	  fprintf (stderr, " Start bound: %-24s End bound: %-24s\n", stime, etime);
+	  ms_log (0, " Start bound: %-24s End bound: %-24s\n", stime, etime);
 	}
       
       rec = rec->next;
@@ -1953,7 +1956,7 @@ processparam (int argcount, char **argvec)
     {
       if (strcmp (argvec[optind], "-V") == 0)
 	{
-	  fprintf (stderr, "%s version: %s\n", PACKAGE, VERSION);
+	  ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
 	  exit (0);
 	}
       else if (strcmp (argvec[optind], "-h") == 0)
@@ -2046,7 +2049,7 @@ processparam (int argcount, char **argvec)
           
           if ( ! MS_ISDATAINDICATOR (restampqind) )
             {
-              fprintf(stderr, "ERROR Invalid data indicator: '%c'\n", restampqind);
+              ms_log (2, "Invalid data indicator: '%c'\n", restampqind);
               exit (1);
             }
         }
@@ -2072,7 +2075,7 @@ processparam (int argcount, char **argvec)
 	  
 	  if ( ! podreqfile || ! poddatadir )
 	    {
-	      fprintf (stderr, "ERROR Option -POD requires two values, try -h for usage\n");
+	      ms_log (2, "Option -POD requires two values, try -h for usage\n");
 	      exit (1);
 	    }
         }
@@ -2099,7 +2102,7 @@ processparam (int argcount, char **argvec)
       else if (strncmp (argvec[optind], "-", 1) == 0 &&
 	       strlen (argvec[optind]) > 1 )
 	{
-	  fprintf(stderr, "ERROR Unknown option: %s\n", argvec[optind]);
+	  ms_log (2, "Unknown option: %s\n", argvec[optind]);
 	  exit (1);
 	}
       else
@@ -2111,16 +2114,16 @@ processparam (int argcount, char **argvec)
   /* Cannot specify both input files and POD */
   if ( filelist && (podreqfile && poddatadir) )
     {
-      fprintf (stderr, "ERROR Cannot specify both input files and POD structure\n");
+      ms_log (2, "Cannot specify both input files and POD structure\n");
       exit (1);
     }
   
   /* Make sure input file(s) or POD were specified */
   if ( filelist == 0 && ! (podreqfile && poddatadir) )
     {
-      fprintf (stderr, "No input files were specified\n\n");
-      fprintf (stderr, "%s version %s\n\n", PACKAGE, VERSION);
-      fprintf (stderr, "Try %s -h for usage\n", PACKAGE);
+      ms_log (2, "No input files were specified\n\n");
+      ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
+      ms_log (1, "Try %s -h for usage\n", PACKAGE);
       exit (1);
     }
 
@@ -2134,7 +2137,7 @@ processparam (int argcount, char **argvec)
 	  
 	  if ( readregexfile (tptr, &matchpattern) <= 0 )
 	    {
-	      fprintf (stderr, "ERROR reading match pattern regex file\n");
+	      ms_log (2, "Cannot read match pattern regex file\n");
 	      exit (1);
 	    }
 	}
@@ -2150,7 +2153,7 @@ processparam (int argcount, char **argvec)
 	  
 	  if ( readregexfile (tptr, &rejectpattern) <= 0 )
 	    {
-	      fprintf (stderr, "ERROR reading reject pattern regex file\n");
+	      ms_log (2, "Cannot read reject pattern regex file\n");
 	      exit (1);
 	    }
 	}
@@ -2163,7 +2166,7 @@ processparam (int argcount, char **argvec)
       
       if ( regcomp (match, matchpattern, REG_EXTENDED) != 0)
 	{
-	  fprintf (stderr, "ERROR compiling match regex: '%s'\n", matchpattern);
+	  ms_log (2, "Cannot compile match regex: '%s'\n", matchpattern);
 	}
     }
   
@@ -2173,13 +2176,13 @@ processparam (int argcount, char **argvec)
       
       if ( regcomp (reject, rejectpattern, REG_EXTENDED) != 0)
 	{
-	  fprintf (stderr, "ERROR compiling reject regex: '%s'\n", rejectpattern);
+	  ms_log (2, "Cannot compile reject regex: '%s'\n", rejectpattern);
 	}
     }
 
   /* Report the program version */
   if ( verbose )
-    fprintf (stderr, "%s version: %s\n", PACKAGE, VERSION);
+    ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
   
   return 0;
 }  /* End of processparam() */
@@ -2201,7 +2204,7 @@ static char *
 getoptval (int argcount, char **argvec, int argopt)
 {
   if ( argvec == NULL || argvec[argopt] == NULL ) {
-    fprintf (stderr, "ERROR getoptval(): NULL option requested\n");
+    ms_log (2, "getoptval(): NULL option requested\n");
     exit (1);
     return 0;
   }
@@ -2214,7 +2217,7 @@ getoptval (int argcount, char **argvec, int argopt)
   if ( (argopt+1) < argcount && *argvec[argopt+1] != '-' )
     return argvec[argopt+1];
   
-  fprintf (stderr, "ERROR Option %s requires a value, try -h for usage\n", argvec[argopt]);
+  ms_log (2, "Option %s requires a value, try -h for usage\n", argvec[argopt]);
   exit (1);
   return 0;
 }  /* End of getoptval() */
@@ -2232,7 +2235,7 @@ addfile (char *filename, ReqRec *reqrec)
   
   if ( filename == NULL )
     {
-      fprintf (stderr, "ERROR addfile(): No file name specified\n");
+      ms_log (2, "addfile(): No file name specified\n");
       return;
     }
   
@@ -2283,7 +2286,7 @@ addarchive ( const char *path, const char *layout )
   
   if ( ! path )
     {
-      fprintf (stderr, "addarchive: cannot add archive with empty path\n");
+      ms_log (2, "addarchive(): cannot add archive with empty path\n");
       return -1;
     }
 
@@ -2291,7 +2294,7 @@ addarchive ( const char *path, const char *layout )
   
   if ( newarch == NULL )
     {
-      fprintf (stderr, "addarchive: cannot allocate memory for new archive definition\n");
+      ms_log (2, "addarchive(): cannot allocate memory for new archive definition\n");
       return -1;
     }
   
@@ -2311,7 +2314,7 @@ addarchive ( const char *path, const char *layout )
   
   if ( newarch->datastream.path == NULL )
     {
-      fprintf (stderr, "addarchive: cannot allocate memory for new archive path\n");
+      ms_log (2, "addarchive(): cannot allocate memory for new archive path\n");
       if ( newarch )
         free (newarch);
       return -1;
@@ -2347,13 +2350,13 @@ readregexfile (char *regexfile, char **pppattern)
   /* Open the regex list file */
   if ( (fp = fopen (regexfile, "rb")) == NULL )
     {
-      fprintf (stderr, "ERROR opening regex list file %s: %s\n",
-	       regexfile, strerror (errno));
+      ms_log (2, "Cannot open regex list file %s: %s\n",
+	      regexfile, strerror (errno));
       return -1;
     }
   
   if ( verbose )
-    fprintf (stderr, "Reading regex list from %s\n", regexfile);
+    ms_log (1, "Reading regex list from %s\n", regexfile);
   
   *pppattern = NULL;
   

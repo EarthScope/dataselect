@@ -1,3 +1,6 @@
+2006.354: 0.4
+	- Convert all diagnostic output to use ms_log routines.
+
 2006.354: 0.3
 	- Update to libmseed 2.0rc1.
 	- Add -lm to link libraries in src/Makefile.

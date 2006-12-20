@@ -7,7 +7,7 @@
  * Written by Chad Trabant,
  *   IRIS Data Management Center
  *
- * modified: 2006.346
+ * modified: 2006.354
  ***************************************************************************/
 
 #include <stdio.h>
@@ -331,7 +331,7 @@ msr_pack ( MSRecord * msr, void (*record_handler) (char *, int),
       if ( headerswapflag ) ms_gswap2 (HPnumsamples);
       
       if ( verbose > 0 )
-	ms_log (1, "%s: Packed %d samples\n", packsamples, PACK_SRCNAME);
+	ms_log (1, "%s: Packed %d samples\n", PACK_SRCNAME, packsamples);
       
       /* Send record to handler */
       record_handler (rawrec, msr->reclen);
@@ -349,10 +349,10 @@ msr_pack ( MSRecord * msr, void (*record_handler) (char *, int),
       if ( totalpackedsamples >= msr->numsamples )
 	break;
     }
-
+  
   if ( verbose > 2 )
-    ms_log (1, "%s: Packed %d total samples\n", totalpackedsamples, PACK_SRCNAME);
-
+    ms_log (1, "%s: Packed %d total samples\n", PACK_SRCNAME, totalpackedsamples);
+  
   free (rawrec);
   
   return recordcnt;

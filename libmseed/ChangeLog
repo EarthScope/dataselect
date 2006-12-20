@@ -1,5 +1,6 @@
 2006.354: 2.0rc1
 	- Stamp 2.0rc1.
+        - Fix diagnostic printing bug in pack.c.
 	- Fix ms_gswap.3 man page.
 
 2006.346:
