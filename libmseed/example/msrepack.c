@@ -9,7 +9,7 @@
  *
  * Written by Chad Trabant, ORFEUS/EC-Project MEREDIAN
  *
- * modified 2006.283
+ * modified 2006.331
  ***************************************************************************/
 
 #include <stdio.h>
@@ -88,7 +88,7 @@ main (int argc, char **argv)
       
       if ( putenv (envvariable) )
 	{
-	  fprintf (stderr, "Error setting environment variable UNPACK_DATA_FORMAT\n");
+	  ms_log (2, "Error setting environment variable UNPACK_DATA_FORMAT\n");
 	  return -1;
 	}
     }
@@ -126,7 +126,7 @@ main (int argc, char **argv)
 	 be used as a packing template. */
       if ( msr->fsdh->time_correct && ! (msr->fsdh->act_flags & 0x02) )
 	{
-	  printf ("Setting time correction applied flag for %s_%s_%s_%s\n",
+	  ms_log (1, "Setting time correction applied flag for %s_%s_%s_%s\n",
 		  msr->network, msr->station, msr->location, msr->channel);
 	  msr->fsdh->act_flags |= 0x02;
 	}
@@ -146,9 +146,9 @@ main (int argc, char **argv)
 	  packedrecords = msr_pack (msr, &record_handler, &packedsamples, 1, verbose);
 	  
 	  if ( packedrecords == -1 )
-	    printf ("Error packing records\n"); 
+	    ms_log (2, "Cannot pack records\n"); 
 	  else
-	    printf ("Packed %d records\n", packedrecords); 
+	    ms_log (1, "Packed %d records\n", packedrecords); 
 	  
 	  iseqnum = msr->sequence_number;
 	}
@@ -181,13 +181,13 @@ main (int argc, char **argv)
 	    {
 	      packedrecords = mst_packgroup (mstg, &record_handler, packreclen, packencoding, byteorder,
 					     &packedsamples, lastrecord, verbose, msr);
-	      printf ("Packed %d records\n", packedrecords);
+	      ms_log (1, "Packed %d records\n", packedrecords);
 	    }
 	  if ( tracepack == 2 && lastrecord )
 	    {
 	      packedrecords = mst_packgroup (mstg, &record_handler, packreclen, packencoding, byteorder,
 					     &packedsamples, lastrecord, verbose, msr);
-	      printf ("Packed %d records\n", packedrecords);
+	      ms_log (1, "Packed %d records\n", packedrecords);
 	    }
 
 	  /* Reset sequence numbers in MSTrace holder from template */
@@ -201,7 +201,7 @@ main (int argc, char **argv)
     }
   
   if ( retcode != MS_ENDOFFILE )
-    fprintf (stderr, "Error reading %s: %s\n", inputfile, get_errorstr(retcode));
+    ms_log (2, "Error reading %s: %s\n", inputfile, ms_errorstr(retcode));
   
   /* Make sure everything is cleaned up */
   ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
@@ -231,7 +231,7 @@ parameter_proc (int argcount, char **argvec)
     {
       if (strcmp (argvec[optind], "-V") == 0)
 	{
-	  fprintf (stderr, "%s version: %s\n", PACKAGE, VERSION);
+	  ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
 	  exit (0);
 	}
       else if (strcmp (argvec[optind], "-h") == 0)
@@ -283,15 +283,15 @@ parameter_proc (int argcount, char **argvec)
 	{
 	  if ( (outfile = fopen(argvec[++optind], "wb")) == NULL )
 	    {
-	      fprintf (stderr, "Error opening output file: %s\n",
-		       argvec[++optind]);
+	      ms_log (2, "Error opening output file: %s\n",
+		      argvec[++optind]);
 	      exit (0);
 	    }	       
 	}
       else if (strncmp (argvec[optind], "-", 1) == 0 &&
 	       strlen (argvec[optind]) > 1 )
 	{
-	  fprintf(stderr, "Unknown option: %s\n", argvec[optind]);
+	  ms_log (2, "Unknown option: %s\n", argvec[optind]);
 	  exit (1);
 	}
       else if ( ! inputfile )
@@ -300,7 +300,7 @@ parameter_proc (int argcount, char **argvec)
 	}
       else
 	{
-	  fprintf(stderr, "Unknown option: %s\n", argvec[optind]);
+	  ms_log (2, "Unknown option: %s\n", argvec[optind]);
 	  exit (1);
 	}
     }
@@ -308,24 +308,24 @@ parameter_proc (int argcount, char **argvec)
   /* Make sure an inputfile was specified */
   if ( ! inputfile )
     {
-      fprintf (stderr, "No input file was specified\n\n");
-      fprintf (stderr, "%s version %s\n\n", PACKAGE, VERSION);
-      fprintf (stderr, "Try %s -h for usage\n", PACKAGE);
+      ms_log (2, "No input file was specified\n\n");
+      ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
+      ms_log (1, "Try %s -h for usage\n", PACKAGE);
       exit (1);
     }
 
   /* Make sure an outputfile was specified */
   if ( ! outfile )
     {
-      fprintf (stderr, "No output file was specified\n\n");
-      fprintf (stderr, "Try %s -h for usage\n", PACKAGE);
+      ms_log (2, "No output file was specified\n\n");
+      ms_log (1, "Try %s -h for usage\n", PACKAGE);
       exit (1);
     }
-
+  
   /* Report the program version */
   if ( verbose )
-    fprintf (stderr, "%s version: %s\n", PACKAGE, VERSION);
-
+    ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
+  
   return 0;
 }  /* End of parameter_proc() */
 
@@ -339,7 +339,7 @@ record_handler (char *record, int reclen)
 {
   if ( fwrite(record, reclen, 1, outfile) != 1 )
     {
-      fprintf (stderr, "Error writing to output file\n");
+      ms_log (2, "Cannot write to output file\n");
     }
 }  /* End of record_handler() */
 

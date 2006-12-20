@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.297
+ * modified 2006.354
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -31,7 +31,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -956,7 +956,7 @@ trimrecord (Record *rec, char *recordbuf)
   /* Unpack data record */
   if ( (retcode = msr_unpack(recordbuf, rec->reclen, &msr, 1, verbose-1)) != MS_NOERROR )
     {
-      fprintf (stderr, "ERROR: cannot unpacking Mini-SEED record: %s\n", get_errorstr(retcode));
+      fprintf (stderr, "ERROR: cannot unpacking Mini-SEED record: %s\n", ms_errorstr(retcode));
       return -1;
     }
   
@@ -1001,7 +1001,7 @@ trimrecord (Record *rec, char *recordbuf)
 	  fprintf (stderr, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
 	}
       
-      samplesize = get_samplesize (msr->sampletype);
+      samplesize = ms_samplesize (msr->sampletype);
       
       memmove (msr->datasamples,
 	       (char *)msr->datasamples + (samplesize * trimsamples),
@@ -1734,7 +1734,7 @@ readfiles (void)
 	}
       
       if ( retcode != MS_ENDOFFILE )
-	fprintf (stderr, "ERROR reading %s: %s\n", flp->infilename, get_errorstr(retcode));
+	fprintf (stderr, "ERROR reading %s: %s\n", flp->infilename, ms_errorstr(retcode));
       
       /* Make sure everything is cleaned up */
       ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);

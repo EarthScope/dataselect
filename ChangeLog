@@ -1,3 +1,6 @@
+2006.354: 0.3
+	- Update to libmseed 2.0rc1.
+
 2006.296: 0.2
 	- Update to libmseed 2.0pre3.
 	- Do not sort MSTraceGroup using the quality indicator so output

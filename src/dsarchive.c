@@ -10,7 +10,7 @@
  * file.  The definition of the groups is implied by the format of the
  * archive.
  *
- * modified: 2006.082
+ * modified: 2006.354
  ***************************************************************************/
 
 #include <stdio.h>
@@ -329,7 +329,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 	  if ( dsverbose >= 3 )
 	    fprintf (stderr, "Writing binary data samples to data stream file %s\n", filename);
 	  
-	  if ( !write (foundgroup->filed, msr->datasamples, msr->numsamples * get_samplesize(msr->sampletype)) )
+	  if ( !write (foundgroup->filed, msr->datasamples, msr->numsamples * ms_samplesize(msr->sampletype)) )
 	    {
 	      fprintf (stderr, "ds_streamproc: failed to write binary data samples\n");
 	      return -1;

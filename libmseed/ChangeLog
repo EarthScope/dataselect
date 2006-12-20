@@ -1,3 +1,74 @@
+2006.354: 2.0rc1
+	- Stamp 2.0rc1.
+	- Fix ms_gswap.3 man page.
+
+2006.346:
+	- Change "get_" prefix for lookup routines to "ms_".
+	- Change ms_encoding() to ms_encodingstr().
+	- Document ms_errorstr() in the lookup and other man pages.
+	- Document and use ms_log(3) in User Guide/ms_intro(3).
+
+2006.344:
+	- Add "ms_" prefix to gswap routines.
+	- Change SWAPBTIME macro to MS_SWAPBTIME.
+
+2006.339: 2.0pre8
+	- Add buffer length sanity check in ms_find_reclen() suggested by
+	Doreen Pahlke.
+	- Change mst_printracelist() and mst_printgaplist() to print
+	"-0" when the gap is 0 (one sample overlap) and "==" when there
+	is no gap.
+
+2006.332:
+	- Add memory allocation checks, every allocation is now tested.
+	- Fix usage message for example programs, use fprintf for the long
+	section of the output.
+
+2006.331: 2.0pre7
+	- Add source name to all unpacking error and diagnostic messages.
+        - Add source name to all packing error and diagnostic messages.
+	- Reorganize sanity check code in msr_unpack() to use the
+	MS_ISVALIDHEADER macro.
+	- Add ms_recsrcname() function to calculate the source name for 
+	an unpacked record.
+
+2006.326: 2.0pre6
+	- Add ms_readmsr_r() as a reenentrant, thread safe version of what
+	ms_readmsr() to to be and make ms_readmsr() a wrapper for the new
+	reentrant version that uses global file reading parameters.
+	- Use ms_readmsr_r() in ms_readtraces() so that it's now thread
+	safe too.
+	- Add logging.c routines and declarations in libmseed.h.  This
+	constitutes a new logging facility that is used throughout the
+	library and can be used by libmseed based programs.  The facility
+	allows the caller to redirect all the log, diagnostic and error
+	output from the library to specific functions.  The facility 
+	also allows user specifed prefixes for all output messages.
+
+2006.321:
+	- Prefix all data encoding type defines with DE_ to avoid collision.
+	- Add GEOSCOPE (three subtypes), SRO and DWWSSN data decoders, there
+	are no encoders for these types.
+	- Need of the pow() function now requires linking with -lm (math lib).
+
+2006.312: 2.0pre5
+	- Add MS_ISVALIDBLANK macro to libmseed.h to test memory for valid
+	blank/noise records: valid sequence number followed by ASCII spaces.
+	- Use MS_ISVALIDBLANK in ms_find_reclen() to implicitly find record
+	lengths, when reading ahead the record length can now be determined
+	if then next record is a real data record or a blank record.
+	- Use MS_ISVALIDBLANK in ms_readmsr() to print out a more specific
+	message when skipping blank records as opposed to non-data records
+	records.
+
+2006.311: 2.0pre4
+	- Use MS_ISVALIDHEADER instead of MS_ISDATAINDICATOR when verifying
+	data records when the record length is not autodetected in ms_readmsr().
+	- In msr_unpack_data() move the test of reallocation directly after
+	the reallocation so it's only tested when actually done.
+	- In msr_unpack_data() include text description of encoding in the
+	unsupported encoding error message.
+
 2006.296: 2.0pre3
 	- Add 'quality' flag argument to mst_srcname() to control the 
 	addition of the quality indicator in the srcname.

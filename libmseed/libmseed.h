@@ -30,20 +30,25 @@ extern "C" {
 
 #include "lmplatform.h"
 
-#define LIBMSEED_VERSION "2.0pre3"
-#define LIBMSEED_RELEASE "2006.296"
-  
+#define LIBMSEED_VERSION "2.0rc1"
+#define LIBMSEED_RELEASE "2006.354"
+
 #define MINRECLEN   256      /* Minimum Mini-SEED record length, 2^8 bytes */
 #define MAXRECLEN   1048576  /* Maximum Mini-SEED record length, 2^20 bytes */
 
 /* SEED data encoding types */
-#define ASCII      0
-#define INT16      1
-#define INT32      3
-#define FLOAT32    4
-#define FLOAT64    5
-#define STEIM1     10
-#define STEIM2     11
+#define DE_ASCII       0
+#define DE_INT16       1
+#define DE_INT32       3
+#define DE_FLOAT32     4
+#define DE_FLOAT64     5
+#define DE_STEIM1      10
+#define DE_STEIM2      11
+#define DE_GEOSCOPE24  12
+#define DE_GEOSCOPE163 13
+#define DE_GEOSCOPE164 14
+#define DE_SRO         30
+#define DE_DWWSSN      32
 
 /* Library return and error code values, error values should always be negative */
 #define MS_ENDOFFILE        1        /* End of file reached return value */
@@ -99,6 +104,38 @@ extern "C" {
 			     (int)(*(X+24)) >= 0 && (int)(*(X+24)) <= 23 && \
 			     (int)(*(X+25)) >= 0 && (int)(*(X+25)) <= 59 && \
 			     (int)(*(X+26)) >= 0 && (int)(*(X+26)) <= 60)
+
+/* Macro to test memory for a blank/noise SEED data record signature
+ * by checking for a valid SEED sequence number and padding characters
+ * to determine if the memory contains a valid blank/noise record.
+ * 
+ * Offset = Value
+ * [0-5]  = Digits, SEED sequence number
+ * [6-47] = Space character (ASCII 32), remainder of fixed header
+ *
+ * Usage:
+ *   MS_ISVALIDBLANK ((char *)X)  X buffer must contain at least 27 bytes
+ */
+#define MS_ISVALIDBLANK(X) (isdigit ((unsigned char) *(X)) &&                 \
+			    isdigit ((unsigned char) *(X+1)) &&		      \
+			    isdigit ((unsigned char) *(X+2)) &&		      \
+			    isdigit ((unsigned char) *(X+3)) &&		      \
+			    isdigit ((unsigned char) *(X+4)) &&		      \
+			    isdigit ((unsigned char) *(X+5)) &&	 	      \
+			    (*(X+6)==' ')&&(*(X+7)==' ')&&(*(X+8)==' ') &&    \
+			    (*(X+9)==' ')&&(*(X+10)==' ')&&(*(X+11)==' ') &&  \
+			    (*(X+12)==' ')&&(*(X+13)==' ')&&(*(X+14)==' ') && \
+			    (*(X+15)==' ')&&(*(X+16)==' ')&&(*(X+17)==' ') && \
+			    (*(X+18)==' ')&&(*(X+19)==' ')&&(*(X+20)==' ') && \
+			    (*(X+21)==' ')&&(*(X+22)==' ')&&(*(X+23)==' ') && \
+			    (*(X+24)==' ')&&(*(X+25)==' ')&&(*(X+26)==' ') && \
+			    (*(X+27)==' ')&&(*(X+28)==' ')&&(*(X+29)==' ') && \
+			    (*(X+30)==' ')&&(*(X+31)==' ')&&(*(X+32)==' ') && \
+			    (*(X+33)==' ')&&(*(X+34)==' ')&&(*(X+35)==' ') && \
+			    (*(X+36)==' ')&&(*(X+37)==' ')&&(*(X+38)==' ') && \
+			    (*(X+39)==' ')&&(*(X+40)==' ')&&(*(X+41)==' ') && \
+			    (*(X+42)==' ')&&(*(X+43)==' ')&&(*(X+44)==' ') && \
+			    (*(X+45)==' ')&&(*(X+46)==' ')&&(*(X+47)==' ') )
 
 /* Require a large (>= 64-bit) integer type for hptime_t */
 typedef int64_t hptime_t;
@@ -432,14 +469,30 @@ extern int           mst_packgroup (MSTraceGroup *mstg, void (*record_handler) (
 
 
 /* Reading Mini-SEED records from files */
+typedef struct MSFileParam_s
+{
+  FILE *fp;
+  char *rawrec;
+  char  filename[512];
+  int   autodet;
+  int   readlen;
+  int   packinfolen;
+  off_t packinfooffset;
+  off_t filepos;
+  int   recordcount;
+} MSFileParam;
+
 extern int      ms_readmsr (MSRecord **ppmsr, char *msfile, int reclen, off_t *fpos, int *last,
 			    flag skipnotdata, flag dataflag, flag verbose);
+extern int      ms_readmsr_r (MSFileParam **ppmsfp, MSRecord **ppmsr, char *msfile, int reclen,
+			      off_t *fpos, int *last, flag skipnotdata, flag dataflag, flag verbose);
 extern int      ms_readtraces (MSTraceGroup **ppmstg, char *msfile, int reclen, double timetol, double sampratetol,
 			       flag dataquality, flag skipnotdata, flag dataflag, flag verbose);
 extern int      ms_find_reclen (const char *recbuf, int recbuflen, FILE *fileptr);
 
 
 /* General use functions */
+extern char*    ms_recsrcname (char *record, char *srcname, flag quality);
 extern int      ms_strncpclean (char *dest, const char *source, int length);
 extern int      ms_strncpopen (char *dest, const char *source, int length);
 extern int      ms_doy2md (int year, int jday, int *month, int *mday);
@@ -459,29 +512,48 @@ extern int      ms_bigendianhost ();
 extern double   ms_dabs (double val);
 
 /* Lookup functions */
-extern uint8_t  get_samplesize (const char sampletype);
-extern char*    get_encoding (const char encoding);
-extern char*    get_blktdesc (uint16_t blkttype);
-extern uint16_t get_blktlen (uint16_t blkttype, const char *blktdata, flag swapflag);
-extern char *   get_errorstr (int errorcode);
+extern uint8_t  ms_samplesize (const char sampletype);
+extern char*    ms_encodingstr (const char encoding);
+extern char*    ms_blktdesc (uint16_t blkttype);
+extern uint16_t ms_blktlen (uint16_t blkttype, const char *blktdata, flag swapflag);
+extern char *   ms_errorstr (int errorcode);
 
+/* Logging facility */
+#define MAX_LOG_MSG_LENGTH  200      /* Maximum length of log messages */
+
+/* Logging parameters */
+typedef struct MSLogParam_s
+{
+  void (*log_print)();
+  const char *logprefix;
+  void (*diag_print)();
+  const char *errprefix;
+} MSLogParam;
+
+extern int    ms_log (int level, ...);
+extern int    ms_log_l (MSLogParam *logp, int level, ...);
+extern void   ms_loginit (void (*log_print)(const char*), const char *logprefix,
+			  void (*diag_print)(const char*), const char *errprefix);
+extern MSLogParam *ms_loginit_l (MSLogParam *logp,
+			         void (*log_print)(const char*), const char *logprefix,
+			         void (*diag_print)(const char*), const char *errprefix);
 
 /* Generic byte swapping routines */
-extern void     gswap2 ( void *data2 );
-extern void     gswap3 ( void *data3 );
-extern void     gswap4 ( void *data4 );
-extern void     gswap8 ( void *data8 );
+extern void     ms_gswap2 ( void *data2 );
+extern void     ms_gswap3 ( void *data3 );
+extern void     ms_gswap4 ( void *data4 );
+extern void     ms_gswap8 ( void *data8 );
 
 /* Generic byte swapping routines for memory aligned quantities */
-extern void     gswap2a ( void *data2 );
-extern void     gswap4a ( void *data4 );
-extern void     gswap8a ( void *data8 );
+extern void     ms_gswap2a ( void *data2 );
+extern void     ms_gswap4a ( void *data4 );
+extern void     ms_gswap8a ( void *data8 );
 
 /* Byte swap macro for the BTime struct */
-#define SWAPBTIME(x) \
-  gswap2 (x.year);   \
-  gswap2 (x.day);    \
-  gswap2 (x.fract);
+#define MS_SWAPBTIME(x) \
+  ms_gswap2 (x.year);   \
+  ms_gswap2 (x.day);    \
+  ms_gswap2 (x.fract);
 
 
 #ifdef __cplusplus

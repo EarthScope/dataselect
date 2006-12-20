@@ -13,13 +13,13 @@
  *   ORFEUS/EC-Project MEREDIAN
  *   IRIS Data Management Center
  *
- * modified: 2006.182
+ * modified: 2006.346
  ***************************************************************************/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
 
 #include "libmseed.h"
 #include "unpackdata.h"
@@ -37,6 +37,10 @@ static flag databyteorder   = -2;
 /* -2 = not checked, -1 = checked but not set, or = encoding */
 static int encodingformat   = -2;
 static int encodingfallback = -2;
+
+/* A pointer to the srcname of the record being unpacked */
+char *UNPACK_SRCNAME = NULL;
+
 
 /***************************************************************************
  * msr_unpack:
@@ -76,6 +80,7 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
   
   MSRecord *msr = NULL;
   char sequence_number[7];
+  char srcname[50];
   
   /* For blockette parsing */
   BlktLink *blkt_link;
@@ -86,13 +91,25 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
   
   if ( ! ppmsr )
     {
-      fprintf (stderr, "msr_unpack(): ppmsr argument cannot be NULL\n");
+      ms_log (2, "msr_unpack(): ppmsr argument cannot be NULL\n");
       return MS_GENERROR;
     }
   
+  /* Verify that record includes a valid header */
+  if ( ! MS_ISVALIDHEADER(record) )
+    {
+      ms_recsrcname (record, srcname, 1);
+      ms_log (2, "msr_unpack(%s) Record header & quality indicator unrecognized: '%c'\n", srcname);
+      ms_log (2, "msr_unpack(%s) This is not a valid Mini-SEED record\n", srcname);
+      
+      return MS_NOTSEED;
+    }
+  
+  /* Verify that passed record length is within supported range */
   if ( reclen < MINRECLEN || reclen > MAXRECLEN )
     {
-      fprintf (stderr, "msr_unpack(): record length is out of range: %d\n", reclen);
+      ms_recsrcname (record, srcname, 1);
+      ms_log (2, "msr_unpack(%s): Record length is out of range: %d\n", srcname, reclen);
       return MS_OUTOFRANGE;
     }
   
@@ -100,13 +117,11 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
   if ( ! (*ppmsr = msr_init (*ppmsr)) )
     return MS_GENERROR;
   
-  /* Shortcut pointer, historical */
+  /* Shortcut pointer, historical and help readability */
   msr = *ppmsr;
   
+  /* Set raw record pointer and record length */
   msr->record = record;
-  
-  msr->dataquality = *(record+6);
-  
   msr->reclen = reclen;
   
   /* Check environment variables if necessary */
@@ -117,20 +132,16 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
     if ( check_environment(verbose) )
       return MS_GENERROR;
   
-  /* Verify record indicator, allocate and populate fixed section of header */
-  if ( MS_ISDATAINDICATOR(msr->dataquality) )
+  /* Allocate and copy fixed section of data header */
+  msr->fsdh = realloc (msr->fsdh, sizeof (struct fsdh_s));
+  
+  if ( msr->fsdh == NULL )
     {
-      msr->fsdh = realloc (msr->fsdh, sizeof (struct fsdh_s));
-      memcpy (msr->fsdh, record, sizeof (struct fsdh_s));
+      ms_log (2, "msr_unpack(): Cannot allocate memory\n");
+      return MS_GENERROR;
     }
-  else
-    {
-      fprintf (stderr, "Record header & quality indicator unrecognized: '%c'\n",
-	       msr->dataquality);
-      fprintf (stderr, "This is not a valid Mini-SEED record\n");
-      
-      return MS_NOTSEED;
-    }
+  
+  memcpy (msr->fsdh, record, sizeof (struct fsdh_s));
   
   /* Check to see if byte swapping is needed by testing the year */
   if ( (msr->fsdh->start_time.year < 1920) ||
@@ -148,35 +159,49 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
       dataswapflag = ( ms_bigendianhost() != databyteorder ) ? 1 : 0;
     }
   
-  if ( verbose > 2 )
-    {
-      if ( headerswapflag )
-	fprintf (stderr, "Byte swapping needed for unpacking of header\n");
-      else
-	fprintf (stderr, "Byte swapping NOT needed for unpacking of header\n");
-    }
-  
   /* Swap byte order? */
   if ( headerswapflag )
     {
-      SWAPBTIME (&msr->fsdh->start_time);
-      gswap2a (&msr->fsdh->numsamples);
-      gswap2a (&msr->fsdh->samprate_fact);
-      gswap2a (&msr->fsdh->samprate_mult);
-      gswap4a (&msr->fsdh->time_correct);
-      gswap2a (&msr->fsdh->data_offset);
-      gswap2a (&msr->fsdh->blockette_offset);
+      MS_SWAPBTIME (&msr->fsdh->start_time);
+      ms_gswap2a (&msr->fsdh->numsamples);
+      ms_gswap2a (&msr->fsdh->samprate_fact);
+      ms_gswap2a (&msr->fsdh->samprate_mult);
+      ms_gswap4a (&msr->fsdh->time_correct);
+      ms_gswap2a (&msr->fsdh->data_offset);
+      ms_gswap2a (&msr->fsdh->blockette_offset);
     }
   
   /* Populate some of the common header fields */
   ms_strncpclean (sequence_number, msr->fsdh->sequence_number, 6);
   msr->sequence_number = (int32_t) strtol (sequence_number, NULL, 10);
+  msr->dataquality = msr->fsdh->dataquality;
   ms_strncpclean (msr->network, msr->fsdh->network, 2);
   ms_strncpclean (msr->station, msr->fsdh->station, 5);
   ms_strncpclean (msr->location, msr->fsdh->location, 2);
   ms_strncpclean (msr->channel, msr->fsdh->channel, 3);
   msr->samplecnt = msr->fsdh->numsamples;
-
+  
+  /* Generate source name for MSRecord */
+  if ( msr_srcname (msr, srcname, 1) == NULL )
+    {
+      ms_log (2, "msr_unpack_data(): Cannot generate srcname\n");
+      return MS_GENERROR;
+    }
+  
+  /* Set shared srcname pointer to source name */
+  UNPACK_SRCNAME = &srcname[0];
+  
+  /* Report byte swapping status */
+  if ( verbose > 2 )
+    {
+      if ( headerswapflag )
+	ms_log (1, "%s: Byte swapping needed for unpacking of header\n",
+		UNPACK_SRCNAME);
+      else
+	ms_log (1, "%s: Byte swapping NOT needed for unpacking of header\n",
+		UNPACK_SRCNAME);
+    }
+  
   /* Traverse the blockettes */
   blkt_offset = msr->fsdh->blockette_offset;
   
@@ -192,26 +217,27 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
       
       if ( headerswapflag )
 	{
-	  gswap2 (&blkt_type);
-	  gswap2 (&next_blkt);
+	  ms_gswap2 (&blkt_type);
+	  ms_gswap2 (&next_blkt);
 	}
       
       /* Get blockette length */
-      blkt_length = get_blktlen (blkt_type,
-				 record + blkt_offset - 4,
-				 headerswapflag);
+      blkt_length = ms_blktlen (blkt_type,
+				record + blkt_offset - 4,
+				headerswapflag);
       
       if ( blkt_length == 0 )
 	{
-	  fprintf (stderr, "Unknown blockette length for type %d\n", blkt_type);
+	  ms_log (2, "msr_unpack(%s): Unknown blockette length for type %d\n",
+		  UNPACK_SRCNAME, blkt_type);
 	  break;
 	}
       
       /* Make sure blockette is contained within the msrecord buffer */
       if ( (blkt_offset - 4 + blkt_length) > reclen )
 	{
-	  fprintf (stderr, "Blockette %d extends beyond record size, truncated?\n",
-		   blkt_type);
+	  ms_log (2, "msr_unpack(%s): Blockette %d extends beyond record size, truncated?\n",
+		  UNPACK_SRCNAME, blkt_type);
 	  break;
 	}
       
@@ -231,7 +257,7 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      gswap4 (&blkt_100->samprate);
+	      ms_gswap4 (&blkt_100->samprate);
 	    }
 	  
 	  msr->samprate = msr->Blkt100->samprate;
@@ -253,10 +279,10 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      gswap4 (&blkt_200->amplitude);
-	      gswap4 (&blkt_200->period);
-	      gswap4 (&blkt_200->background_estimate);
-	      SWAPBTIME (&blkt_200->time);
+	      ms_gswap4 (&blkt_200->amplitude);
+	      ms_gswap4 (&blkt_200->period);
+	      ms_gswap4 (&blkt_200->background_estimate);
+	      MS_SWAPBTIME (&blkt_200->time);
 	    }
 	}
 
@@ -276,10 +302,10 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      gswap4 (&blkt_201->amplitude);
-	      gswap4 (&blkt_201->period);
-	      gswap4 (&blkt_201->background_estimate);
-	      SWAPBTIME (&blkt_201->time);
+	      ms_gswap4 (&blkt_201->amplitude);
+	      ms_gswap4 (&blkt_201->period);
+	      ms_gswap4 (&blkt_201->background_estimate);
+	      MS_SWAPBTIME (&blkt_201->time);
 	    }
 	}
       
@@ -299,11 +325,11 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      SWAPBTIME (&blkt_300->time);
-	      gswap4 (&blkt_300->step_duration);
-	      gswap4 (&blkt_300->interval_duration);
-	      gswap4 (&blkt_300->amplitude);
-	      gswap4 (&blkt_300->reference_amplitude);
+	      MS_SWAPBTIME (&blkt_300->time);
+	      ms_gswap4 (&blkt_300->step_duration);
+	      ms_gswap4 (&blkt_300->interval_duration);
+	      ms_gswap4 (&blkt_300->amplitude);
+	      ms_gswap4 (&blkt_300->reference_amplitude);
 	    }
 	}
       
@@ -323,11 +349,11 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      SWAPBTIME (&blkt_310->time);
-	      gswap4 (&blkt_310->duration);
-	      gswap4 (&blkt_310->period);
-	      gswap4 (&blkt_310->amplitude);
-	      gswap4 (&blkt_310->reference_amplitude);
+	      MS_SWAPBTIME (&blkt_310->time);
+	      ms_gswap4 (&blkt_310->duration);
+	      ms_gswap4 (&blkt_310->period);
+	      ms_gswap4 (&blkt_310->amplitude);
+	      ms_gswap4 (&blkt_310->reference_amplitude);
 	    }
 	}
       
@@ -347,10 +373,10 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      SWAPBTIME (&blkt_320->time);
-	      gswap4 (&blkt_320->duration);
-	      gswap4 (&blkt_320->ptp_amplitude);
-	      gswap4 (&blkt_320->reference_amplitude);
+	      MS_SWAPBTIME (&blkt_320->time);
+	      ms_gswap4 (&blkt_320->duration);
+	      ms_gswap4 (&blkt_320->ptp_amplitude);
+	      ms_gswap4 (&blkt_320->reference_amplitude);
 	    }
 	}
 
@@ -370,9 +396,9 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      SWAPBTIME (&blkt_390->time);
-	      gswap4 (&blkt_390->duration);
-	      gswap4 (&blkt_390->amplitude);
+	      MS_SWAPBTIME (&blkt_390->time);
+	      ms_gswap4 (&blkt_390->duration);
+	      ms_gswap4 (&blkt_390->amplitude);
 	    }
 	}
 
@@ -392,7 +418,7 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      SWAPBTIME (&blkt_395->time);
+	      MS_SWAPBTIME (&blkt_395->time);
 	    }
 	}
       
@@ -412,9 +438,9 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      gswap4 (&blkt_400->azimuth);
-	      gswap4 (&blkt_400->slowness);
-	      gswap2 (&blkt_400->configuration);
+	      ms_gswap4 (&blkt_400->azimuth);
+	      ms_gswap4 (&blkt_400->slowness);
+	      ms_gswap2 (&blkt_400->configuration);
 	    }
 	}
       
@@ -434,12 +460,13 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      gswap2 (&blkt_405->delay_values);
+	      ms_gswap2 (&blkt_405->delay_values);
 	    }
 
 	  if ( verbose > 0 )
 	    {
-	      fprintf (stderr, "msr_unpack(): Blockette 405 cannot be fully supported\n");
+	      ms_log (1, "msr_unpack(%s): WARNING Blockette 405 cannot be fully supported\n",
+		      UNPACK_SRCNAME);
 	    }
 	}
       
@@ -459,9 +486,9 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      gswap4 (&blkt_500->vco_correction);
-	      SWAPBTIME (&blkt_500->time);
-	      gswap4 (&blkt_500->exception_count);
+	      ms_gswap4 (&blkt_500->vco_correction);
+	      MS_SWAPBTIME (&blkt_500->time);
+	      ms_gswap4 (&blkt_500->exception_count);
 	    }
 	}
       
@@ -480,13 +507,13 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  blkt_1000 = (struct blkt_1000_s *) blkt_link->blktdata;
 	  
 	  /* Calculate record length in bytes as 2^(blkt_1000->reclen) */
-	  msr->reclen = (unsigned int) 1 << blkt_1000->reclen;
+	  msr->reclen = (uint32_t) 1 << blkt_1000->reclen;
 	  
 	  /* Compare against the specified length */
 	  if ( msr->reclen != reclen && verbose )
 	    {
-	      fprintf (stderr, "Record length in Blockette 1000 (%d) != specified length (%d)\n",
-		       msr->reclen, reclen);
+	      ms_log (2, "msr_unpack(%s): Record length in Blockette 1000 (%d) != specified length (%d)\n",
+		      UNPACK_SRCNAME, msr->reclen, reclen);
 	    }
 	  
 	  msr->encoding = blkt_1000->encoding;
@@ -511,7 +538,7 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  /* Read the blockette length from blockette */
 	  memcpy (&b2klen, record + blkt_offset, 2);
-	  if ( headerswapflag ) gswap2 (&b2klen);
+	  if ( headerswapflag ) ms_gswap2 (&b2klen);
 	  
 	  /* Minus four bytes for the blockette type and next fields */
 	  b2klen -= 4;
@@ -527,9 +554,9 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	  
 	  if ( headerswapflag )
 	    {
-	      gswap2 (&blkt_2000->length);
-	      gswap2 (&blkt_2000->data_offset);
-	      gswap4 (&blkt_2000->recnum);
+	      ms_gswap2 (&blkt_2000->length);
+	      ms_gswap2 (&blkt_2000->data_offset);
+	      ms_gswap4 (&blkt_2000->recnum);
 	    }
 	}
       
@@ -551,16 +578,16 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
       /* Check that the offset increases */
       if ( next_blkt && next_blkt <= blkt_offset )
 	{
-	  fprintf (stderr, "Offset to next blockette (%d) from type %d did not increase\n",
-		   next_blkt, blkt_type);
+	  ms_log (2, "msr_unpack(%s): Offset to next blockette (%d) from type %d did not increase\n",
+		  UNPACK_SRCNAME, next_blkt, blkt_type);
 	  
 	  blkt_offset = 0;
 	}
       /* Check that the offset is within record length */
       else if ( next_blkt && next_blkt > reclen )
 	{
-	  fprintf (stderr, "Offset to next blockette (%d) from type %d is beyond record length\n",
-		   next_blkt, blkt_type);
+	  ms_log (2, "msr_unpack(%s): Offset to next blockette (%d) from type %d is beyond record length\n",
+		  UNPACK_SRCNAME, next_blkt, blkt_type);
 	  
 	  blkt_offset = 0;
 	}
@@ -574,8 +601,7 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
     {
       if ( verbose > 1 )
 	{
-	  fprintf (stderr, "Warning: No Blockette 1000 found: %s_%s_%s_%s\n",
-		   msr->network, msr->station, msr->location, msr->channel);
+	  ms_log (1, "%s: Warning: No Blockette 1000 found\n", UNPACK_SRCNAME);
 	}
     }
   
@@ -631,9 +657,11 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
 	}
       
       if ( verbose > 2 && dswapflag )
-	fprintf (stderr, "Byte swapping needed for unpacking of data samples\n");
+	ms_log (1, "%s: Byte swapping needed for unpacking of data samples\n",
+		UNPACK_SRCNAME);
       else if ( verbose > 2 )
-	fprintf (stderr, "Byte swapping NOT needed for unpacking of data samples \n");
+	ms_log (1, "%s: Byte swapping NOT needed for unpacking of data samples \n",
+		UNPACK_SRCNAME);
       
       retval = msr_unpack_data (msr, dswapflag, verbose);
       
@@ -650,6 +678,9 @@ msr_unpack ( char *record, int reclen, MSRecord **ppmsr,
       msr->datasamples = 0;
       msr->numsamples = 0;
     }
+  
+  /* Unset shared pointer to source name */
+  UNPACK_SRCNAME = NULL;
   
   return MS_NOERROR;
 } /* End of msr_unpack() */
@@ -680,21 +711,27 @@ msr_unpack_data ( MSRecord *msr, int swapflag, int verbose )
   /* Sanity record length */
   if ( msr->reclen == -1 )
     {
-      fprintf (stderr, "msr_unpack_data(): Record size unknown\n");
+      ms_log (2, "msr_unpack_data(%s): Record size unknown\n",
+	      UNPACK_SRCNAME);
       return MS_NOTSEED;
     }
-  
+    
   switch (msr->encoding)
     {
-    case ASCII:
+    case DE_ASCII:
       samplesize = 1; break;
-    case INT16:
-    case INT32:
-    case FLOAT32:
-    case STEIM1:
-    case STEIM2:
+    case DE_INT16:
+    case DE_INT32:
+    case DE_FLOAT32:
+    case DE_STEIM1:
+    case DE_STEIM2:
+    case DE_GEOSCOPE24:
+    case DE_GEOSCOPE163:
+    case DE_GEOSCOPE164:
+    case DE_SRO:
+    case DE_DWWSSN:
       samplesize = 4; break;
-    case FLOAT64:
+    case DE_FLOAT64:
       samplesize = 8; break;
     default:
       samplesize = 0; break;
@@ -704,9 +741,16 @@ msr_unpack_data ( MSRecord *msr, int swapflag, int verbose )
   unpacksize = msr->samplecnt * samplesize;
   
   /* (Re)Allocate space for the unpacked data */
-  if ( unpacksize != 0 )
+  if ( unpacksize > 0 )
     {
       msr->datasamples = realloc (msr->datasamples, unpacksize);
+      
+      if ( msr->datasamples == NULL )
+	{
+	  ms_log (2, "msr_unpack_data(%s): Cannot (re)allocate memory\n",
+		  UNPACK_SRCNAME);
+	  return MS_GENERROR;
+	}
     }
   else
     {
@@ -716,34 +760,29 @@ msr_unpack_data ( MSRecord *msr, int swapflag, int verbose )
       msr->numsamples = 0;
     }
   
-  if ( msr->datasamples == NULL )
-    {
-      fprintf (stderr, "msr_unpack_data(): Error (re)allocating memory\n");
-      return MS_GENERROR;
-    }
-  
   datasize = msr->reclen - msr->fsdh->data_offset;
   dbuf = msr->record + msr->fsdh->data_offset;
   
   if ( verbose > 2 )
-    fprintf (stderr, "Unpacking %d samples\n", msr->samplecnt);
+    ms_log (1, "%s: Unpacking %d samples\n",
+	    UNPACK_SRCNAME, msr->samplecnt);
   
   /* Decide if this is a encoding that we can decode */
   switch (msr->encoding)
     {
       
-    case ASCII:
+    case DE_ASCII:
       if ( verbose > 1 )
-	fprintf (stderr, "Found ASCII data\n");
+	ms_log (1, "%s: Found ASCII data\n", UNPACK_SRCNAME);
       
       nsamples = msr->samplecnt;
       memcpy (msr->datasamples, dbuf, nsamples);
       msr->sampletype = 'a';      
       break;
       
-    case INT16:
+    case DE_INT16:
       if ( verbose > 1 )
-	fprintf (stderr, "Unpacking INT-16 data samples\n");
+	ms_log (1, "%s: Unpacking INT-16 data samples\n", UNPACK_SRCNAME);
       
       nsamples = msr_unpack_int_16 ((int16_t *)dbuf, msr->samplecnt,
 				    msr->samplecnt, msr->datasamples,
@@ -751,19 +790,19 @@ msr_unpack_data ( MSRecord *msr, int swapflag, int verbose )
       msr->sampletype = 'i';
       break;
       
-    case INT32:
+    case DE_INT32:
       if ( verbose > 1 )
-	fprintf (stderr, "Unpacking INT-32 data samples\n");
-
+	ms_log (1, "%s: Unpacking INT-32 data samples\n", UNPACK_SRCNAME);
+      
       nsamples = msr_unpack_int_32 ((int32_t *)dbuf, msr->samplecnt,
 				    msr->samplecnt, msr->datasamples,
 				    swapflag);
       msr->sampletype = 'i';
       break;
       
-    case FLOAT32:
+    case DE_FLOAT32:
       if ( verbose > 1 )
-	fprintf (stderr, "Unpacking FLOAT-32 data samples\n");
+	ms_log (1, "%s: Unpacking FLOAT-32 data samples\n", UNPACK_SRCNAME);
       
       nsamples = msr_unpack_float_32 ((float *)dbuf, msr->samplecnt,
 				      msr->samplecnt, msr->datasamples,
@@ -771,9 +810,9 @@ msr_unpack_data ( MSRecord *msr, int swapflag, int verbose )
       msr->sampletype = 'f';
       break;
       
-    case FLOAT64:
+    case DE_FLOAT64:
       if ( verbose > 1 )
-	fprintf (stderr, "Unpacking FLOAT-64 data samples\n");
+	ms_log (1, "%s: Unpacking FLOAT-64 data samples\n", UNPACK_SRCNAME);
       
       nsamples = msr_unpack_float_64 ((double *)dbuf, msr->samplecnt,
 				      msr->samplecnt, msr->datasamples,
@@ -781,16 +820,17 @@ msr_unpack_data ( MSRecord *msr, int swapflag, int verbose )
       msr->sampletype = 'd';
       break;
       
-    case STEIM1:
+    case DE_STEIM1:
       diffbuff = (int32_t *) malloc(unpacksize);
       if ( diffbuff == NULL )
 	{
-	  fprintf (stderr, "unable to malloc diff buffer in msr_unpack_data()\n");
+	  ms_log (2, "msr_unpack_data(%s): Cannot allocate diff buffer\n",
+		  UNPACK_SRCNAME);
 	  return MS_GENERROR;
 	}
       
       if ( verbose > 1 )
-	fprintf (stderr, "Unpacking Steim-1 data frames\n");
+	ms_log (1, "%s: Unpacking Steim-1 data frames\n", UNPACK_SRCNAME);
       
       nsamples = msr_unpack_steim1 ((FRAME *)dbuf, datasize, msr->samplecnt,
 				    msr->samplecnt, msr->datasamples, diffbuff, 
@@ -799,17 +839,18 @@ msr_unpack_data ( MSRecord *msr, int swapflag, int verbose )
       free (diffbuff);
       break;
       
-    case STEIM2:
+    case DE_STEIM2:
       diffbuff = (int32_t *) malloc(unpacksize);
       if ( diffbuff == NULL )
 	{
-	  fprintf (stderr, "unable to malloc diff buffer in msr_unpack_data()\n");
+	  ms_log (2, "msr_unpack_data(%s): Cannot allocate diff buffer\n",
+		  UNPACK_SRCNAME);
 	  return MS_GENERROR;
 	}
       
       if ( verbose > 1 )
-	fprintf (stderr, "Unpacking Steim-2 data frames\n");
-
+	ms_log (2, "%s: Unpacking Steim-2 data frames\n", UNPACK_SRCNAME);
+      
       nsamples = msr_unpack_steim2 ((FRAME *)dbuf, datasize, msr->samplecnt,
 				    msr->samplecnt, msr->datasamples, diffbuff,
 				    &x0, &xn, swapflag, verbose);
@@ -817,11 +858,48 @@ msr_unpack_data ( MSRecord *msr, int swapflag, int verbose )
       free (diffbuff);
       break;
       
+    case DE_GEOSCOPE24:
+    case DE_GEOSCOPE163:
+    case DE_GEOSCOPE164:
+      if ( verbose > 1 )
+	{
+	  if ( msr->encoding == DE_GEOSCOPE24 )
+	    ms_log (1, "%s: Unpacking GEOSCOPE 24bit integer data samples\n",
+		    UNPACK_SRCNAME);
+	  if ( msr->encoding == DE_GEOSCOPE163 )
+	    ms_log (1, "%s: Unpacking GEOSCOPE 16bit gain ranged/3bit exponent data samples\n",
+		    UNPACK_SRCNAME);
+	  if ( msr->encoding == DE_GEOSCOPE164 )
+	    ms_log (1, "%s: Unpacking GEOSCOPE 16bit gain ranged/4bit exponent data samples\n",
+		    UNPACK_SRCNAME);
+	}
+      
+      nsamples = msr_unpack_geoscope (dbuf, msr->samplecnt, msr->samplecnt,
+				      msr->datasamples, msr->encoding, swapflag);
+      msr->sampletype = 'f';
+      break;
+      
+    case DE_SRO:
+      if ( verbose > 1 )
+	ms_log (1, "%s: Unpacking SRO encoded data samples\n", UNPACK_SRCNAME);
+      
+      nsamples = msr_unpack_sro ((int16_t *)dbuf, msr->samplecnt, msr->samplecnt,
+				 msr->datasamples, swapflag);
+      msr->sampletype = 'i';
+      break;
+      
+    case DE_DWWSSN:
+      if ( verbose > 1 )
+	ms_log (1, "%s: Unpacking DWWSSN encoded data samples\n", UNPACK_SRCNAME);
+      
+      nsamples = msr_unpack_dwwssn ((int16_t *)dbuf, msr->samplecnt, msr->samplecnt,
+				    msr->datasamples, swapflag);
+      msr->sampletype = 'i';
+      break;
+      
     default:
-      fprintf (stderr, "Unable to unpack encoding format %d for %s_%s_%s_%s\n",
-	       msr->encoding,
-	       msr->network, msr->station,
-	       msr->location, msr->channel);
+      ms_log (2, "%s: Unsupported encoding format %d (%s)\n",
+	      msr->encoding, (char *) ms_encodingstr(msr->encoding), UNPACK_SRCNAME);
       
       return MS_UNKNOWNFORMAT;
     }
@@ -849,20 +927,20 @@ check_environment (int verbose)
 	{
 	  if ( *envvariable != '0' && *envvariable != '1' )
 	    {
-	      fprintf (stderr, "Environment variable UNPACK_HEADER_BYTEORDER must be set to '0' or '1'\n");
+	      ms_log (2, "Environment variable UNPACK_HEADER_BYTEORDER must be set to '0' or '1'\n");
 	      return -1;
 	    }
 	  else if ( *envvariable == '0' )
 	    {
 	      headerbyteorder = 0;
 	      if ( verbose > 2 )
-		fprintf (stderr, "UNPACK_HEADER_BYTEORDER=0, unpacking little-endian header\n");
+		ms_log (1, "UNPACK_HEADER_BYTEORDER=0, unpacking little-endian header\n");
 	    }
 	  else
 	    {
 	      headerbyteorder = 1;
 	      if ( verbose > 2 )
-		fprintf (stderr, "UNPACK_HEADER_BYTEORDER=1, unpacking big-endian header\n");
+		ms_log (1, "UNPACK_HEADER_BYTEORDER=1, unpacking big-endian header\n");
 	    }
 	}
       else
@@ -877,20 +955,20 @@ check_environment (int verbose)
 	{
 	  if ( *envvariable != '0' && *envvariable != '1' )
 	    {
-	      fprintf (stderr, "Environment variable UNPACK_DATA_BYTEORDER must be set to '0' or '1'\n");
+	      ms_log (2, "Environment variable UNPACK_DATA_BYTEORDER must be set to '0' or '1'\n");
 	      return -1;
 	    }
 	  else if ( *envvariable == '0' )
 	    {
 	      databyteorder = 0;
 	      if ( verbose > 2 )
-		fprintf (stderr, "UNPACK_DATA_BYTEORDER=0, unpacking little-endian data samples\n");
+		ms_log (1, "UNPACK_DATA_BYTEORDER=0, unpacking little-endian data samples\n");
 	    }
 	  else
 	    {
 	      databyteorder = 1;
 	      if ( verbose > 2 )
-		fprintf (stderr, "UNPACK_DATA_BYTEORDER=1, unpacking big-endian data samples\n");
+		ms_log (1, "UNPACK_DATA_BYTEORDER=1, unpacking big-endian data samples\n");
 	    }
 	}
       else
@@ -908,11 +986,11 @@ check_environment (int verbose)
 	  
 	  if ( encodingformat < 0 || encodingformat > 33 )
 	    {
-	      fprintf (stderr, "Environment variable UNPACK_DATA_FORMAT set to invalid value: '%d'\n", encodingformat);
+	      ms_log (2, "Environment variable UNPACK_DATA_FORMAT set to invalid value: '%d'\n", encodingformat);
 	      return -1;
 	    }
 	  else if ( verbose > 2 )
-	    fprintf (stderr, "UNPACK_DATA_FORMAT, unpacking data in encoding format %d\n", encodingformat);
+	    ms_log (1, "UNPACK_DATA_FORMAT, unpacking data in encoding format %d\n", encodingformat);
 	}
       else
 	{
@@ -929,11 +1007,13 @@ check_environment (int verbose)
 	  
 	  if ( encodingfallback < 0 || encodingfallback > 33 )
 	    {
-	      fprintf (stderr, "Environment variable UNPACK_DATA_FORMAT_FALLBACK set to invalid value: '%d'\n", encodingfallback);
+	      ms_log (2, "Environment variable UNPACK_DATA_FORMAT_FALLBACK set to invalid value: '%d'\n",
+		      encodingfallback);
 	      return -1;
 	    }
 	  else if ( verbose > 2 )
-	    fprintf (stderr, "UNPACK_DATA_FORMAT_FALLBACK, unpacking data in encoding format %d\n", encodingfallback);
+	    ms_log (1, "UNPACK_DATA_FORMAT_FALLBACK, unpacking data in encoding format %d\n",
+		    encodingfallback);
 	}
       else
 	{
