@@ -9,7 +9,7 @@ GCCFLAGS = -O2 -Wall -I../libmseed
 BIN = dataselect
 
 LDFLAGS = -L../libmseed
-LDLIBS = -lmseed
+LDLIBS = -lmseed -lm
 
 OBJS = $(BIN).o dsarchive.o
 
