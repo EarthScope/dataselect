@@ -1,5 +1,6 @@
 2006.354: 0.4
 	- Convert all diagnostic output to use ms_log routines.
+	- Fix reconcile_tracetimes() by resetting first/last pointers.
 
 2006.354: 0.3
 	- Update to libmseed 2.0rc1.

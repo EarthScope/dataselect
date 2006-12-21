@@ -1039,7 +1039,7 @@ trimrecord (Record *rec, char *recordbuf)
 	  ms_hptime2seedtimestr (newendtime, etime);
 	  ms_log (1, "Removing %d samples from the end, new end time: %s\n", trimsamples, etime);
 	}
-
+      
       msr->numsamples -= trimsamples;
       msr->samplecnt -= trimsamples;
       rec->endtime = newendtime;
@@ -1382,10 +1382,12 @@ reconcile_tracetimes (MSTraceGroup *mstg)
       
       if ( first )
 	mst->starttime = first->starttime;
-      
+            
       if ( last )
 	mst->endtime = last->endtime;
       
+      first = 0;
+      last = 0;
       mst = mst->next;
     }
   
