@@ -175,7 +175,7 @@ int
 main ( int argc, char **argv )
 {  
   /* Set default error message prefix */
-  ms_loginit (NULL, NULL, NULL, "ERROR:");
+  ms_loginit (NULL, NULL, NULL, "ERROR: ");
 
   /* Process input parameters */
   if (processparam (argc, argv) < 0)
