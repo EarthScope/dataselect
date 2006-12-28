@@ -31,7 +31,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.5dev"
+#define VERSION "0.5dev2006.362"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
