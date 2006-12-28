@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2006.354
+ * modified 2006.362
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -31,7 +31,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.4"
+#define VERSION "0.5dev"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -1342,7 +1342,7 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
  * Reconcile the start and end times of the traces in a specified
  * trace group with the list of records in an associated record map.
  * In other words, set the start and end times of each MSTrace in the
- * MSTraceGroup according to the starttime of the first and end time
+ * MSTraceGroup according to the start time of the first and end time
  * of the last contributing records in the associated record map.
  *
  ***************************************************************************/
@@ -1367,24 +1367,53 @@ reconcile_tracetimes (MSTraceGroup *mstg)
     {
       recmap = (RecordMap *) mst->prvtptr;
       
-      /* Find first and last contributing records (reclen != 0) */
+      /* Find first contributing record (reclen != 0) */
       rec = recmap->first;      
       while ( rec )
 	{
-	  if ( rec->reclen > 0 && first == 0 )
-	    first = rec;
-	  
 	  if ( rec->reclen > 0 )
-	    last = rec;
+	    {
+	      first = rec;
+	      break;
+	    }
 	  
 	  rec = rec->next;
 	}
       
+      /* Find last contributing record (reclen != 0) */
+      rec = recmap->last;
+      while ( rec )
+	{
+	  if ( rec->reclen > 0 )
+	    {
+	      last = rec;
+	      break;
+	    }
+	  
+	  rec = rec->prev;
+	}
+      
+      /* Set a new MSTrace start time */
       if ( first )
-	mst->starttime = first->starttime;
-            
+	{
+	  /* Use the new boundary start time if set and sane */
+	  if ( first->newstart && first->newstart > first->starttime )
+	    mst->starttime = first->newstart;
+	  /* Otherwise use the record start time */
+	  else
+	    mst->starttime = first->starttime;
+	}
+      
+      /* Set a new MSTrace end time */
       if ( last )
-	mst->endtime = last->endtime;
+	{
+	  /* Use the new boundary end time if set and sane */
+	  if ( last->newend && last->newend < last->endtime )
+	    mst->endtime = last->newend;
+	  /* Otherwise use the record end time */
+	  else
+	    mst->endtime = last->endtime;
+	}
       
       first = 0;
       last = 0;

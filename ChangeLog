@@ -1,3 +1,10 @@
+2006.362:
+	- reconcile_tracetimes(): minor optimization when searching for
+	first and last records for a given MSTrace by searching from the
+	beginning and end only as far as needed.
+	- reconcile_tracetimes(): use boundary start and end times when
+	they are set instead of the records original start and end times.
+
 2006.354: 0.4
 	- Convert all diagnostic output to use ms_log routines.
 	- Fix reconcile_tracetimes() by resetting first/last pointers.
