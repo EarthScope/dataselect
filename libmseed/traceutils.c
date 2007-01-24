@@ -5,7 +5,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center
  *
- * modified: 2006.346
+ * modified: 2006.363
  ***************************************************************************/
 
 #include <stdio.h>
@@ -782,9 +782,10 @@ mst_groupheal ( MSTraceGroup *mstg, double timetol, double sampratetol )
 /***************************************************************************
  * mst_groupsort:
  *
- * Sort a MSTraceGroup first on source name, then sample rate, then
- * start time and finally on descending endtime (longest trace first).
- * The "bubble sort" algorithm herein is not terribly efficient.
+ * Sort a MSTraceGroup first on source name, then on start time, then
+ * on descending endtime (longest trace first) and finally sample
+ * rate.  The "bubble sort" algorithm herein is not terribly
+ * efficient.
  *
  * Return 0 on success and -1 on error.
  ***************************************************************************/
@@ -803,7 +804,8 @@ mst_groupsort ( MSTraceGroup *mstg, flag quality )
   if ( ! mstg->traces )
     return 0;
 
-  /* Loop over the MSTrace chain until no more entries are swapped, "bubble" sort */
+  /* Bubble sort:
+   * Loop over the MSTrace chain until no more entries are swapped */
   do
     {
       swapped = 0;
@@ -820,9 +822,9 @@ mst_groupsort ( MSTraceGroup *mstg, flag quality )
 	strcmpval = strcmp (src1, src2);
 	
 	/* If the source names do not match make sure the "greater" string is 2nd,
-	 * otherwise, if source names do match, make sure the highest sample rate is 2nd
-	 * otherwise, if sample rates match, make sure the later start time is 2nd
+	 * otherwise, if source names do match, make sure the later start time is 2nd
 	 * otherwise, if start times match, make sure the earlier end time is 2nd
+	 * otherwise, if end times match, make sure the highest sample rate is 2nd
 	 */
 	if ( strcmpval > 0 )
 	  {
@@ -830,27 +832,27 @@ mst_groupsort ( MSTraceGroup *mstg, flag quality )
 	  }
 	else if ( strcmpval == 0 )
 	  {
-	    if ( ! MS_ISRATETOLERABLE (mst->samprate, mst->next->samprate) &&
-		 mst->samprate > mst->next->samprate )
+	    if ( mst->starttime > mst->next->starttime )
 	      {
 		swap = 1;
 	      }
-	    else if ( MS_ISRATETOLERABLE (mst->samprate, mst->next->samprate) )
+	    else if ( mst->starttime == mst->next->starttime )
 	      {
-		if ( mst->starttime > mst->next->starttime )
+		if ( mst->endtime < mst->next->endtime )
 		  {
 		    swap = 1;
 		  }
-		else if ( mst->starttime == mst->next->starttime )
+		else if ( mst->endtime == mst->next->endtime )
 		  {
-		    if ( mst->endtime < mst->next->endtime )
+		    if ( ! MS_ISRATETOLERABLE (mst->samprate, mst->next->samprate) &&
+			 mst->samprate > mst->next->samprate )
 		      {
 			swap = 1;
 		      }
 		  }
 	      }
 	  }
-		
+	
 	/* If a swap condition was found swap the entries */
 	if ( swap )
 	  {
