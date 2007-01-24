@@ -1,3 +1,7 @@
+2007.024: 0.5
+	- Update to libmseed 2.0.
+	- Take -lm out of link parameters as it's no longer needed.
+
 2006.362:
 	- reconcile_tracetimes(): minor optimization when searching for
 	first and last records for a given MSTrace by searching from the
