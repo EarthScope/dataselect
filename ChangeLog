@@ -1,5 +1,10 @@
+2007.031: 0.6
+	- Update to libmseed 2.0 final.
+	- Generalize src/Makefile so user defined CC and CFLAGS are
+	recongized and used.
+
 2007.024: 0.5
-	- Update to libmseed 2.0.
+	- Update to libmseed 2.0 test.
 	- Take -lm out of link parameters as it's no longer needed.
 
 2006.362:
