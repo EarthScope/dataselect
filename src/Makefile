@@ -9,7 +9,7 @@ GCC = gcc
 GCCFLAGS = -O2 -Wall -fPIC
 
 # Required compiler parameters
-REQCFLAGS = -I..
+REQCFLAGS = -I../libmseed
 
 BIN = dataselect
 
