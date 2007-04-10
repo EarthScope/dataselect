@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.024
+ * modified 2007.100
  ***************************************************************************/
 
 // Go over sample-level pruning logic, USE TOLERANCE, test and re-test
@@ -31,7 +31,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.6"
+#define VERSION "0.6+2007.100"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -1545,13 +1545,13 @@ readfiles (void)
 	  ms_hptime2seedtimestr (recstarttime, stime);
 	  
 	  /* Check if record matches start time criteria */
-	  if ( (starttime != HPTERROR) && (starttime < recstarttime) )
+	  if ( (starttime != HPTERROR) && (recstarttime < starttime) )
 	    {
 	      if ( verbose >= 3 )
 		ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
 	      continue;
 	    }
-	      
+	  
 	  /* Check if record matches end time criteria */
 	  if ( (endtime != HPTERROR) && (recendtime > endtime) )
 	    {
