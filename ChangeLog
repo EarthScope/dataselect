@@ -1,3 +1,6 @@
+2007.100:
+	- Fix start time limit option (-ts) record skipping logic.
+
 2007.031: 0.6
 	- Update to libmseed 2.0 final.
 	- Generalize src/Makefile so user defined CC and CFLAGS are
