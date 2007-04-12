@@ -9,7 +9,7 @@
  *
  * Written by Chad Trabant, ORFEUS/EC-Project MEREDIAN
  *
- * modified 2006.331
+ * modified 2007.091
  ***************************************************************************/
 
 #include <stdio.h>
@@ -40,7 +40,7 @@ static char *inputfile     = 0;
 static FILE *outfile       = 0;
 
 static int parameter_proc (int argcount, char **argvec);
-static void record_handler (char *record, int reclen);
+static void record_handler (char *record, int reclen, void *ptr);
 static void usage (void);
 static void term_handler (int sig);
 
@@ -52,7 +52,6 @@ main (int argc, char **argv)
   MSTrace *tp;
   int retcode;
 
-  char envvariable[100];
   int totalrecs  = 0;
   int totalsamps = 0;
   int packedsamples;
@@ -81,16 +80,18 @@ main (int argc, char **argv)
   if (parameter_proc (argc, argv) < 0)
     return -1;
   
-  /* Setup encoding environment variable if specified, ugly kludge */
+  /* Setup input encoding format if specified */
   if ( encodingstr )
     {
-      snprintf (envvariable, sizeof(envvariable), "UNPACK_DATA_FORMAT=%s", encodingstr);
+      int inputencoding = strtoul (encodingstr, NULL, 10);
       
-      if ( putenv (envvariable) )
+      if ( inputencoding == 0 && errno == EINVAL )
 	{
-	  ms_log (2, "Error setting environment variable UNPACK_DATA_FORMAT\n");
+	  ms_log (2, "Error parsing input encoding format: %s\n", encodingstr);
 	  return -1;
 	}
+      
+      MS_UNPACKENCODINGFORMAT (inputencoding);
     }
   
   /* Init MSTraceGroup */
@@ -135,7 +136,7 @@ main (int argc, char **argv)
       if ( outfile && msr->numsamples == 0 )
 	{
 	  msr_pack_header (msr, 1, verbose);
-	  record_handler (msr->record, msr->reclen);
+	  record_handler (msr->record, msr->reclen, NULL);
 	}
       
       /* Pack each record individually */
@@ -143,7 +144,7 @@ main (int argc, char **argv)
 	{
 	  msr->sequence_number = iseqnum;
 	  
-	  packedrecords = msr_pack (msr, &record_handler, &packedsamples, 1, verbose);
+	  packedrecords = msr_pack (msr, &record_handler, NULL, &packedsamples, 1, verbose);
 	  
 	  if ( packedrecords == -1 )
 	    ms_log (2, "Cannot pack records\n"); 
@@ -179,14 +180,16 @@ main (int argc, char **argv)
 	  /* Pack traces based on selected method */
 	  if ( tracepack == 1 )
 	    {
-	      packedrecords = mst_packgroup (mstg, &record_handler, packreclen, packencoding, byteorder,
-					     &packedsamples, lastrecord, verbose, msr);
+	      packedrecords = mst_packgroup (mstg, &record_handler, NULL, packreclen,
+					     packencoding, byteorder, &packedsamples,
+					     lastrecord, verbose, msr);
 	      ms_log (1, "Packed %d records\n", packedrecords);
 	    }
 	  if ( tracepack == 2 && lastrecord )
 	    {
-	      packedrecords = mst_packgroup (mstg, &record_handler, packreclen, packencoding, byteorder,
-					     &packedsamples, lastrecord, verbose, msr);
+	      packedrecords = mst_packgroup (mstg, &record_handler, NULL, packreclen,
+					     packencoding, byteorder, &packedsamples,
+					     lastrecord, verbose, msr);
 	      ms_log (1, "Packed %d records\n", packedrecords);
 	    }
 
@@ -335,7 +338,7 @@ parameter_proc (int argcount, char **argvec)
  * Saves passed records to the output file.
  ***************************************************************************/
 static void
-record_handler (char *record, int reclen)
+record_handler (char *record, int reclen, void *ptr)
 {
   if ( fwrite(record, reclen, 1, outfile) != 1 )
     {
@@ -361,7 +364,7 @@ usage (void)
 	   " -p             Print details of input headers, multiple flags can be used\n"
 	   " -a             Autodetect every input record length, needed with mixed lengths\n"
 	   " -r bytes       Specify record length in bytes, required if no Blockette 1000\n"
-	   " -e encoding    Specify encoding format for data samples\n"
+	   " -e encoding    Specify encoding format for input data samples\n"
 	   " -i             Pack data individually for each input record\n"
 	   " -t             Pack data from traces after reading all data\n"
 	   " -R bytes       Specify record length in bytes for packing\n"
@@ -370,7 +373,7 @@ usage (void)
 	   "\n"
 	   " -o outfile     Specify the output file, required\n"
 	   "\n"
-	   " infile          Input Mini-SEED file\n"
+	   " infile         Input Mini-SEED file\n"
 	   "\n"
 	   "The default packing method is to use parameters from the input records\n"
 	   "(reclen, encoding, byteorder, etc.) and pack records as soon as enough\n"

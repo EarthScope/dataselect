@@ -367,12 +367,12 @@ main() {
   MSTraceGroup *mstg = NULL;
   int retcode;
 
-  retcode = msr_readtraces (&mstg, filename, 0, -1.0, -1.0, 0, 1, 0, verbose);
+  retcode = ms_readtraces (&mstg, filename, 0, -1.0, -1.0, 0, 1, 0, verbose);
 
   if ( retcode != MS_ENDOFFILE )
     ms_log (2, "Cannot read %s: %s\n", filename, ms_errorstr(retcode));
 
-  retcode = msr_readtraces (&mstg, filename2, 0, -1.0, -1.0, 0, 1, 0, verbose);
+  retcode = ms_readtraces (&mstg, filename2, 0, -1.0, -1.0, 0, 1, 0, verbose);
 
   if ( retcode != MS_ENDOFFILE )
     ms_log (2, "Cannot read %s: %s\n", filename2, ms_errorstr(retcode));
@@ -405,10 +405,10 @@ exceptions, of the header in the final data records.
 Skeleton code for creating (packing) Mini-SEED records with
 mst_pack(3):
 
-static void record_handler (char *record, int reclen) {
+static void record_handler (char *record, int reclen, void *srcname) {
   if ( fwrite(record, reclen, 1, outfile) != 1 )
     {
-      ms_log (2, "Error writing to output file\n");
+      ms_log (2, "Error writing %s to output file\n", (char *)srcname);
     }
 }
 
@@ -416,6 +416,7 @@ main() {
   int psamples;
   int precords;
   MSTrace *mst;
+  char srcname[50];
 
   mst = mst_init (NULL);
 
@@ -433,8 +434,11 @@ main() {
   mst->numsamples = 1234;
   mst->sampletype = 'i';      /* declare type to be 32-bit integers */
 
+  mst_srcname (mst, srcname, 0);
+
   /* Pack 4096 byte, big-endian records, using Steim-2 compression */
-  precords = mst_pack (mst, &record_handler, 4096, DE_STEIM2, 1, &psamples, 1, verbose, NULL);
+  precords = mst_pack (mst, &record_handler, srcname, 4096, DE_STEIM2,
+                                     1, &psamples, 1, verbose, NULL);
 
   ms_log (0, "Packed %d samples into %d records\n", psamples, precords);
 

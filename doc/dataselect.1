@@ -1,35 +1,33 @@
-.TH MSPRUNE 2006/08/03
+.TH DATASELECT 2007/04/12
 .SH NAME
-Mini-SEED data pruning - remove redundant data
-
-- NEW splitting records on boundaries, each have same sequence number.
+Mini-SEED data selection and shifting
 
 .SH SYNOPSIS
 .nf
-msprune [options] file1 [file2 file3 ...]
+dataselect [options] file1 [file2 file3 ...]
 
 .fi
 .SH DESCRIPTION
-\fBmsprune\fP removes redundant data either from a specified set of
-data files or a POD structure.  By default input data files are
-replaced and optionally backup versions are retained.
+\fBdataselect\fP selects, sorts and prunes Mini-SEED data.  Any output
+data will always be sorted by ascending time-series.  Various data
+selection operations are possible including the removal of duplicate
+data and the splicing of partially overlapping data records to form
+continuous time-series.
 
-The default pruning is done at the data record level and the most
-overlap remaining will be less than a record.  The -S option will
-instruct msprune to unpack, trim and pack one of the overlapping
-"boundary" records such that the time-series is continuous (no overlap
-remaining).
+Data pruning, removal of overlap, can be performed at either the
+record or sample level.  Pruning at the record level guarantees that
+records are never unpacked/repacked, but this could potentially leave
+small amounts of overlap in the data.  Pruning at the sample level
+will remove any overlap and splice data to within the time-series
+tolerance, this requires the unpacking and repacking of data records
+and is done in a modification-minimizing way.
 
 When removing data records or samples the time coverage of different
 time-series the concept of priority is used to determine from which
-time-series data should be removed if overlaps are detected.  When the
--B (best quality) option is used the priority is given to the highest
-quality data.  When -B is not used or the qualities are the same the
-priority is given to the longest time-series.
-
-As a side effect of the pruning process the output data records are
-sorted by network, station, location, channel (and potentially by
-quality) and finally by start time within a file.
+time-series data should be removed if overlaps are detected.  By
+default the priority is given to the highest quality data (Q, D, R,
+etc.).  When the qualities are the same priority is given to the
+longest time-series.
 
 If '-' is specified standard input will be read.  Multiple input files
 will be processed all together.
@@ -44,6 +42,10 @@ Print program version and exit.
 
 .IP "-h         "
 Print program usage and exit.
+
+.IP "-H         "
+Print verbose program usage including details of archive format
+specification and exit.
 
 .IP "-v         "
 Be more verbose.  This flag can be used multiple times ("-v -v" or
@@ -68,6 +70,11 @@ segments. The tolerance is specified as the difference between two
 sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
 0.0001).
 
+.IP "-E\fP"
+Consider all data qualities equal when determining priority for
+pruning.  By default priority is given the the data with the highest
+quality indicator: (highest) Q > D > R (lowest).
+
 .IP "-ts \fItime\fP"
 Limit processing to Mini-SEED records that start after \fItime\fP.
 The format of the \fItime\fP arguement
@@ -80,35 +87,62 @@ The format of the \fItime\fP arguement
 is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
 commas (,), colons (:) or periods (.).
 
+.IP "-M \fImatch\fP"
+Limit input to records that match this regular expression, the
+\fImatch\fP is tested against the full source
+name: 'NET_STA_LOC_CHAN_QUAL'.
+
+.IP "-R \fIreject\fP"
+Limit input to records that do not match this regular expression, the
+\fIreject\fP is tested against the full source
+name: 'NET_STA_LOC_CHAN_QUAL'.
+
+.IP "-rep"
+Replace input files.  By default this will rename the original files
+by adding a '.orig' suffix.
+
+.IP "-nb"
+Do not keep backups of rhe original input files if replacing them by
+using the -rep option.
+
 .IP "-o \fIfile\fP"
 Write all output data to output \fIfile\fP instead of replacing the
 original files.  When this option is used no backups will be created
 and the original files will not be modified in any way.
 
-.IP "-r \fIbytes\fP"
-Specify the intput record length in \fIbytes\fP.  By default the
-length of every Mini-SEED record is automatically detected, this
-option forces the record length.  The option is required when the
-input records do not contain a 1000 Blockette.
+.IP "-A \fIformat\fR"
+All output records will be written to a directory/file layout defined
+by \fIformat\fP.  All directories implied in the \fIformat\fP string
+will be created if necessary.  The option may be used multiple times
+to write input records to multiple archives.  See the \fBArchive
+Format\fR section below.
 
-.IP "-B         "
-Prioritize the pruning process based on the SEED data quality
-indicator: (highest) Q > D > R (lowest).  In other words, when
-overlapping data records are removed priority will be given to those
-with a higher quality indicator.
+.IP "-Pr         "
+Prune, remove overlap data, at the record level.  This will result in
+removal of all the completely overlapped data records.  Small,
+partial-record overlaps might remain in the data.
 
-.IP "-S         "
-Suture partially overlapping data segments by unpacking the lower
-priority data record, trimming the approriate number of samples and
-packing the record again.
+.IP "-Ps         "
+Prune, remove overlap data, at the sample level.  This will result in
+removal of all the completely overlapped data samples.  When data
+records partially overlap the lowest priority record is unpacked,
+trimmed and repacked.
 
-.IP "-n            "
-Do not keep backups of the original data files.  By default all input
-files will be renamed with a '.orig' suffix and the output files will
-replace the originals.  Use of this option will result in the complete
-removal of the original data files.
+.IP "-S[dhm]      "
+Split records on day, hour or minute boundaries.  When data records
+span the split boundary (day, hour or minute) the record will be split
+by duplicating the record and trimming both records such they are
+continous across the boundaries.  Both of the records will have the
+same record number.
 
-.IP "-m            "
+.IP "-Q DRQM      "
+Change the data quality indicator for all output records to the
+specified quality: D, R, Q or M.
+
+.IP "-sum         "
+Print a basic summary of input data after reading all the files.
+
+.IP "-mod         "
 Print a file modification summary after processing an input group.
 For files specified on the command line all files constitute a group.
 For POD structure processing input files are grouped by channel and
@@ -130,8 +164,64 @@ and their relationship in continuous time series.
 Each data record time coverage in each continuous time-series is
 compared to the time coverage of every other continous time-series.
 When overlap is detected, data is removed from the lower priority
-time-series until the overlap is minimized or completely removed (see
-the -S option).
+time-series until the overlap is minimized or completely removed
+depending on the pruning option specified.
+
+.SH "Archive Format"
+An archive format is expanded for each record using the following
+substitution flags:
+
+.nf
+  \fBn\fP : network code, white space removed
+  \fBs\fP : station code, white space removed
+  \fBl\fP : location code, white space removed
+  \fBc\fP : channel code, white space removed
+  \fBY\fP : year, 4 digits
+  \fBy\fP : year, 2 digits zero padded
+  \fBj\fP : day of year, 3 digits zero padded
+  \fBH\fP : hour, 2 digits zero padded
+  \fBM\fP : minute, 2 digits zero padded
+  \fBS\fP : second, 2 digits zero padded
+  \fBF\fP : fractional seconds, 4 digits zero padded
+  \fBq\fP : single character record quality indicator (D, R, Q)
+  \fBL\fP : data record length in bytes
+  \fBr\fP : sample rate (Hz) as a rounded integer
+  \fBR\fP : sample rate (Hz) as a float with 6 digit precision
+  \fB%\fP : the percent (%) character
+  \fB#\fP : the number (#) character
+.fi
+
+The flags are prefaced with either the \fB%\fP or \fB#\fP modifier.
+The \fB%\fP modifier indicates a defining flag while the \fB#\fP
+indicates a non-defining flag.  All records with the same set of
+defining flags will be written to the same file.  Non-defining flags
+will be expanded using the values in the first record for the
+resulting file name.
+
+Time flags are based on the start time of the given record.
+
+.SH EXAMPLES
+
+The format string for the predefined \fIBUD\fP layout:
+
+\fB/archive/%n/%s/%s.%n.%l.%c.%Y.%j\fP
+
+would expand to day length files named something like:
+
+\fB/archive/NL/HGN/HGN.NL..BHE.2003.055\fP
+
+As an example of using non-defining flags the format string for the
+predefined \fICSS\fP layout:
+
+\fB/data/%Y/%j/%s.%c.%Y:%j:#H:#M:#S\fP
+
+would expand to:
+
+\fB/data/2003/055/HGN.BHE.2003:055:14:17:54\fP
+
+resulting in day length files because the hour, minute and second are
+specified with the non-defining modifier.  The hour, minute and second
+fields are from the first record in the file.
 
 .SH AUTHOR
 .nf

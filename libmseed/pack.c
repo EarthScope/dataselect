@@ -7,7 +7,7 @@
  * Written by Chad Trabant,
  *   IRIS Data Management Center
  *
- * modified: 2006.354
+ * modified: 2007.083
  ***************************************************************************/
 
 #include <stdio.h>
@@ -30,8 +30,8 @@ static int msr_pack_data (void *dest, void *src,
 
 /* Header and data byte order flags controlled by environment variables */
 /* -2 = not checked, -1 = checked but not set, or 0 = LE and 1 = BE */
-static flag headerbyteorder = -2;
-static flag databyteorder = -2;
+flag packheaderbyteorder = -2;
+flag packdatabyteorder = -2;
 
 /* A pointer to the srcname of the record being packed */
 char *PACK_SRCNAME = NULL;
@@ -52,7 +52,9 @@ char *PACK_SRCNAME = NULL;
  * calling routine to adjust the data buffer if desired.
  *
  * As each record is filled and finished they are passed to
- * record_handler along with their length in bytes.  It is the
+ * record_handler which expects 1) a char * to the record, 2) the
+ * length of the record and 3) a pointer supplied by the original
+ * caller containing optional private data (handlerdata).  It is the
  * responsibility of record_handler to process the record, the memory
  * will be re-used or freed when record_handler returns.
  *
@@ -67,8 +69,8 @@ char *PACK_SRCNAME = NULL;
  * Returns the number of records created on success and -1 on error.
  ***************************************************************************/
 int
-msr_pack ( MSRecord * msr, void (*record_handler) (char *, int),
-	   int *packedsamples, flag flush, flag verbose )
+msr_pack ( MSRecord * msr, void (*record_handler) (char *, int, void *),
+	   void *handlerdata, int *packedsamples, flag flush, flag verbose )
 {
   uint16_t *HPnumsamples;
   uint16_t *HPdataoffset;
@@ -109,7 +111,7 @@ msr_pack ( MSRecord * msr, void (*record_handler) (char *, int),
   PACK_SRCNAME = &srcname[0];
   
   /* Read possible environmental variables that force byteorder */
-  if ( headerbyteorder == -2 )
+  if ( packheaderbyteorder == -2 )
     {
       if ( (envvariable = getenv("PACK_HEADER_BYTEORDER")) )
 	{
@@ -120,23 +122,23 @@ msr_pack ( MSRecord * msr, void (*record_handler) (char *, int),
 	    }
 	  else if ( *envvariable == '0' )
 	    {
-	      headerbyteorder = 0;
+	      packheaderbyteorder = 0;
 	      if ( verbose > 2 )
 		ms_log (1, "PACK_HEADER_BYTEORDER=0, packing little-endian header\n");
 	    }
 	  else
 	    {
-	      headerbyteorder = 1;
+	      packheaderbyteorder = 1;
 	      if ( verbose > 2 )
 		ms_log (1, "PACK_HEADER_BYTEORDER=1, packing big-endian header\n");
 	    }
 	}
       else
 	{
-	  headerbyteorder = -1;
+	  packheaderbyteorder = -1;
 	}
     }
-  if ( databyteorder == -2 )
+  if ( packdatabyteorder == -2 )
     {
       if ( (envvariable = getenv("PACK_DATA_BYTEORDER")) )
 	{
@@ -147,20 +149,20 @@ msr_pack ( MSRecord * msr, void (*record_handler) (char *, int),
 	    }
 	  else if ( *envvariable == '0' )
 	    {
-	      databyteorder = 0;
+	      packdatabyteorder = 0;
 	      if ( verbose > 2 )
 		ms_log (1, "PACK_DATA_BYTEORDER=0, packing little-endian data samples\n");
 	    }
 	  else
 	    {
-	      databyteorder = 1;
+	      packdatabyteorder = 1;
 	      if ( verbose > 2 )
 		ms_log (1, "PACK_DATA_BYTEORDER=1, packing big-endian data samples\n");
 	    }
 	}
       else
 	{
-	  databyteorder = -1;
+	  packdatabyteorder = -1;
 	}
     }
 
@@ -223,14 +225,14 @@ msr_pack ( MSRecord * msr, void (*record_handler) (char *, int),
     headerswapflag = dataswapflag = 1;
   
   /* Check if byte order is forced */
-  if ( headerbyteorder >= 0 )
+  if ( packheaderbyteorder >= 0 )
     {
-      headerswapflag = ( msr->byteorder != headerbyteorder ) ? 1 : 0;
+      headerswapflag = ( msr->byteorder != packheaderbyteorder ) ? 1 : 0;
     }
   
-  if ( databyteorder >= 0 )
+  if ( packdatabyteorder >= 0 )
     {
-      dataswapflag = ( msr->byteorder != databyteorder ) ? 1 : 0;
+      dataswapflag = ( msr->byteorder != packdatabyteorder ) ? 1 : 0;
     }
   
   if ( verbose > 2 )
@@ -334,7 +336,7 @@ msr_pack ( MSRecord * msr, void (*record_handler) (char *, int),
 	ms_log (1, "%s: Packed %d samples\n", PACK_SRCNAME, packsamples);
       
       /* Send record to handler */
-      record_handler (rawrec, msr->reclen);
+      record_handler (rawrec, msr->reclen, handlerdata);
       
       totalpackedsamples += packsamples;
       if ( packedsamples ) *packedsamples = totalpackedsamples;
@@ -393,7 +395,7 @@ msr_pack_header ( MSRecord *msr, flag normalize, flag verbose )
   PACK_SRCNAME = &srcname[0];
 
   /* Read possible environmental variables that force byteorder */
-  if ( headerbyteorder == -2 )
+  if ( packheaderbyteorder == -2 )
     {
       if ( (envvariable = getenv("PACK_HEADER_BYTEORDER")) )
 	{
@@ -404,20 +406,20 @@ msr_pack_header ( MSRecord *msr, flag normalize, flag verbose )
 	    }
 	  else if ( *envvariable == '0' )
 	    {
-	      headerbyteorder = 0;
+	      packheaderbyteorder = 0;
 	      if ( verbose > 2 )
 		ms_log (1, "PACK_HEADER_BYTEORDER=0, packing little-endian header\n");
 	    }
 	  else
 	    {
-	      headerbyteorder = 1;
+	      packheaderbyteorder = 1;
 	      if ( verbose > 2 )
 		ms_log (1, "PACK_HEADER_BYTEORDER=1, packing big-endian header\n");
 	    }
 	}
       else
 	{
-	  headerbyteorder = -1;
+	  packheaderbyteorder = -1;
 	}
     }
 
@@ -451,9 +453,9 @@ msr_pack_header ( MSRecord *msr, flag normalize, flag verbose )
     headerswapflag = 1;
   
   /* Check if byte order is forced */
-  if ( headerbyteorder >= 0 )
+  if ( packheaderbyteorder >= 0 )
     {
-      headerswapflag = ( msr->byteorder != headerbyteorder ) ? 1: 0;
+      headerswapflag = ( msr->byteorder != packheaderbyteorder ) ? 1: 0;
     }
   
   if ( verbose > 2 )
@@ -740,8 +742,8 @@ msr_pack_header_raw ( MSRecord *msr, char *rawrec, int maxheaderlen,
 	  offset += sizeof (struct blkt_1000_s);
 	  
 	  /* This guarantees that the byte order is in sync with msr_pack() */
-	  if ( databyteorder >= 0 )
-	    blkt_1000->byteorder = databyteorder;
+	  if ( packdatabyteorder >= 0 )
+	    blkt_1000->byteorder = packdatabyteorder;
 	}
       
       else if ( cur_blkt->blkt_type == 1001 )

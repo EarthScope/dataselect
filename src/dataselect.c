@@ -8,10 +8,8 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.100
+ * modified 2007.102
  ***************************************************************************/
-
-// Go over sample-level pruning logic, USE TOLERANCE, test and re-test
 
 /* _ISOC9X_SOURCE needed to get a declaration for llabs on some archs */
 #define _ISOC9X_SOURCE
@@ -31,7 +29,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.6+2007.100"
+#define VERSION "0.7"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -118,7 +116,7 @@ static int writereqfile (char *requestfile, ReqRec *rrlist);
 static MSTraceGroup *processtraces (void);
 static void writetraces (MSTraceGroup *mstg);
 static int trimrecord (Record *rec, char *recbuf);
-static void record_handler (char *record, int reclen);
+static void record_handler (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MSTraceGroup *mstg);
 static int trimtraces (MSTrace *lptrace, MSTrace *hptrace);
@@ -1046,7 +1044,7 @@ trimrecord (Record *rec, char *recordbuf)
     }
   
   /* Pack the data record into the global record buffer used by writetraces() */
-  packedrecords = msr_pack (msr, &record_handler, &packedsamples, 1, verbose-1);
+  packedrecords = msr_pack (msr, &record_handler, NULL, &packedsamples, 1, verbose-1);
   
   /* Clean up MSRecord */
   msr_free (&msr);
@@ -1062,7 +1060,7 @@ trimrecord (Record *rec, char *recordbuf)
  * buffer.
  ***************************************************************************/
 static void
-record_handler (char *record, int reclen)
+record_handler (char *record, int reclen, void *handlerdata)
 {
   /* Copy record to global record buffer */
   memcpy (recordbuf, record, reclen);

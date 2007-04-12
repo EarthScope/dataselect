@@ -1,3 +1,35 @@
+2007.102: 2.1
+	- Removed caveat comment from mst_groupheal() man page.
+
+2007.083:
+	- mst_groupheal() now sorts the MSTraceGroup before it tries to
+	heal the traces, this increases the chances of healing all
+	possible segments.
+	- msr_pack(): add void *handlerdata argument that wil be passed
+	directly to the record_handler(), this is intended to allow
+	private data to be passed from the msr_repack() caller to the
+	record handling routine.
+	- mst_pack(): add void *handlerdata argument that is passed
+	directly to msr_pack() and used as described above.
+	- mst_packgroup(): add void *handlerdata argument that is passed
+	directly to mst_pack() and used as described above.
+	- Add macros for setting the pack & unpack, header & data byte
+	order override variables: MS_PACKHEADERBYTEORDER(X),
+	MS_PACKDATABYTEORDER(X), MS_UNPACKHEADERBYTEORDER(X) and
+	MS_UNPACKDATABYTEORDER(X).
+	- Add macros for setting the unpack encoding format override and 
+	encoding format fallback variables: MS_UNPACKENCODINGFORMAT(X)
+	and MS_UNPACKENCODINGFORMATFALLBACK(X).
+	
+2007.074:
+	- Fix typos in the docs referring to msr_readtraces() that should
+	be ms_readtraces(), thanks Richard Boaz.
+
+2007.034:
+	- mst_groupheal(): fix removal of first trace in group.
+	- mst_groupheal(): reset MSTrace data quality indicator when
+	merged traces do not have matching qualities.
+
 2007.030: 2.0
 	- Set no default CFLAGS and CC variables for building and add a
 	note to the Makefile about using them for build configuration.

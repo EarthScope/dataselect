@@ -1,4 +1,4 @@
-.TH MS_INTRO 3 2006/10/10
+.TH MS_INTRO 3 2007/03/24
 .SH NAME
 Introduction to libmseed
 
@@ -359,7 +359,13 @@ UNPACK_DATA_BYTEORDER
 .fi
 
 These variables should be set to either 0 (little endian) or 1 (big
-endian).
+endian).  A programmatic equivalent of setting these environment
+variables is provided via the following macros:
+
+.nf
+MS_UNPACKHEADERBYTEORDER(X)
+MS_UNPACKDATABYTEORDER(X)
+.fi
 
 .B Writing MiniSEED - in what byte order libmseed creates records:
 
@@ -375,7 +381,13 @@ PACK_DATA_BYTEORDER
 .fi
 
 These variables should be set to either 0 (little endian) or 1 (big
-endian).
+endian).  A programmatic equivalent of setting these environment
+variables is provided via the following macros:
+
+.nf
+MS_PACKHEADERBYTEORDER(X)
+MS_PACKDATABYTEORDER(X)
+.fi
 
 Note that some interpretations of the SEED 2.4 format imply that
 so-called little endian MiniSEED means that the record header is
@@ -408,7 +420,7 @@ main() {
   MSRecord *msr = NULL;
   int retcode;
 
-  while ( (retcode = msr_readmsr (&msr, filename, 0, NULL, NULL, 1, 0, verbose)) == MS_NOERROR )
+  while ( (retcode = ms_readmsr (&msr, filename, 0, NULL, NULL, 1, 0, verbose)) == MS_NOERROR )
     {
        /* Do something with the record here, e.g. print */
        msr_print (msr, verbose);
@@ -429,12 +441,12 @@ main() {
   MSTraceGroup *mstg = NULL;
   int retcode;
 
-  retcode = msr_readtraces (&mstg, filename, 0, -1.0, -1.0, 0, 1, 0, verbose);
+  retcode = ms_readtraces (&mstg, filename, 0, -1.0, -1.0, 0, 1, 0, verbose);
 
   if ( retcode != MS_ENDOFFILE )
     ms_log (2, "Cannot read %s: %s\n", filename, ms_errorstr(retcode));
 
-  retcode = msr_readtraces (&mstg, filename2, 0, -1.0, -1.0, 0, 1, 0, verbose);
+  retcode = ms_readtraces (&mstg, filename2, 0, -1.0, -1.0, 0, 1, 0, verbose);
 
   if ( retcode != MS_ENDOFFILE )
     ms_log (2, "Cannot read %s: %s\n", filename2, ms_errorstr(retcode));
@@ -469,10 +481,10 @@ Skeleton code for creating (packing) Mini-SEED records with
 mst_pack(3):
 
 .nf
-static void record_handler (char *record, int reclen) {
+static void record_handler (char *record, int reclen, void *srcname) {
   if ( fwrite(record, reclen, 1, outfile) != 1 )
     {
-      ms_log (2, "Error writing to output file\n");
+      ms_log (2, "Error writing %s to output file\n", (char *)srcname);
     }
 }
 
@@ -480,6 +492,7 @@ main() {
   int psamples;
   int precords;
   MSTrace *mst;
+  char srcname[50];
 
   mst = mst_init (NULL);
 
@@ -497,8 +510,11 @@ main() {
   mst->numsamples = 1234;
   mst->sampletype = 'i';      /* declare type to be 32-bit integers */
 
+  mst_srcname (mst, srcname, 0);
+
   /* Pack 4096 byte, big-endian records, using Steim-2 compression */
-  precords = mst_pack (mst, &record_handler, 4096, DE_STEIM2, 1, &psamples, 1, verbose, NULL);
+  precords = mst_pack (mst, &record_handler, srcname, 4096, DE_STEIM2,
+                       1, &psamples, 1, verbose, NULL);
 
   ms_log (0, "Packed %d samples into %d records\n", psamples, precords);
 

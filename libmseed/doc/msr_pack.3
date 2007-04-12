@@ -1,4 +1,4 @@
-.TH MSR_PACK 3 2006/12/12 "Libmseed API"
+.TH MSR_PACK 3 2007/03/24 "Libmseed API"
 .SH DESCRIPTION
 Packing of Mini-SEED records.
 
@@ -6,12 +6,13 @@ Packing of Mini-SEED records.
 .nf
 .B #include <libmseed.h>
 
-.BI "MSRecord *\fBmsr_pack\fP ( MSRecord *" msr ",
-.BI "                     void (*" record_handler ") (char *, int),
-.BI "                     int *" packedsamples ", flag " flush ", flag " verbose " );
+.BI "MSRecord *\fBmsr_pack\fP ( MSRecord *" msr ","
+.BI "                     void (*" record_handler ") (char *, int, void *),"
+.BI "                     void *" handlerdata ", int *" packedsamples ","
+.BI "                     flag " flush ", flag " verbose " );"
 
-.BI "int       \fBmsr_pack_header\fP ( MSRecord *" msr ", flag " normalize ",
-.BI "                            flag " verbose " );
+.BI "int       \fBmsr_pack_header\fP ( MSRecord *" msr ", flag " normalize ","
+.BI "                            flag " verbose " );"
 .fi
 
 .SH DESCRIPTION
@@ -61,11 +62,17 @@ MSRecord.byteorder must be either 0 (LSBF or little-endian) or 1 (MBF
 or big-endian).
 
 Each time a complete record is packed it will be passed to the
-\fIrecord_handler()\fP function along with it's length in bytes.  It
-is the responsibility of \fIrecord_handler()\fP to process the record,
-the memory will be re-used or freed when \fIrecord_handler()\fP
-returns.  This function pointer is required, there is no other way to
-access the packed records.
+\fIrecord_handler()\fP function which expects three arguments: 1) a
+char * to the record buffer, 2) the length of the record in bytes and
+3) a void pointer supplied by the caller.  It is the responsibility of
+\fIrecord_handler()\fP to process the record, the memory will be
+re-used or freed when \fIrecord_handler()\fP returns.  This function
+pointer is required, there is no other way to access the packed
+records.
+
+The \fIhandlerdata\fP pointer will be passed as the 3rd argument to
+\fIrecord_handler()\fP.  This allows the caller to optionally pass
+data directly to the \fIrecord_handler()\fP.
 
 The integer pointed to by \fIpackedsamples\fP will be set to the total
 number of samples packed if not NULL.
@@ -89,20 +96,26 @@ unless the associated SEED structures have been directly modified.
 The \fIverbose\fP flag controls verbosity, a value of zero will result
 in no diagnostic output.
 
-.SH ENVIRONMENT VARIABLES
-The following environment variables effect the packing of Mini-SEED:
+.SH PACKING OVERRIDES
+The following macros and environment variables effect the packing of
+Mini-SEED:
 
 .nf
+Macros:
+MS_PACKHEADERBYTEORDER(X)
+MS_PACKDATABYTEORDER(X)
+
+Environment variables:
 PACK_HEADER_BYTEORDER
 PACK_DATA_BYTEORDER
 .fi
 
-The PACK_HEADER_BYTEORDER and PACK_DATA_BYTEORDER variables force the
-byte order of the header and data respectively.  They could be set to
-either 0 (little endian) or 1 (big endian).  Normally the byte order
-of the header and data is determined by the byteorder flag of the
-MSRecord, this capability is included to support any combination of
-byte orders in a generalized way.
+These macros and environment variables force the byte order of the
+header and data respectively.  They could be set to either 0 (little
+endian) or 1 (big endian).  Normally the byte order of the header and
+data is determined by the byteorder flag of the MSRecord, this
+capability is included to support any combination of byte orders in a
+generalized way.
 
 .SH RETURN VALUES
 \fBmsr_pack\fP returns the number records created on success and -1 on
@@ -116,10 +129,10 @@ Skeleton code for creating (packing) Mini-SEED records with
 msr_pack(3):
 
 .nf
-static void record_handler (char *record, int reclen) {
+static void record_handler (char *record, int reclen, void *srcname) {
   if ( fwrite(record, reclen, 1, outfile) != 1 )
     {
-      ms_log (2, "Error writing to output file\n");
+      ms_log (2, "Error writing %s to output file\n", (char *)srcname);
     }
 }
 
@@ -127,6 +140,7 @@ main() {
   int psamples;
   int precords;
   MSRecord *msr;
+  char srcname[50];
 
   msr = msr_init (NULL);
 
@@ -134,7 +148,7 @@ main() {
   strcpy (msr->network, "XX");
   strcpy (msr->station, "TEST");
   strcpy (msr->channel, "BHE");
-  msr->starttime = ms_seedtimestr2dtime ("2004,350,00:00:00.00");
+  msr->starttime = ms_seedtimestr2hptime ("2004,350,00:00:00.00");
   msr->samprate = 40.0;
   msr->reclen = 4096;         /* 4096 byte record length */
   msr->encoding = DE_STEIM2;  /* Steim 2 compression */
@@ -144,8 +158,10 @@ main() {
   msr->numsamples = 1234;
   msr->sampletype = 'i';      /* declare type to be 32-bit integers */
 
+  msr_srcname (msr, srcname, 0);
+
   /* Pack the record(s) */
-  precords = msr_pack (msr, &record_handler, &psamples, 1, verbose);
+  precords = msr_pack (msr, &record_handler, srcname, &psamples, 1, verbose);
 
   ms_log (0, "Packed %d samples into %d records\n", psamples, precords);
 

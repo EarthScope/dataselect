@@ -30,8 +30,8 @@ extern "C" {
 
 #include "lmplatform.h"
 
-#define LIBMSEED_VERSION "2.0"
-#define LIBMSEED_RELEASE "2007.030"
+#define LIBMSEED_VERSION "2.1"
+#define LIBMSEED_RELEASE "2007.102"
 
 #define MINRECLEN   256      /* Minimum Mini-SEED record length, 2^8 bytes */
 #define MAXRECLEN   1048576  /* Maximum Mini-SEED record length, 2^20 bytes */
@@ -408,12 +408,33 @@ typedef struct MSTraceGroup_s {
 }
 MSTraceGroup;
 
+/* Global variables (defined in pack.c) and macros to set/force
+ * pack byte orders */
+extern flag packheaderbyteorder;
+extern flag packdatabyteorder;
+#define MS_PACKHEADERBYTEORDER(X) (packheaderbyteorder = X);
+#define MS_PACKDATABYTEORDER(X) (packdatabyteorder = X);
+
+/* Global variables (defined in unpack.c) and macros to set/force
+ * unpack byte orders */
+extern flag unpackheaderbyteorder;
+extern flag unpackdatabyteorder;
+#define MS_UNPACKHEADERBYTEORDER(X) (unpackheaderbyteorder = X);
+#define MS_UNPACKDATABYTEORDER(X) (unpackdatabyteorder = X);
+
+/* Global variables (defined in unpack.c) and macros to set/force
+ * encoding and fallback encoding */
+extern int unpackencodingformat;
+extern int unpackencodingformatfallback;
+#define MS_UNPACKENCODINGFORMAT(X) (unpackencodingformat = X);
+#define MS_UNPACKENCODINGFORMATFALLBACK(X) (unpackencodingformatfallback = X);
+
 /* Mini-SEED record related functions */
 extern int           msr_unpack (char *record, int reclen, MSRecord **ppmsr,
 				 flag dataflag, flag verbose);
 
-extern int           msr_pack (MSRecord *msr, void (*record_handler) (char *, int),
-		 	       int *packedsamples, flag flush, flag verbose );
+extern int           msr_pack (MSRecord *msr, void (*record_handler) (char *, int, void *),
+		 	       void *handlerdata, int *packedsamples, flag flush, flag verbose );
 
 extern int           msr_pack_header (MSRecord *msr, flag normalize, flag verbose);
 
@@ -458,12 +479,12 @@ extern void          mst_printtracelist (MSTraceGroup *mstg, flag timeformat,
 					 flag details, flag gaps);
 extern void          mst_printgaplist (MSTraceGroup *mstg, flag timeformat,
 				       double *mingap, double *maxgap);
-extern int           mst_pack (MSTrace *mst, void (*record_handler) (char *, int),
-			       int reclen, flag encoding, flag byteorder,
+extern int           mst_pack (MSTrace *mst, void (*record_handler) (char *, int, void *),
+			       void *handlerdata, int reclen, flag encoding, flag byteorder,
 			       int *packedsamples, flag flush, flag verbose,
 			       MSRecord *mstemplate);
-extern int           mst_packgroup (MSTraceGroup *mstg, void (*record_handler) (char *, int),
-				    int reclen, flag encoding, flag byteorder,
+extern int           mst_packgroup (MSTraceGroup *mstg, void (*record_handler) (char *, int, void *),
+				    void *handlerdata, int reclen, flag encoding, flag byteorder,
 				    int *packedsamples, flag flush, flag verbose,
 				    MSRecord *mstemplate);
 
