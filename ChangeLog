@@ -1,3 +1,7 @@
+2007.102: 0.7
+	- Update to libmseed 2.1.
+	- Create man page.
+
 2007.100:
 	- Fix start time limit option (-ts) record skipping logic.
 
