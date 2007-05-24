@@ -9,7 +9,7 @@
  *
  * Written by Chad Trabant, ORFEUS/EC-Project MEREDIAN
  *
- * modified 2007.091
+ * modified 2007.118
  ***************************************************************************/
 
 #include <stdio.h>
@@ -49,7 +49,7 @@ main (int argc, char **argv)
 {
   MSRecord *msr = 0;
   MSTraceGroup *mstg = 0;
-  MSTrace *tp;
+  MSTrace *mst;
   int retcode;
 
   int totalrecs  = 0;
@@ -157,48 +157,65 @@ main (int argc, char **argv)
       /* Pack records from a MSTraceGroup */
       else if ( outfile && tracepack )
 	{
-	  mst_addmsrtogroup (mstg, msr, 0, -1.0, -1.0);
+	  mst = mst_addmsrtogroup (mstg, msr, 0, -1.0, -1.0);
 	  
-	  packedrecords = 0;
-	  
-	  /* Reset sequence numbers in template */
-	  tp = mstg->traces;
-	  while ( tp )
+	  if ( ! mst )
 	    {
-	      if (! tp->prvtptr )
-		{
-		  tp->prvtptr = (int32_t *) malloc (sizeof (int32_t));
-		  msr->sequence_number = 1;
-		}
-	      else
-		{
-		  msr->sequence_number = *(int32_t *)tp->prvtptr;
-		}
-	      tp = tp->next;
+	      ms_log (2, "Error adding MSRecord to MStrace!\n");
+	      break;
+	    }
+	  	  
+	  /* Reset sequence number and free previous template */
+	  if ( mst->prvtptr )
+	    {
+	      MSRecord *tmsr = (MSRecord *) mst->prvtptr;
+	      
+	      /* Retain sequence number from previous template */
+	      msr->sequence_number = tmsr->sequence_number;
+	      
+	      msr_free (&tmsr);
+	    }
+	  else
+	    {
+	      msr->sequence_number = 1;
+	    }
+	  
+	  /* Copy MSRecord and store as template */
+	  mst->prvtptr = msr_duplicate (msr, 0);
+	  
+	  if ( ! mst->prvtptr )
+	    {
+	      ms_log (2, "Error duplicating MSRecord for template!\n");
+	      break;
 	    }
 	  
 	  /* Pack traces based on selected method */
+	  packedrecords = 0;
 	  if ( tracepack == 1 )
 	    {
-	      packedrecords = mst_packgroup (mstg, &record_handler, NULL, packreclen,
+	      mst = mstg->traces;
+	      while ( mst )
+		{
+		  packedrecords += mst_pack (mst, &record_handler, NULL, packreclen,
 					     packencoding, byteorder, &packedsamples,
-					     lastrecord, verbose, msr);
+					     lastrecord, verbose, (MSRecord *)mst->prvtptr);
+		  mst = mst->next;
+		}
+	      
 	      ms_log (1, "Packed %d records\n", packedrecords);
 	    }
 	  if ( tracepack == 2 && lastrecord )
 	    {
-	      packedrecords = mst_packgroup (mstg, &record_handler, NULL, packreclen,
+	      mst = mstg->traces;
+	      while ( mst )
+		{
+		  packedrecords += mst_pack (mst, &record_handler, NULL, packreclen,
 					     packencoding, byteorder, &packedsamples,
-					     lastrecord, verbose, msr);
+					     lastrecord, verbose, (MSRecord *)mst->prvtptr);
+		  mst = mst->next;
+		}
+	      
 	      ms_log (1, "Packed %d records\n", packedrecords);
-	    }
-
-	  /* Reset sequence numbers in MSTrace holder from template */
-	  tp = mstg->traces;
-	  while ( tp )
-	    {
-	      *(int32_t*)tp->prvtptr = msr->sequence_number;
-	      tp = tp->next;
 	    }
 	}
     }

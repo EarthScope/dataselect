@@ -30,8 +30,8 @@ extern "C" {
 
 #include "lmplatform.h"
 
-#define LIBMSEED_VERSION "2.1"
-#define LIBMSEED_RELEASE "2007.102"
+#define LIBMSEED_VERSION "2.1.1"
+#define LIBMSEED_RELEASE "2007.138"
 
 #define MINRECLEN   256      /* Minimum Mini-SEED record length, 2^8 bytes */
 #define MAXRECLEN   1048576  /* Maximum Mini-SEED record length, 2^20 bytes */
@@ -61,6 +61,7 @@ extern "C" {
 #define MS_STBADCOMPFLAG   -6        /* Steim, invalid compression flag(s) */
 
 /* Define the high precision time tick interval as 1/modulus seconds */
+/* Default modulus of 1000000 defines tick interval as a microsecond */
 #define HPTMODULUS 1000000
 
 /* Error code for routines that normally return a high precision time.
@@ -443,7 +444,8 @@ extern void          msr_free (MSRecord **ppmsr);
 extern void          msr_free_blktchain (MSRecord *msr);
 extern BlktLink*     msr_addblockette (MSRecord *msr, char *blktdata, int length,
 				       int blkttype, int chainpos);
-extern int           msr_normalize_header ( MSRecord *msr, flag verbose );
+extern int           msr_normalize_header (MSRecord *msr, flag verbose);
+extern MSRecord*     msr_duplicate (MSRecord *msr, flag datadup);
 extern double        msr_samprate (MSRecord *msr);
 extern double        msr_nomsamprate (MSRecord *msr);
 extern hptime_t      msr_starttime (MSRecord *msr);

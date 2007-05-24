@@ -5,7 +5,7 @@
  *
  * Written by Chad Trabant, ORFEUS/EC-Project MEREDIAN
  *
- * modified: 2006.346
+ * modified: 2007.114
  ***************************************************************************/
 
 #include <stdio.h>
@@ -350,6 +350,109 @@ msr_normalize_header ( MSRecord *msr, flag verbose )
   
   return offset;
 } /* End of msr_normalize_header() */
+
+
+/***************************************************************************
+ * msr_duplicate:
+ *
+ * Duplicate an MSRecord struct
+ * including the fixed-section data
+ * header and blockette chain.  If
+ * the datadup flag is true and the
+ * source MSRecord has associated
+ * data samples copy them as well.
+ *
+ * Returns a pointer to a new MSRecord on success and NULL on error.
+ ***************************************************************************/
+MSRecord *
+msr_duplicate (MSRecord *msr, flag datadup)
+{
+  MSRecord *dupmsr = 0;
+  int samplesize = 0;
+  
+  if ( ! msr )
+    return NULL;
+  
+  /* Allocate target MSRecord structure */
+  if ( (dupmsr = msr_init (NULL)) == NULL )
+    return NULL;
+  
+  /* Copy MSRecord structure */
+  memcpy (dupmsr, msr, sizeof(MSRecord));
+  
+  /* Copy fixed-section data header structure */
+  if ( msr->fsdh )
+    {
+      /* Allocate memory for new FSDH structure */
+      if ( (dupmsr->fsdh = (struct fsdh_s *) malloc (sizeof(struct fsdh_s))) == NULL )
+	{
+	  ms_log (2, "msr_duplicate(): Error allocating memory\n");
+	  free (dupmsr);
+	  return NULL;
+	}
+      
+      /* Copy the contents */
+      memcpy (dupmsr->fsdh, msr->fsdh, sizeof(struct fsdh_s));
+    }
+  
+  /* Copy the blockette chain */
+  if ( msr->blkts )
+    {
+      BlktLink *blkt = msr->blkts;
+      BlktLink *next = NULL;
+      
+      dupmsr->blkts = 0;
+      while ( blkt )
+	{
+	  next = blkt->next;
+	  
+	  /* Add blockette to chain of new MSRecord */
+	  if ( msr_addblockette (dupmsr, blkt->blktdata, blkt->blktdatalen,
+				 blkt->blkt_type, 0) == NULL )
+	    {
+	      ms_log (2, "msr_duplicate(): Error adding blockettes\n");
+	      msr_free (&dupmsr);
+	      return NULL;
+	    }
+	  
+	  blkt = next;
+	}
+    }
+  
+  /* Copy data samples if requested and available */
+  if ( datadup && msr->datasamples )
+    {
+      /* Determine size of samples in bytes */
+      samplesize = ms_samplesize (msr->sampletype);
+      
+      if ( samplesize == 0 )
+	{
+	  ms_log (2, "msr_duplicate(): unrecognized sample type: '%c'\n",
+		  msr->sampletype);
+	  free (dupmsr);
+	  return NULL;
+	}
+      
+      /* Allocate memory for new data array */
+      if ( (dupmsr->datasamples = (void *) malloc (msr->numsamples * samplesize)) == NULL )
+	{
+	  ms_log (2, "msr_duplicate(): Error allocating memory\n");
+	  free (dupmsr);
+	  return NULL;	  
+	}
+      
+      /* Copy the data array */
+      memcpy (dupmsr->datasamples, msr->datasamples, (msr->numsamples * samplesize));
+    }
+  /* Otherwise make sure the sample array and count are zero */
+  else
+    {
+      dupmsr->datasamples = 0;
+      dupmsr->numsamples = 0;
+    }
+  
+  return dupmsr;
+} /* End of msr_duplicate() */
 
 
 /***************************************************************************

@@ -1,3 +1,13 @@
+2007.138: 2.1.1
+	- Create LMP_BSD platform definition to cover the BSDs including
+	Apple Mac OS X, this replaces LMP_DARWIN.  Specifically FreeBSD,
+	OpenBSD, NetBSD and Apple are detected for this platform.
+
+2007.118:
+	- Add msr_duplicate() function to duplicate an MSRecord struct.
+	- Use msr_duplicate() in example/msrepack.c example program to
+	track the most current MSRecord as a template for packing.
+
 2007.102: 2.1
 	- Removed caveat comment from mst_groupheal() man page.
 
