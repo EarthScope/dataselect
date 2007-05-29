@@ -7,7 +7,7 @@
  * Written by Chad Trabant,
  *   IRIS Data Management Center
  *
- * modified: 2007.083
+ * modified: 2007.148
  ***************************************************************************/
 
 #include <stdio.h>
@@ -342,7 +342,7 @@ msr_pack ( MSRecord * msr, void (*record_handler) (char *, int, void *),
       if ( packedsamples ) *packedsamples = totalpackedsamples;
       
       /* Update record header for next record */
-      msr->sequence_number = ( msr->sequence_number >= 999999) ? 1 : msr->sequence_number + 1;
+      msr->sequence_number = ( msr->sequence_number >= 999999 ) ? 1 : msr->sequence_number + 1;
       msr->starttime += (double) packsamples / msr->samprate * HPTMODULUS;
       msr_update_header (msr, rawrec, headerswapflag, verbose);
       
@@ -485,20 +485,19 @@ msr_pack_header_raw ( MSRecord *msr, char *rawrec, int maxheaderlen,
 		      flag swapflag, flag normalize, flag verbose )
 {
   struct blkt_link_s *cur_blkt;
+  struct fsdh_s *fsdh;
   int16_t offset;
   int blktcnt = 0;
   int nextoffset;
-  
-  struct fsdh_s *fsdh;
-  
+
   if ( ! msr || ! rawrec )
     return -1;
   
   /* Make sure a fixed section of data header is available */
   if ( ! msr->fsdh )
     {
-      msr->fsdh = (struct fsdh_s *) malloc (sizeof (struct fsdh_s));
-
+      msr->fsdh = (struct fsdh_s *) calloc (1, sizeof (struct fsdh_s));
+      
       if ( msr->fsdh == NULL )
 	{
 	  ms_log (2, "msr_pack_header_raw(%s): Cannot allocate memory\n",
