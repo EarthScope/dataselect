@@ -1,3 +1,8 @@
+2007.267: 0.8
+	- Update to libmseed 2.1.4.
+	- Update logic for "M" quality addition.
+	- Add QCHAN preset layout, like CHAN but adds quality code.
+
 2007.149: 0.7.2
 	- Update to libmseed 2.1.2.
 

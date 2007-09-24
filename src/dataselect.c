@@ -8,7 +8,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.102
+ * modified 2007.267
  ***************************************************************************/
 
 /* _ISOC9X_SOURCE needed to get a declaration for llabs on some archs */
@@ -29,7 +29,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.7.2"
+#define VERSION "0.8"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -140,7 +140,7 @@ static void usage (int level);
 
 static flag     verbose       = 0;
 static flag     basicsum      = 0;    /* Controls printing of basic summary */
-static flag     bestquality   = 1;    /* Use Q, D, R quality to retain the "best" data when pruning */
+static flag     bestquality   = 1;    /* Use D, R, Q, M quality to retain the "best" data when pruning */
 static flag     prunedata     = 0;    /* Prune data: 'r= record level, 's' = sample level */
 static double   timetol       = -1.0; /* Time tolerance for continuous traces */
 static double   sampratetol   = -1.0; /* Sample rate tolerance for continuous traces */
@@ -211,7 +211,7 @@ main ( int argc, char **argv )
  * processpod:
  *
  * Process data from a POD structure.  Group input data files by
- * channel and prune each group separately using a Q > D > R priority.
+ * channel and prune each group separately using a M > Q > D > R priority.
  *
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
@@ -944,13 +944,13 @@ trimrecord (Record *rec, char *recordbuf)
     {
       ms_log (2, "Problem with new start/end record bound times, skipping.\n");
       ms_log (2, "  Original record from %s\n", rec->flp->infilename);
-      ms_hptime2seedtimestr (rec->starttime, stime);
-      ms_hptime2seedtimestr (rec->endtime, etime);
+      ms_hptime2seedtimestr (rec->starttime, stime, 1);
+      ms_hptime2seedtimestr (rec->endtime, etime, 1);
       ms_log (2, "       Start: %s       End: %s\n", stime, etime);
       if ( rec->newstart == 0 ) strcpy (stime, "NONE");
-      else ms_hptime2seedtimestr (rec->newstart, stime);
+      else ms_hptime2seedtimestr (rec->newstart, stime, 1);
       if ( rec->newend == 0 ) strcpy (etime, "NONE");
-      else ms_hptime2seedtimestr (rec->newend, etime);
+      else ms_hptime2seedtimestr (rec->newend, etime, 1);
       ms_log (2, " Start bound: %-24s End bound: %-24s\n", stime, etime);
     }
   
@@ -965,13 +965,13 @@ trimrecord (Record *rec, char *recordbuf)
     {
       msr_srcname (msr, srcname, 0);
       ms_log (1, "Triming record: %s (%c)\n", srcname, msr->dataquality);
-      ms_hptime2seedtimestr (rec->starttime, stime);
-      ms_hptime2seedtimestr (rec->endtime, etime);
+      ms_hptime2seedtimestr (rec->starttime, stime, 1);
+      ms_hptime2seedtimestr (rec->endtime, etime, 1);
       ms_log (1, "       Start: %s        End: %s\n", stime, etime);
       if ( rec->newstart == 0 ) strcpy (stime, "NONE");
-      else ms_hptime2seedtimestr (rec->newstart, stime);
+      else ms_hptime2seedtimestr (rec->newstart, stime, 1);
       if ( rec->newend == 0 ) strcpy (etime, "NONE");
-      else ms_hptime2seedtimestr (rec->newend, etime);
+      else ms_hptime2seedtimestr (rec->newend, etime, 1);
       ms_log (1, " Start bound: %-24s  End bound: %-24s\n", stime, etime);
     }
   
@@ -998,7 +998,7 @@ trimrecord (Record *rec, char *recordbuf)
       
       if ( verbose > 2 )
 	{
-	  ms_hptime2seedtimestr (newstarttime, stime);
+	  ms_hptime2seedtimestr (newstarttime, stime, 1);
 	  ms_log (1, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
 	}
       
@@ -1034,7 +1034,7 @@ trimrecord (Record *rec, char *recordbuf)
       
       if ( verbose > 2 )
 	{
-	  ms_hptime2seedtimestr (newendtime, etime);
+	  ms_hptime2seedtimestr (newendtime, etime, 1);
 	  ms_log (1, "Removing %d samples from the end, new end time: %s\n", trimsamples, etime);
 	}
       
@@ -1080,7 +1080,7 @@ record_handler (char *record, int reclen, void *handlerdata)
  * records.
  *
  * If the 'bestquality' option is being used the priority is
- * determined from the data quality flags with Q > D > R.  If the
+ * determined from the data quality flags with M > Q > D > R.  If the
  * qualities are the same (or bestquality not requested) the longer
  * MSTrace will get priority over the shorter.
  *
@@ -1279,8 +1279,8 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 	      if ( verbose > 1 )
 		{
 		  mst_srcname (lptrace, srcname, 1);
-		  ms_hptime2seedtimestr (rec->starttime, stime);
-		  ms_hptime2seedtimestr (rec->endtime, etime);
+		  ms_hptime2seedtimestr (rec->starttime, stime, 1);
+		  ms_hptime2seedtimestr (rec->endtime, etime, 1);
 		  ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
 			  srcname, rec->quality, stime, etime);
 		}
@@ -1438,10 +1438,13 @@ qcompare (const char quality1, const char quality2)
   if ( quality1 == quality2 )
     return 0;
   
-  if ( quality1 == 'R' && (quality2 == 'D' || quality2 == 'Q') )
+  if ( quality1 == 'R' && (quality2 == 'D' || quality2 == 'Q' || quality2 == 'M') )
     return 1;
   
-  if ( quality1 == 'D' && quality2 == 'Q' )
+  if ( quality1 == 'D' && (quality2 == 'Q' || quality2 == 'M') )
+    return 1;
+  
+  if ( quality1 == 'Q' && quality2 == 'M' )
     return 1;
   
   return -1;
@@ -1540,7 +1543,7 @@ readfiles (void)
 	  msr_srcname (msr, srcname, 1);
 	  
 	  /* Generate an ASCII start time string */
-	  ms_hptime2seedtimestr (recstarttime, stime);
+	  ms_hptime2seedtimestr (recstarttime, stime, 1);
 	  
 	  /* Check if record matches start time criteria */
 	  if ( (starttime != HPTERROR) && (recstarttime < starttime) )
@@ -1893,10 +1896,10 @@ printtracemap (MSTraceGroup *mstg)
       mst_srcname (mst, srcname, 1);
       
       /* Create formatted time strings */
-      if ( ms_hptime2seedtimestr (mst->starttime, stime) == NULL )
+      if ( ms_hptime2seedtimestr (mst->starttime, stime, 1) == NULL )
 	ms_log (2, "Cannot convert trace start time for %s\n", srcname);
       
-      if ( ms_hptime2seedtimestr (mst->endtime, etime) == NULL )
+      if ( ms_hptime2seedtimestr (mst->endtime, etime, 1) == NULL )
 	ms_log (2, "Cannot convert trace end time for %s\n", srcname);
       
       /* Print MSTrace header */
@@ -1948,16 +1951,16 @@ printrecordmap (RecordMap *recmap, flag details)
       ms_log (0, "  Filename: %s  Offset: %llu  RecLen: %d  Quality: %c\n",
 	      rec->flp->infilename, (long long unsigned)rec->offset, rec->reclen, rec->quality);
       
-      ms_hptime2seedtimestr (rec->starttime, stime);
-      ms_hptime2seedtimestr (rec->endtime, etime);
+      ms_hptime2seedtimestr (rec->starttime, stime, 1);
+      ms_hptime2seedtimestr (rec->endtime, etime, 1);
       ms_log (0, "       Start: %s       End: %s\n", stime, etime);
 
       if ( details )
 	{
 	  if ( rec->newstart == 0 ) strcpy (stime, "NONE");
-	  else ms_hptime2seedtimestr (rec->newstart, stime);
+	  else ms_hptime2seedtimestr (rec->newstart, stime, 1);
 	  if ( rec->newend == 0 ) strcpy (etime, "NONE" );
-	  else ms_hptime2seedtimestr (rec->newend, etime);
+	  else ms_hptime2seedtimestr (rec->newend, etime, 1);
 	  ms_log (0, " Start bound: %-24s End bound: %-24s\n", stime, etime);
 	}
       
@@ -2576,7 +2579,7 @@ usage (int level)
 	   " -Pr          Prune data at the record level using 'best' quality priority\n"
 	   " -Ps          Prune data at the sample level using 'best' quality priority\n"
 	   " -S[dhm]      Split records on day, hour or minute boundaries\n"
-	   " -Q DRQ       Re-stamp output data records with specified quality: D, R or Q\n"
+	   " -Q DRQM      Re-stamp output data records with quality code: D, R, Q or M\n"
            "\n"
 	   " ## Diagnostic output ##\n"
 	   " -sum         Print a basic summary after reading all input files\n"
@@ -2587,16 +2590,17 @@ usage (int level)
 	   "              Prune data from a POD structure\n"
 	   " file#        Files(s) of Mini-SEED records\n"
 	   "\n");
-
+  
   if  ( level )
     {
       fprintf (stderr,
                "\n"
 	       "  # Preset format layouts #\n"
-	       " -CHAN dir    Write all records into separate Net.Sta.Loc.Chan files\n"
-	       " -CDAY dir    Write all records into separate Net.Sta.Loc.Chan-day files\n"
-	       " -BUD BUDdir  Write all records in a BUD file layout\n"
-	       " -CSS CSSdir  Write all records in a CSS-like file layout\n"
+	       " -CHAN dir    Write records into separate Net.Sta.Loc.Chan files\n"
+	       " -QCHAN dir   Write records into separate Net.Sta.Loc.Chan.Quality files\n"
+	       " -CDAY dir    Write records into separate Net.Sta.Loc.Chan-day files\n"
+	       " -BUD BUDdir  Write records in a BUD file layout\n"
+	       " -CSS CSSdir  Write records in a CSS-like file layout\n"
 	       "\n"
                "The archive 'format' argument is expanded for each record using the\n"
                "following flags:\n"
@@ -2612,7 +2616,7 @@ usage (int level)
                "  M : minute, 2 digits zero padded\n"
                "  S : second, 2 digits zero padded\n"
                "  F : fractional seconds, 4 digits zero padded\n"
-               "  q : single character record quality indicator (D, R, Q)\n"
+               "  q : single character record quality indicator (D, R, Q, M)\n"
                "  L : data record length in bytes\n"
                "  r : Sample rate (Hz) as a rounded integer\n"
                "  R : Sample rate (Hz) as a float with 6 digit precision\n"
