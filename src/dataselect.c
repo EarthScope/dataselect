@@ -6,9 +6,89 @@
  * optionally pruning any overlap (at record or sample level) and
  * splitting records on day, hour or minute boundaries.
  *
+ * In general critical error messages are prefixed with "ERROR:" and
+ * the return code will be 1.  On successfull operation the return
+ * code will be 0.
+ *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.267
+ * modified 2007.268
+ ***************************************************************************/
+
+/***************************************************************************
+ *
+ * Data structures and operational overview
+ *
+ * The data map:
+ *
+ * MSTraceGroup
+ *   |-MSTrace
+ *   |   |-RecordMap
+ *   |        |-Record
+ *   |        |-Record
+ *   |        |-...
+ *   |
+ *   |-MSTrace
+ *   |   |-RecordMap
+ *   |        |-Record
+ *   |        |-Record
+ *   |        |-...
+ *   |-...
+ *
+ * The program goes through the following stages:
+ * 
+ * 1) Read all input files constructing a data map of contiguous trace
+ * segments and the data records that comprise them.  This operation
+ * is done by reading each file record-by-record and as each record is
+ * read, search the MSTraceGroup for an MSTrace that the record "fits"
+ * with (same channel and adjacent in time).  If the record is found
+ * to fit with a specific MSTrace its coverage will be added to the
+ * MSTrace information otherwise a new MSTrace is created and added to
+ * the MSTraceGroup.
+ *
+ * Each MSTrace has an associated RecordMap which includes a list of
+ * Records.  A Record structure is not the actual data record itself
+ * but meta information about the record coverage and location (file
+ * and offset).  The list of Records is always in time order.
+ *
+ * There is no relationship between the location of input records in
+ * specific files or offsets into files.  In other words, the program
+ * will reconstruct the most contiguous, time-ordered data segments
+ * possible from all the input records regardless of how they are
+ * organized in the input files.  The resulting time-ordering of the
+ * data records and contiguous segments is a characteristic of the
+ * internal data structures and cannot be turned off.
+ *
+ * As each record is read the input data selection criteria are
+ * applied.  For example, start/end time selections and regular
+ * expression matching/rejecting selections are applied.
+ *
+ * 2) If data pruning (removing overlap data) has been selected the
+ * data map will be processed to identify all overlapping data and to
+ * mark individual Record structures either for complete removal or
+ * for partial record trimming (when pruning at the sample level).
+ * When a complete record is pruned from the ouput its record length
+ * member will be set to 0 indicating that it is no longer
+ * contributing to the segment, a special case understood by
+ * downstream functions.  Note that no actual data records are changed
+ * in this operation, modification of the data records occurs when the
+ * data is written to the new output files.
+ *
+ * 3) Write all contributing data records in the data map out to the
+ * output files.  If the original files are to be replaced they will
+ * be renamed by adding a ".orig" prefix before the writing process
+ * begins.  After each record is read into memory it's associated
+ * Record structure is checked to see if the record needs to be
+ * trimmed due either to sample level pruning or time boundary
+ * splitting.  Trimming a data record involves unpacking, sample
+ * removal and repacking.  After trimming or if no trimming is
+ * required the data record is written to the appropriate output file.
+ * In this way only the minimal number of records needing modification
+ * (trimming) are repacked
+
+CHAD
+
+ *
  ***************************************************************************/
 
 /* _ISOC9X_SOURCE needed to get a declaration for llabs on some archs */
@@ -29,7 +109,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.8"
+#define VERSION "0.9"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -113,14 +193,14 @@ static int setofilelimit (int limit);
 static ReqRec *readreqfile (char *requestfile);
 static int writereqfile (char *requestfile, ReqRec *rrlist);
 
-static MSTraceGroup *processtraces (void);
-static void writetraces (MSTraceGroup *mstg);
+static int processtraces (void);
+static int writetraces (MSTraceGroup *mstg);
 static int trimrecord (Record *rec, char *recbuf);
 static void record_handler (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MSTraceGroup *mstg);
 static int trimtraces (MSTrace *lptrace, MSTrace *hptrace);
-static void reconcile_tracetimes (MSTraceGroup *mstg);
+static int reconcile_tracetimes (MSTraceGroup *mstg);
 static int qcompare (const char quality1, const char quality2);
 
 static int readfiles (void);
@@ -166,17 +246,18 @@ static char     recordbuf[16384];     /* Global record buffer */
 
 static Filelink *filelist = 0;        /* List of input files */
 
-static MSTraceGroup *mstg = 0;        /* Global MSTraceGroup */
+static MSTraceGroup *gmstg = 0;       /* Global MSTraceGroup */
 
 
 int
 main ( int argc, char **argv )
-{  
+{
+  
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
-
+  
   /* Process input parameters */
-  if (processparam (argc, argv) < 0)
+  if ( processparam (argc, argv) < 0 )
     return 1;
   
   if ( podreqfile && poddatadir )
@@ -186,16 +267,22 @@ main ( int argc, char **argv )
 		podreqfile, poddatadir);
       
       if ( processpod (podreqfile, poddatadir) )
-	ms_log (2, "Cannot processing POD structure\n");
+	{
+	  ms_log (2, "Cannot processing POD structure\n");
+	  return 1;
+	}
     }
   else
     {
       if ( verbose > 2 )
-	ms_log (1, "Pruning input files\n");
+	ms_log (1, "Processing input files\n");
       
       /* Read and process all files specified on the command line */
-      readfiles ();
-      processtraces ();
+      if ( readfiles () )
+	return 1;
+      
+      if ( processtraces () )
+	return 1;
       
       if ( modsummary )
 	printmodsummary (verbose);
@@ -255,7 +342,7 @@ processpod (char *requestfile, char *datadir)
       hound->pruned = 1;
       filecount = 1;
       
-      /* Find all the other NSLC files and add them to the list */
+      /* Find all the other matching NSLC files and add them to the list */
       fox = reqrecs;
       while ( fox )
 	{
@@ -292,9 +379,12 @@ processpod (char *requestfile, char *datadir)
 	  continue;
 	}
       
-      /* Read & prune data files & free file list */
-      readfiles ();
-      processtraces ();
+      /* Read data files & prune time coverage */
+      if ( readfiles () )
+	return -1;
+      
+      if ( processtraces () )
+	return -1;
       
       /* Update the time values in the request records */
       flp = filelist;
@@ -354,11 +444,14 @@ processpod (char *requestfile, char *datadir)
   snprintf (tmpfilename, sizeof(tmpfilename), "%s.orig", requestfile);
   
   if ( rename (requestfile, tmpfilename) )
-    ms_log (2, "ERROR renaming %s -> %s : '%s'\n",
-	    tmpfilename, requestfile, strerror(errno));
+    {
+      ms_log (2, "cannot rename original request file: %s -> %s : '%s'\n",
+	      tmpfilename, requestfile, strerror(errno));
+      return -1;
+    }
   
   /* Write the request file */
-  if ( writereqfile(requestfile, reqrecs) )
+  if ( writereqfile (requestfile, reqrecs) )
     return -1;
   
   return 0;
@@ -617,33 +710,37 @@ writereqfile (char *requestfile, ReqRec *rrlist)
  * Process all MSTrace entries in the global MSTraceGroups by first
  * pruning them and then writing out the remaining data.
  *
- * Returns a pointer to a MSTraceGroup on success and NULL on error.
+ * Returns 0 on success and -1 on error.
  ***************************************************************************/
-static MSTraceGroup *
+static int
 processtraces (void)
 {
-  /* Sort trace group by srcname, sample rate, starttime and descending end time */
-  mst_groupsort (mstg, 0);
+  /* Sort global trace group by srcname, sample rate, starttime and descending end time */
+  mst_groupsort (gmstg, 0);
   
   if ( verbose > 2 )
-    printtracemap (mstg);
+    printtracemap (gmstg);
   
   /* Prune data */
   if ( prunedata )
     {
-      prunetraces (mstg);
+      /* Perform pre-identified pruning actions */
+      if ( prunetraces (gmstg) )
+	return -1;
       
       /* Reconcile MSTrace times with associated record maps */
-      reconcile_tracetimes (mstg);
+      if ( reconcile_tracetimes (gmstg) )
+	return -1;
       
       /* Re-sort trace group by srcname, sample rate, starttime and descending end time */
-      mst_groupsort (mstg, 0);
+      mst_groupsort (gmstg, 0);
     }
   
   /* Write all MSTrace associated records to output file(s) */
-  writetraces (mstg);
+  if ( writetraces (gmstg) )
+    return -1;
   
-  return NULL;
+  return 0;
 }  /* End of processtraces() */
 
 
@@ -662,8 +759,9 @@ processtraces (void)
  *
  * The quality flag is optionally set for all output records.
  *
+ * Returns 0 on success and 1 on error.
  ***************************************************************************/
-static void
+static int
 writetraces (MSTraceGroup *mstg)
 {
   static int totalrecsout = 0;
@@ -671,7 +769,7 @@ writetraces (MSTraceGroup *mstg)
   char *wb = "wb";
   char *ab = "ab";
   char *mode;
-  char stopflag = 0;
+  char errflag = 0;
   
   hptime_t hpdelta;
   
@@ -684,10 +782,10 @@ writetraces (MSTraceGroup *mstg)
   FILE *ofp = 0;
   
   if ( ! mstg )
-    return;
+    return 1;
   
   if ( ! mstg->traces )
-    return;
+    return 1;
   
   /* Open the output file if specified */
   if ( outputfile )
@@ -703,20 +801,24 @@ writetraces (MSTraceGroup *mstg)
         {
           ms_log (2, "Cannot open output file: %s (%s)\n",
 		  outputfile, strerror(errno));
-          return;
+          return 1;
         }
     }
   
   mst = mstg->traces;
   
-  while ( mst && ! stopflag )
+  /* Loop through each MSTrace in the MSTraceGroup */
+  while ( mst && ! errflag )
     {
       recmap = (RecordMap *) mst->prvtptr;
       rec = recmap->first;
       
-      while ( rec && ! stopflag )
+      /* Loop through each Record in the MSTrace's RecordMap.
+       * After records are read from the input files, perform any
+       * pre-identified pruning before writing data back out */
+      while ( rec && ! errflag )
 	{
-	  /* Skip marked records */
+	  /* Skip marked (pre-identified as non-contributing) records */
 	  if ( rec->reclen == 0 )
 	    {
 	      rec = rec->next;
@@ -727,8 +829,8 @@ writetraces (MSTraceGroup *mstg)
 	  if ( rec->reclen > sizeof(recordbuf) )
 	    {
 	      ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
-		      rec->reclen, (long long unsigned int)sizeof(recordbuf));
-	      stopflag = 1;
+		      rec->reclen, (long long unsigned int) sizeof(recordbuf));
+	      errflag = 1;
 	      break;
 	    }
 	  
@@ -738,7 +840,7 @@ writetraces (MSTraceGroup *mstg)
 	      {
 		ms_log (2, "Cannot open '%s' for reading: %s\n",
 			rec->flp->infilename, strerror(errno));
-		stopflag = 1;
+		errflag = 1;
 		break;
 	      }
 	  
@@ -747,7 +849,7 @@ writetraces (MSTraceGroup *mstg)
 	    {
 	      ms_log (2, "Cannot seek in '%s': %s\n",
 		      rec->flp->infilename, strerror(errno));
-	      stopflag = 1;
+	      errflag = 1;
 	      break;
 	    }
 	  
@@ -757,7 +859,7 @@ writetraces (MSTraceGroup *mstg)
 	      ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
 		      rec->reclen, (long long unsigned)rec->offset,
 		      rec->flp->infilename);
-	      stopflag = 1;
+	      errflag = 1;
 	      break;
 	    }
 	  
@@ -786,7 +888,7 @@ writetraces (MSTraceGroup *mstg)
 	      if ( fwrite (recordbuf, rec->reclen, 1, ofp) != 1 )
 		{
 		  ms_log (2, "Cannot write to '%s'\n", outputfile);
-		  stopflag = 1;
+		  errflag = 1;
 		  break;
 		}
 	    }
@@ -821,14 +923,14 @@ writetraces (MSTraceGroup *mstg)
 		  {
 		    ms_log (2, "Cannot open '%s' for writing: %s\n",
 			    rec->flp->outfilename, strerror(errno));
-		    stopflag = 1;
+		    errflag = 1;
 		    break;
 		  }
 	      
 	      if ( fwrite (recordbuf, rec->reclen, 1, rec->flp->outfp) != 1 )
 		{
 		  ms_log (2, "Cannot write to '%s'\n", rec->flp->outfilename);
-		  stopflag = 1;
+		  errflag = 1;
 		  break;
 		}
 	    }
@@ -850,10 +952,10 @@ writetraces (MSTraceGroup *mstg)
 	  totalbytesout += rec->reclen;
 	  
 	  rec = rec->next;
-	}
+	} /* Done looping through Records in the RecordMap */
       
       mst = mst->next;
-    }
+    } /* Done looping through MStraces in the MSTraceGroup */
   
   /* Close all open input & output files and remove backups if requested */
   flp = filelist;
@@ -868,7 +970,7 @@ writetraces (MSTraceGroup *mstg)
 	    ms_log (1, "Wrote %d bytes from file %s\n",
 		    flp->byteswritten, flp->infilename);
 	}
-
+      
       if ( flp->infp )
 	{
 	  fclose (flp->infp);
@@ -883,8 +985,11 @@ writetraces (MSTraceGroup *mstg)
       
       if ( nobackups && ! ofp )
 	if ( unlink (flp->infilename) )
-	  ms_log (2, "Cannot remove '%s': %s\n",
-		  flp->infilename, strerror(errno));
+	  {
+	    ms_log (2, "Cannot remove '%s': %s\n",
+		    flp->infilename, strerror(errno));
+	    errflag = 1;
+	  }
       
       flp = flp->next;
     }
@@ -895,14 +1000,14 @@ writetraces (MSTraceGroup *mstg)
       fclose (ofp);
       ofp = 0;
     }
-
+  
   if ( verbose )
     {
       ms_log (1, "Wrote %d bytes of %d records to output file(s)\n",
 	      totalbytesout, totalrecsout);
     }
   
-  return;
+  return errflag;
 }  /* End of writetraces() */
 
 
@@ -1148,9 +1253,21 @@ prunetraces (MSTraceGroup *mstg)
 	      
 	      /* Trim records from the lowest quality MSTrace */
 	      if ( priority == 1 )
-		trimtraces (mst, imst);
+		{
+		  if ( trimtraces (mst, imst) < 0 )
+		    {
+		      ms_log (2, "cannot trimtraces()\n");
+		      return -1;
+		    }
+		}
 	      else
-		trimtraces (imst, mst);
+		{
+		  if ( trimtraces (imst, mst) < 0 )
+		    {
+		      ms_log (2, "cannot trimtraces()\n");
+		      return -1;
+		    }
+		}
 	    }
 	  
 	  imst = imst->next;
@@ -1341,10 +1458,13 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
  * trace group with the list of records in an associated record map.
  * In other words, set the start and end times of each MSTrace in the
  * MSTraceGroup according to the start time of the first and end time
- * of the last contributing records in the associated record map.
+ * of the last contributing records in the associated record map; this
+ * should be preformed after the pruning process which could mark
+ * complete records as pruned (non-contributing).
  *
+ * Returns 0 on success and -1 on error.
  ***************************************************************************/
-static void
+static int
 reconcile_tracetimes (MSTraceGroup *mstg)
 {
   MSTrace *mst;
@@ -1354,10 +1474,10 @@ reconcile_tracetimes (MSTraceGroup *mstg)
   Record *last = 0;
   
   if ( ! mstg )
-    return;
+    return -1;
   
   if ( ! mstg->traces )
-    return;
+    return -1;
   
   mst = mstg->traces;
   
@@ -1366,7 +1486,7 @@ reconcile_tracetimes (MSTraceGroup *mstg)
       recmap = (RecordMap *) mst->prvtptr;
       
       /* Find first contributing record (reclen != 0) */
-      rec = recmap->first;      
+      rec = recmap->first;
       while ( rec )
 	{
 	  if ( rec->reclen > 0 )
@@ -1418,7 +1538,7 @@ reconcile_tracetimes (MSTraceGroup *mstg)
       mst = mst->next;
     }
   
-  return;
+  return 0;
 }  /* End of reconcile_tracetimes() */
 
 
@@ -1458,7 +1578,7 @@ qcompare (const char quality1, const char quality2)
  * record maps for each trace.  All input files are renamed with a
  * ".orig" suffix before being read.
  *
- * Returns 0 on success and 1 otherwise.
+ * Returns 0 on success and -1 otherwise.
  ***************************************************************************/
 static int
 readfiles (void)
@@ -1489,17 +1609,23 @@ readfiles (void)
   int infilenamelen;
   
   if ( ! filelist )
-    return 1;
+    return -1;
   
-  /* (Re)Initialize MSTraceGroup */
-  mstg = reinitgroup (mstg);
+  /* (Re)Initialize global MSTraceGroup */
+  gmstg = reinitgroup (gmstg);
+  
+  if ( ! gmstg )
+    {
+      ms_log (2, "readfiles(): cannot initialize MSTraceGroup\n");
+      return -1;
+    }
   
   /* Read all input files and construct continuous traces, using the
    * libmseed MSTrace and MSTraceGroup functionality.  For each trace
    * maintain a list of each data record that contributed to the
    * trace, implemented as a RecordMap struct (MSTrace->prvtptr) where
    * a linked list of Record structs is maintained.  The records are
-   * listed in time order.
+   * always listed in time order.
    */
   
   flp = filelist;
@@ -1520,7 +1646,7 @@ readfiles (void)
 	    {
 	      ms_log (2, "Cannot rename %s -> %s : '%s'\n",
 		      flp->outfilename, flp->infilename, strerror(errno));
-	      return 1;
+	      return -1;
 	    }
 	}
       
@@ -1571,7 +1697,7 @@ readfiles (void)
 		  continue;
 		}
 	    }
-
+	  
 	  /* Check if record is rejected by the reject regex */
 	  if ( reject )
 	    {
@@ -1587,7 +1713,7 @@ readfiles (void)
 	    msr_print (msr, verbose - 3);
 	  
 	  /* Add record to the MSTraceGroup */
-	  if ( ! (mst = mst_addmsrtogroup (mstg, msr, bestquality, timetol, sampratetol)) )
+	  if ( ! (mst = mst_addmsrtogroup (gmstg, msr, bestquality, timetol, sampratetol)) )
 	    {
 	      ms_log (2, "Cannot add record to trace group, %s, %s\n", srcname, stime);
 	    }
@@ -1754,7 +1880,7 @@ readfiles (void)
 	  else
 	    {
 	      if ( mst->prvtptr )
-		ms_log (2, "Supposedly first record, but RecordMap not empty\n");
+		ms_log (2, "Supposedly first record, but RecordMap not empty, report this\n");
 	      
 	      recmap = (RecordMap *) malloc (sizeof(RecordMap));
 	      recmap->first = newrecmap.first;
@@ -1768,8 +1894,13 @@ readfiles (void)
 	  totalsamps += msr->samplecnt;
 	}
       
+      /* Critical error if file was not read properly */
       if ( retcode != MS_ENDOFFILE )
-	ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr(retcode));
+	{
+	  ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr(retcode));
+	  ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
+	  return -1;
+	}
       
       /* Make sure everything is cleaned up */
       ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
@@ -2156,9 +2287,9 @@ processparam (int argcount, char **argvec)
       ms_log (2, "No input files were specified\n\n");
       ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
       ms_log (1, "Try %s -h for usage\n", PACKAGE);
-      exit (1);
+      exit (0);
     }
-
+  
   /* Expand match pattern from a file if prefixed by '@' */
   if ( matchpattern )
     {
