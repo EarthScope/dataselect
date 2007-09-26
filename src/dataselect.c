@@ -19,7 +19,7 @@
  *
  * Data structures and operational overview
  *
- * The data map:
+ * The data map (using actual structure names):
  *
  * MSTraceGroup
  *   |-MSTrace
@@ -50,6 +50,12 @@
  * Records.  A Record structure is not the actual data record itself
  * but meta information about the record coverage and location (file
  * and offset).  The list of Records is always in time order.
+ *
+ * When splitting on a time boundary and an input record crosses the
+ * specified boundary, two Record structures will be created for the
+ * two sides of the boundary and the new start and end time will be
+ * set accordingly.  When writing this data out the data record will
+ * effectively be split in two.
  *
  * There is no relationship between the location of input records in
  * specific files or offsets into files.  In other words, the program
@@ -84,10 +90,7 @@
  * removal and repacking.  After trimming or if no trimming is
  * required the data record is written to the appropriate output file.
  * In this way only the minimal number of records needing modification
- * (trimming) are repacked
-
-CHAD
-
+ * (trimming) are repacked.
  *
  ***************************************************************************/
 
