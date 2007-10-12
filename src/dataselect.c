@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.268
+ * modified 2007.285
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9"
+#define VERSION "0.9.1"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -207,6 +207,7 @@ static int reconcile_tracetimes (MSTraceGroup *mstg);
 static int qcompare (const char quality1, const char quality2);
 
 static int readfiles (void);
+static MSTraceGroup *rehashgroup (MSTraceGroup *mstg);
 static MSTraceGroup *reinitgroup (MSTraceGroup *mstg);
 static void printmodsummary (flag nomods);
 static void printtracemap (MSTraceGroup *mstg);
@@ -718,6 +719,16 @@ writereqfile (char *requestfile, ReqRec *rrlist)
 static int
 processtraces (void)
 {
+  CHAD, this didn't work on the trouble data: KSU1.US..BHZ.2007.253
+  Search for fix in general pruning above.
+
+  /* Rehash group to heal/merge all possible segments */
+  if ( ! (gmstg = rehashgroup (gmstg)) )
+    {
+      ms_log (2, "Rehash of global MSTraceGroup failed!\n");
+      return -1;
+    }
+  
   /* Sort global trace group by srcname, sample rate, starttime and descending end time */
   mst_groupsort (gmstg, 0);
   
@@ -1206,7 +1217,7 @@ prunetraces (MSTraceGroup *mstg)
   MSTrace *mst = 0;
   MSTrace *imst = 0;
   int priority = 0;
-
+  
   if ( ! mstg )
     return -1;
   
@@ -1920,12 +1931,130 @@ readfiles (void)
 
 
 /***************************************************************************
+ * rehashgroup():
+ *
+ * Heal (merge) all possible MSTrace segments in a group with special
+ * handling for the MSTraces with RecordMaps at MSTrace.prvtptr.
+ *
+ * Return pointer to (re)worked MSTraceGroup.
+ ***************************************************************************/
+static MSTraceGroup *
+rehashgroup (MSTraceGroup *mstg)
+{
+  MSTraceGroup *newmstg = 0;
+  MSTrace *mst, *amst, *nextmst;
+  RecordMap *recmap, *arecmap;
+  flag whence;
+  int mergecnt;
+  
+  if ( ! mstg )
+    {
+      return NULL;
+    }
+  
+  /* Init new group */
+  newmstg = mst_initgroup (newmstg);
+  
+  /* Loop over tracegroup until no more merges occur */
+  do {
+    /* Reset new trace group */
+    newmstg->numtraces = 0;
+    newmstg->traces = 0;
+    
+    /* Loop over each MSTrace in the input group and copy to new group */
+    mst = mstg->traces;
+    
+    /* Reset the merge count */
+    mergecnt = 0;
+    
+    while ( mst )
+      {
+	nextmst = mst->next;
+
+	/* Find an adjacent MSTrace in the new group */
+	amst = mst_findadjacent (newmstg, &whence, mst->dataquality,
+				 mst->network, mst->station, mst->location, mst->channel,
+				 mst->samprate, sampratetol, mst->starttime, mst->endtime, timetol);
+	
+	/* Merge adjacent MSTraces */
+	if ( amst )
+	  {
+	    /* Current MSTrace fits at end of adjacent MSTrace */
+	    if ( whence == 1 )
+	      {
+		/* Update end time */
+		amst->endtime = mst->endtime;
+		
+		/* Merge RecordMaps */
+		recmap = (RecordMap *) mst->prvtptr;
+		arecmap = (RecordMap *) amst->prvtptr;
+		
+		arecmap->last->next = recmap->first;
+		arecmap->last = recmap->last;
+		
+		arecmap->recordcnt += recmap->recordcnt;
+	      }
+	    /* Current MSTrace fits at beginning of adjacent MSTrace */
+	    else if ( whence == 2 )
+	      {
+		/* Update start time */
+		amst->starttime = mst->starttime;
+		
+		/* Merge RecordMaps */
+		recmap = (RecordMap *) mst->prvtptr;
+		arecmap = (RecordMap *) amst->prvtptr;
+		
+		recmap->last->next = arecmap->first;
+		arecmap->first = recmap->first;
+		
+		arecmap->recordcnt += recmap->recordcnt;
+	      }
+	    else
+	      {
+		ms_log (2, "rehashgroup: Unrecognized value for whence: %d\n", whence);
+		return NULL;
+	      }
+	    
+	    /* Free the old RecordMap struct and the MSTrace struct */
+	    free (mst->prvtptr);
+	    free (mst);
+	    
+	    mergecnt++;
+	  }
+	/* Otherwise add the new MSTrace to the group */
+	else
+	  {
+	    if ( ! mst_addtracetogroup (newmstg, mst) )
+	      {
+		ms_log (2, "rehashgroup: Cannot add MSTrace to new MSTraceGroup\n");
+		return NULL;
+	      }
+	  }
+	
+	mst = nextmst;
+      } /* Done looping over MSTraces from input group */
+    
+    mst_printtracelist (newmstg, 1, 1, 1);
+    
+    /* Shift MSTraceGroup contents from new to old */
+    mstg->numtraces = newmstg->numtraces;
+    mstg->traces = newmstg->traces;
+    
+    fprintf (stderr, "DB Merge count: %d\n", mergecnt);
+    
+  } while ( mergecnt > 0 );
+  
+  return mstg;
+}  /* End of rehashgroup() */
+
+
+/***************************************************************************
  * reinitgroup():
  *
  * (Re)Initialize a MSTraceGroup, freeing all associated memory.
  *
  * Return pointer to (re)initialized MSTraceGroup.
- ***************************************************************************/
+ *********************.******************************************************/
 static MSTraceGroup *
 reinitgroup (MSTraceGroup *mstg)
 {
