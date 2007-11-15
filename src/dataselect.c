@@ -203,7 +203,8 @@ static int trimrecord (Record *rec, char *recbuf);
 static void record_handler (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MSTraceGroup *mstg);
-static MSTraceGroup *getcoverage (MSTraceGroup *mstg, MSTrace *targetmst);
+static int getcoverage (MSTraceGroup *mstg, MSTrace *targetmst,
+			MSTraceGroup **ppcoverage);
 static int trimtrace (MSTrace *targetmst, MSTraceGroup *coverage);
 static int reconcile_tracetimes (MSTraceGroup *mstg);
 static int qcompare (const char quality1, const char quality2);
@@ -1198,7 +1199,8 @@ static int
 prunetraces (MSTraceGroup *mstg)
 {
   MSTrace *mst = 0;
-  MSTraceGroup *coverage;
+  MSTraceGroup *coverage = 0;
+  int retval;
   
   if ( ! mstg )
     return -1;
@@ -1216,20 +1218,20 @@ prunetraces (MSTraceGroup *mstg)
   while ( mst )
     {
       /* Determine overlapping MSTrace coverage */
-      coverage = getcoverage (mstg, mst);
+      retval = getcoverage (mstg, mst, &coverage);
       
-      if ( coverage )
+      if ( retval )
+	{
+	  ms_log (2, "cannot getcoverage()\n");
+	  return -1;
+	}
+      else if ( coverage )
 	{
 	  if ( trimtrace (mst, coverage) < 0 )
 	    {
 	      ms_log (2, "cannot trimtraces()\n");
 	      return -1;
 	    }
-	}
-      else
-	{
-	  ms_log (2, "cannot getcoverage()\n");
-	  return -1;
 	}
       
       /* Free the coverage MSTraceGroup for reuse */
@@ -1263,13 +1265,15 @@ prunetraces (MSTraceGroup *mstg)
  * location and channel.  As long as the MSTrace struct does not
  * change this shortcut will be valid.
  *
- * Returns the time coverage as a list of TimeSegments on success and
- * NULL on error.
+ * When no overlap coverage is found *ppcoverage will be 0, otherwise
+ * it will contain a list of MSTraces representing the overlap
+ * coverage.
+ *
+ * Returns 0 on success and -1 on error.
  ***************************************************************************/
-static MSTraceGroup *
-getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
+static int
+getcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
 {
-  MSTraceGroup *cmstg = 0;
   MSTrace *cmst = 0;
   MSTrace *mst;
   RecordMap *recmap;
@@ -1279,8 +1283,12 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
   int priority;
   int newsegment;
   
-  if ( ! mstg || ! targetmst )
-    return NULL;
+  if ( ! mstg || ! targetmst || ! ppcoverage )
+    return -1;
+  
+  /* Reset coverage MSTraceGroup if needed */
+  if ( *ppcoverage )
+    mst_freegroup (ppcoverage);
   
   /* Determine sample period in high precision time ticks */
   hpdelta = ( targetmst->samprate ) ? (hptime_t) (HPTMODULUS / targetmst->samprate) : 0;
@@ -1365,7 +1373,10 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
 		      
 		      if ( cmst )
 			{
-			  mst_addtracetogroup (cmstg, cmst);
+			  if ( ! *ppcoverage )
+			    *ppcoverage = mst_initgroup (NULL);
+			  
+			  mst_addtracetogroup (*ppcoverage, cmst);
 			  
 			  cmst->dataquality = mst->dataquality;
 			  cmst->starttime = effstarttime;
@@ -1375,7 +1386,7 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
 		  if ( cmst )
 		    cmst->endtime = effendtime;
 		  else
-		    ms_log (2, "ACK! covergage mst is not allocated!?  PLEASE REPORT\n");
+		    ms_log (2, "ACK! covergage MSTrace is not allocated!?  PLEASE REPORT\n");
 		  
 		  rec = rec->next;
 		}
@@ -1386,13 +1397,14 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
     }
   
   /* Heal the coverage MSTraceGroup */
-  if ( mst_groupheal (cmstg, timetol, sampratetol) < 0 )
-    {
-      ms_log (2, "Cannot heal coverage trace group\n");
-      return NULL;
-    }
+  if ( *ppcoverage )
+    if ( mst_groupheal (*ppcoverage, timetol, sampratetol) < 0 )
+      {
+	ms_log (2, "cannot heal coverage trace group\n");
+	return -1;
+      }
   
-  return cmstg;
+  return 0;
 }  /* End of getcoverage() */
 
 
