@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.285
+ * modified 2007.318
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.1"
+#define VERSION "0.9+2007.318"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -187,6 +187,7 @@ typedef struct RecordMap_s {
 typedef struct TimeSegment_s {
   hptime_t  starttime;
   hptime_t  endtime;
+  char      quality;
   struct TimeSegment_s *next;
 } TimeSegment;
 
@@ -202,12 +203,15 @@ static int trimrecord (Record *rec, char *recbuf);
 static void record_handler (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MSTraceGroup *mstg);
-static int trimtraces (MSTrace *lptrace, MSTrace *hptrace);
+
+//CHAD
+static TimeSegment *getcoverage(MSTraceGroup, *mstg, MSTrace *targettrace);
+static int trimtraces (MSTrace *targettrace,TimeSegment *coverage);
+
 static int reconcile_tracetimes (MSTraceGroup *mstg);
 static int qcompare (const char quality1, const char quality2);
 
 static int readfiles (void);
-static MSTraceGroup *rehashgroup (MSTraceGroup *mstg);
 static MSTraceGroup *reinitgroup (MSTraceGroup *mstg);
 static void printmodsummary (flag nomods);
 static void printtracemap (MSTraceGroup *mstg);
@@ -719,15 +723,6 @@ writereqfile (char *requestfile, ReqRec *rrlist)
 static int
 processtraces (void)
 {
-  CHAD, this didn't work on the trouble data: KSU1.US..BHZ.2007.253
-  Search for fix in general pruning above.
-
-  /* Rehash group to heal/merge all possible segments */
-  if ( ! (gmstg = rehashgroup (gmstg)) )
-    {
-      ms_log (2, "Rehash of global MSTraceGroup failed!\n");
-      return -1;
-    }
   
   /* Sort global trace group by srcname, sample rate, starttime and descending end time */
   mst_groupsort (gmstg, 0);
@@ -1218,6 +1213,9 @@ prunetraces (MSTraceGroup *mstg)
   MSTrace *imst = 0;
   int priority = 0;
   
+  char stime[100], etime[100];
+  int verb = verbose;
+  
   if ( ! mstg )
     return -1;
   
@@ -1242,6 +1240,22 @@ prunetraces (MSTraceGroup *mstg)
 	      continue;
 	    }
 	  
+	  //DEBUG
+	  if ( mst->starttime == 1189426442075000LL && imst->starttime == 1189426442225000LL )
+	    {
+	      ms_hptime2seedtimestr (mst->starttime, stime, 1);
+	      ms_hptime2seedtimestr (mst->endtime, etime, 1);
+	      fprintf (stderr, "Comparing: %s (%lld) - %s\n", stime, mst->starttime, etime);
+	      ms_hptime2seedtimestr (imst->starttime, stime, 1);
+	      ms_hptime2seedtimestr (imst->endtime, etime, 1);
+	      fprintf (stderr, "To:        %s (%lld) - %s\n", stime, imst->starttime, etime);
+
+	      fprintf (stderr, "MST:\n");
+	      printrecordmap ((RecordMap *)mst->prvtptr, 0);
+	      fprintf (stderr, "IMST:\n");
+	      printrecordmap ((RecordMap *)imst->prvtptr, 0);
+	    }
+
 	  /* Test if the MSTraces overlap */
 	  if ( mst->endtime > imst->starttime &&
 	       mst->starttime < imst->endtime )
@@ -1253,7 +1267,7 @@ prunetraces (MSTraceGroup *mstg)
 	      
 	      /* If best quality is requested compare the qualities to determine priority */
 	      if ( bestquality )
-		priority = qcompare(mst->dataquality, imst->dataquality);
+		priority = qcompare (mst->dataquality, imst->dataquality);
 	      
 	      /* If priorities are equal (qualities are equal or no checking) 
 	       * give priority to the longest MSTrace */
@@ -1263,6 +1277,13 @@ prunetraces (MSTraceGroup *mstg)
 		    priority = -1;
 		  else
 		    priority = 1;
+		}
+	      
+	      //DEBUG
+	      if ( mst->starttime == 1189426442075000LL && imst->starttime == 1189426442225000LL )
+		{
+		  fprintf (stderr, "PRIORITY: %d\n", priority);
+		  verbose = 3;
 		}
 	      
 	      /* Trim records from the lowest quality MSTrace */
@@ -1282,6 +1303,13 @@ prunetraces (MSTraceGroup *mstg)
 		      return -1;
 		    }
 		}
+
+	      //DEBUG
+	      if ( mst->starttime == 1189426442075000LL && imst->starttime == 1189426442225000LL )
+		{
+		  verbose = verb;
+		}
+
 	    }
 	  
 	  imst = imst->next;
@@ -1292,6 +1320,150 @@ prunetraces (MSTraceGroup *mstg)
   
   return 0;
 }  /* End of prunetraces() */
+
+
+/***************************************************************************
+ * getcoverage():
+ *
+ *
+ * Returns the time coverage as a list of TimeSegments on success and
+ * NULL on error.
+ ***************************************************************************/
+static TimeSegment *
+getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
+{
+  MSTrace *mst;
+  TimeSegment *tseg = 0;
+  TimeSegment *newtseg = 0;
+  Record *rec;
+  int priority;
+  int newsegment;
+  
+  /* Loop through each MSTrace in the group searching for target coverage */
+  mst = mstg->traces;
+  
+  while ( mst )
+    {
+      /* Skip target trace */
+      if ( mst == targettrace )
+	{
+	  mst = mst->next;
+	  continue;
+	}
+      
+      /* Continue with next if srcname or sample rate are different */
+      if ( memcmp (mst->network, targetmst->network, 44) ||
+	   ! MS_ISRATETOLERABLE (mst->samprate, targetmst->samprate) )
+	{
+	  mst = mst->next;
+	  continue;
+	}
+      
+      /* Test for overlap with targetmst */
+      if ( targetmst->endtime > mst->starttime &&
+	   targetmst->starttime < mst->endtime )
+	{
+	  /* Determine priority:
+	   *  -1 = mst > targetmst
+	   *   0 = mst == targetmst
+	   *   1 = mst < targetmst */
+	  priority = 0;
+	  
+	  /* If best quality is requested compare the qualities to determine priority */
+	  if ( bestquality )
+	    priority = qcompare (mst->dataquality, targetmst->dataquality);
+	  
+	  /* If priorities are equal (qualities are equal or no checking) 
+	   * give priority to the longest MSTrace */
+	  if ( priority == 0 )
+	    {
+	      if ( (mst->endtime - mst->starttime) > (targetmst->endtime - targetmst->starttime) )
+		priority = -1;
+	      else
+		priority = 1;
+	    }
+	  
+	  /* If overlapping trace is a higher priority than targetmst add to coverage */
+	  if ( priority == -1 )
+	    {
+
+	    }
+	}
+
+      mst = mst->next;
+    }
+  
+}  /* End of getcoverage() */
+
+
+/***************************************************************************
+ * addcoverage():
+ *
+ * Add time coverage from a RecordMap to a list of TimeSegments.
+ *
+ * Returns 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+addcoverage (TimeSegment *coverage, RecordMap *recmap)
+{
+  TimeSegment *ts;
+  Record *rec;
+  int newsegment;
+  
+  /* Loop through overlapping trace records and add to TimeSegment coverage list */
+  rec = recmap->first;
+  newsegment = 1;
+  
+  while ( rec )
+    {
+      /* Check if record has been marked as non-contributing (removed) */
+      if ( rec->reclen == 0 )
+	{
+	  rec = rec->next;
+	  continue;
+	}
+      
+      /* Determine effective record start and end times */
+      effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
+      effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
+      
+      /* Search for current TimeSegment entry to extend */
+      ts = coverage;
+      newsegment = 0;
+      while ( ts )
+	{
+	  
+	  
+	  ts = ts->next;
+	}
+      
+      /* Create a new segment if a break in the time-series is detected */
+      if ( tsp )
+	if ( llabs((tsp->endtime + hpdelta) - effstarttime) > hptimetol )
+	  newsegment = 1;
+		  
+      if ( newsegment )
+	{
+	  newsegment = 0;
+		      
+	  newts = (TimeSegment *) malloc (sizeof(TimeSegment));
+		      
+	  if ( ts == 0 )
+	    ts = tsp = newts;
+		      
+	  tsp->next = newts;
+	  tsp = newts;
+	  tsp->next = 0;
+		      
+	  tsp->starttime = effstarttime;
+	}
+		  
+      tsp->endtime = effendtime;
+		  
+      rec = rec->next;
+    }
+  
+}  /* End of addcoverage() */
 
 
 /***************************************************************************
@@ -1462,7 +1634,7 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
     }
   
   return modcount;
-} /* End of trimtraces() */
+}  /* End of trimtraces() */
 
 
 /***************************************************************************
@@ -1931,124 +2103,6 @@ readfiles (void)
 
 
 /***************************************************************************
- * rehashgroup():
- *
- * Heal (merge) all possible MSTrace segments in a group with special
- * handling for the MSTraces with RecordMaps at MSTrace.prvtptr.
- *
- * Return pointer to (re)worked MSTraceGroup.
- ***************************************************************************/
-static MSTraceGroup *
-rehashgroup (MSTraceGroup *mstg)
-{
-  MSTraceGroup *newmstg = 0;
-  MSTrace *mst, *amst, *nextmst;
-  RecordMap *recmap, *arecmap;
-  flag whence;
-  int mergecnt;
-  
-  if ( ! mstg )
-    {
-      return NULL;
-    }
-  
-  /* Init new group */
-  newmstg = mst_initgroup (newmstg);
-  
-  /* Loop over tracegroup until no more merges occur */
-  do {
-    /* Reset new trace group */
-    newmstg->numtraces = 0;
-    newmstg->traces = 0;
-    
-    /* Loop over each MSTrace in the input group and copy to new group */
-    mst = mstg->traces;
-    
-    /* Reset the merge count */
-    mergecnt = 0;
-    
-    while ( mst )
-      {
-	nextmst = mst->next;
-
-	/* Find an adjacent MSTrace in the new group */
-	amst = mst_findadjacent (newmstg, &whence, mst->dataquality,
-				 mst->network, mst->station, mst->location, mst->channel,
-				 mst->samprate, sampratetol, mst->starttime, mst->endtime, timetol);
-	
-	/* Merge adjacent MSTraces */
-	if ( amst )
-	  {
-	    /* Current MSTrace fits at end of adjacent MSTrace */
-	    if ( whence == 1 )
-	      {
-		/* Update end time */
-		amst->endtime = mst->endtime;
-		
-		/* Merge RecordMaps */
-		recmap = (RecordMap *) mst->prvtptr;
-		arecmap = (RecordMap *) amst->prvtptr;
-		
-		arecmap->last->next = recmap->first;
-		arecmap->last = recmap->last;
-		
-		arecmap->recordcnt += recmap->recordcnt;
-	      }
-	    /* Current MSTrace fits at beginning of adjacent MSTrace */
-	    else if ( whence == 2 )
-	      {
-		/* Update start time */
-		amst->starttime = mst->starttime;
-		
-		/* Merge RecordMaps */
-		recmap = (RecordMap *) mst->prvtptr;
-		arecmap = (RecordMap *) amst->prvtptr;
-		
-		recmap->last->next = arecmap->first;
-		arecmap->first = recmap->first;
-		
-		arecmap->recordcnt += recmap->recordcnt;
-	      }
-	    else
-	      {
-		ms_log (2, "rehashgroup: Unrecognized value for whence: %d\n", whence);
-		return NULL;
-	      }
-	    
-	    /* Free the old RecordMap struct and the MSTrace struct */
-	    free (mst->prvtptr);
-	    free (mst);
-	    
-	    mergecnt++;
-	  }
-	/* Otherwise add the new MSTrace to the group */
-	else
-	  {
-	    if ( ! mst_addtracetogroup (newmstg, mst) )
-	      {
-		ms_log (2, "rehashgroup: Cannot add MSTrace to new MSTraceGroup\n");
-		return NULL;
-	      }
-	  }
-	
-	mst = nextmst;
-      } /* Done looping over MSTraces from input group */
-    
-    mst_printtracelist (newmstg, 1, 1, 1);
-    
-    /* Shift MSTraceGroup contents from new to old */
-    mstg->numtraces = newmstg->numtraces;
-    mstg->traces = newmstg->traces;
-    
-    fprintf (stderr, "DB Merge count: %d\n", mergecnt);
-    
-  } while ( mergecnt > 0 );
-  
-  return mstg;
-}  /* End of rehashgroup() */
-
-
-/***************************************************************************
  * reinitgroup():
  *
  * (Re)Initialize a MSTraceGroup, freeing all associated memory.
@@ -2377,6 +2431,11 @@ processparam (int argcount, char **argvec)
       else if (strcmp (argvec[optind], "-CHAN") == 0)
         {
           if ( addarchive(getoptval(argcount, argvec, optind++), CHANLAYOUT) == -1 )
+            return -1;
+        }
+      else if (strcmp (argvec[optind], "-QCHAN") == 0)
+        {
+          if ( addarchive(getoptval(argcount, argvec, optind++), QCHANLAYOUT) == -1 )
             return -1;
         }
       else if (strcmp (argvec[optind], "-CDAY") == 0)
