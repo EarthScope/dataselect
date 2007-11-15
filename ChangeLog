@@ -1,3 +1,7 @@
+2007.318: 0.9.1
+	- Rework pruning process, more comprehensively includes coverage
+	of all overlapping data segments during pruning.
+
 2007.268: 0.9
 	- Diagnostic return values: 0=success 1=error.
 	- Rename global MSTraceGroup from 'mstg' to 'gmstg' to avoid

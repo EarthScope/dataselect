@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9+2007.318"
+#define VERSION "0.9.1"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -182,14 +182,6 @@ typedef struct RecordMap_s {
   struct Record_s *first;
   struct Record_s *last;
 } RecordMap;
-
-/* Time segment containers */
-typedef struct TimeSegment_s {
-  hptime_t  starttime;
-  hptime_t  endtime;
-  char      quality;
-  struct TimeSegment_s *next;
-} TimeSegment;
 
 
 static int processpod (char *requestfile, char *datadir);
