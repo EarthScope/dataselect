@@ -203,11 +203,8 @@ static int trimrecord (Record *rec, char *recbuf);
 static void record_handler (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MSTraceGroup *mstg);
-
-//CHAD
-static TimeSegment *getcoverage(MSTraceGroup, *mstg, MSTrace *targettrace);
-static int trimtraces (MSTrace *targettrace,TimeSegment *coverage);
-
+static MSTraceGroup *getcoverage (MSTraceGroup *mstg, MSTrace *targetmst);
+static int trimtrace (MSTrace *targetmst, MSTraceGroup *coverage);
 static int reconcile_tracetimes (MSTraceGroup *mstg);
 static int qcompare (const char quality1, const char quality2);
 
@@ -1185,24 +1182,15 @@ record_handler (char *record, int reclen, void *handlerdata)
 /***************************************************************************
  * prunetraces():
  *
- * Remove all redundant records from the MSTraces.
+ * Prune all redundant data from the RecordMap entries associated with
+ * the specified MSTraces.
  *
- * Compare each MSTrace to every other MSTrace in the MSTraceGroup,
- * for each MSTrace that has the same NSLC and sampling rate as
- * another MSTrace decide which one has priority and call trimtraces()
- * to determine if there is any overlap and remove the overlapping
- * records.
+ * For each MSTrace determine the coverage of the RecordMap associated
+ * with each overlapping, higher-priority MSTrace using getcoverage().
+ * If some higher-priority overlap was determined to exist modify the
+ * RecordMap of the MSTrace in question to mark the overlapping data
+ * using trimtrace().
  *
- * If the 'bestquality' option is being used the priority is
- * determined from the data quality flags with M > Q > D > R.  If the
- * qualities are the same (or bestquality not requested) the longer
- * MSTrace will get priority over the shorter.
- *
- * To avoid numerous string operations this routine will compare
- * MSTrace srcnames by comparing 44 bytes starting from
- * MSTrace->network which should be the strings for network, station,
- * location and channel.  As long as the MSTrace struct does not
- * change this shortcut will be valid.
  *
  * Return 0 on success and -1 on failure.
  ***************************************************************************/
@@ -1210,11 +1198,7 @@ static int
 prunetraces (MSTraceGroup *mstg)
 {
   MSTrace *mst = 0;
-  MSTrace *imst = 0;
-  int priority = 0;
-  
-  char stime[100], etime[100];
-  int verb = verbose;
+  MSTraceGroup *coverage;
   
   if ( ! mstg )
     return -1;
@@ -1225,95 +1209,31 @@ prunetraces (MSTraceGroup *mstg)
   if ( verbose )
     ms_log (1, "Pruning MSTrace data\n");
   
-  /* Compare each MSTrace to every other MSTrace */
+  /* For each MSTrace determine the coverage of the overlapping
+     Records from the other traces with a higher priority and prune
+     the overlap. */
   mst = mstg->traces;
   while ( mst )
     {
-      imst = mst->next;
-      while ( imst )
+      /* Determine overlapping MSTrace coverage */
+      coverage = getcoverage (mstg, mst);
+      
+      if ( coverage )
 	{
-	  /* Continue with next if srcname or sample rate are different */
-	  if ( memcmp(mst->network, imst->network, 44) ||
-	       ! MS_ISRATETOLERABLE (mst->samprate,imst->samprate) )
+	  if ( trimtrace (mst, coverage) < 0 )
 	    {
-	      imst = imst->next;
-	      continue;
+	      ms_log (2, "cannot trimtraces()\n");
+	      return -1;
 	    }
-	  
-	  //DEBUG
-	  if ( mst->starttime == 1189426442075000LL && imst->starttime == 1189426442225000LL )
-	    {
-	      ms_hptime2seedtimestr (mst->starttime, stime, 1);
-	      ms_hptime2seedtimestr (mst->endtime, etime, 1);
-	      fprintf (stderr, "Comparing: %s (%lld) - %s\n", stime, mst->starttime, etime);
-	      ms_hptime2seedtimestr (imst->starttime, stime, 1);
-	      ms_hptime2seedtimestr (imst->endtime, etime, 1);
-	      fprintf (stderr, "To:        %s (%lld) - %s\n", stime, imst->starttime, etime);
-
-	      fprintf (stderr, "MST:\n");
-	      printrecordmap ((RecordMap *)mst->prvtptr, 0);
-	      fprintf (stderr, "IMST:\n");
-	      printrecordmap ((RecordMap *)imst->prvtptr, 0);
-	    }
-
-	  /* Test if the MSTraces overlap */
-	  if ( mst->endtime > imst->starttime &&
-	       mst->starttime < imst->endtime )
-	    {
-	      /* Determine priority:
-	       *  -1 = mst > imst
-	       *   0 = mst == imst
-	       *   1 = mst < imst */
-	      
-	      /* If best quality is requested compare the qualities to determine priority */
-	      if ( bestquality )
-		priority = qcompare (mst->dataquality, imst->dataquality);
-	      
-	      /* If priorities are equal (qualities are equal or no checking) 
-	       * give priority to the longest MSTrace */
-	      if ( priority == 0 )
-		{
-		  if ( (mst->endtime - mst->starttime) > (imst->endtime - imst->starttime) )
-		    priority = -1;
-		  else
-		    priority = 1;
-		}
-	      
-	      //DEBUG
-	      if ( mst->starttime == 1189426442075000LL && imst->starttime == 1189426442225000LL )
-		{
-		  fprintf (stderr, "PRIORITY: %d\n", priority);
-		  verbose = 3;
-		}
-	      
-	      /* Trim records from the lowest quality MSTrace */
-	      if ( priority == 1 )
-		{
-		  if ( trimtraces (mst, imst) < 0 )
-		    {
-		      ms_log (2, "cannot trimtraces()\n");
-		      return -1;
-		    }
-		}
-	      else
-		{
-		  if ( trimtraces (imst, mst) < 0 )
-		    {
-		      ms_log (2, "cannot trimtraces()\n");
-		      return -1;
-		    }
-		}
-
-	      //DEBUG
-	      if ( mst->starttime == 1189426442075000LL && imst->starttime == 1189426442225000LL )
-		{
-		  verbose = verb;
-		}
-
-	    }
-	  
-	  imst = imst->next;
 	}
+      else
+	{
+	  ms_log (2, "cannot getcoverage()\n");
+	  return -1;
+	}
+      
+      /* Free the coverage MSTraceGroup for reuse */
+      mst_freegroup (&coverage);
       
       mst = mst->next;
     }
@@ -1325,27 +1245,55 @@ prunetraces (MSTraceGroup *mstg)
 /***************************************************************************
  * getcoverage():
  *
+ * Search an MSTraceGroup for entries that overlap the target MSTrace
+ * and, from the Record entries of the overlapping MSTraces, build a
+ * coverage map in the form of a sparsely-populated MSTraceGroup.
+ *
+ * Only data with a higher priority than the target MSTrace will be
+ * added to the overlap coverage.  Priority is determined using the
+ * quality codes via qcompare() and if the qualities are equal the
+ * longest time-series will be given priority.
+ *
+ * On success a new MSTraceGroup will be allocated and returned, it is
+ * up to the caller to properly free this memory.
+ *
+ * To avoid numerous string operations this routine will compare
+ * MSTrace srcnames by comparing 44 bytes starting from
+ * MSTrace->network which should be the strings for network, station,
+ * location and channel.  As long as the MSTrace struct does not
+ * change this shortcut will be valid.
  *
  * Returns the time coverage as a list of TimeSegments on success and
  * NULL on error.
  ***************************************************************************/
-static TimeSegment *
+static MSTraceGroup *
 getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
 {
+  MSTraceGroup *cmstg = 0;
+  MSTrace *cmst = 0;
   MSTrace *mst;
-  TimeSegment *tseg = 0;
-  TimeSegment *newtseg = 0;
+  RecordMap *recmap;
   Record *rec;
+  hptime_t hpdelta, hptimetol;
+  hptime_t effstarttime, effendtime;
   int priority;
   int newsegment;
   
+  if ( ! mstg || ! targetmst )
+    return NULL;
+  
+  /* Determine sample period in high precision time ticks */
+  hpdelta = ( targetmst->samprate ) ? (hptime_t) (HPTMODULUS / targetmst->samprate) : 0;
+  
+  /* Determine time tolerance in high precision time ticks */
+  hptimetol = ( timetol == -1 ) ? (hpdelta / 2) : (hptime_t) (HPTMODULUS * timetol);
+  
   /* Loop through each MSTrace in the group searching for target coverage */
   mst = mstg->traces;
-  
   while ( mst )
     {
       /* Skip target trace */
-      if ( mst == targettrace )
+      if ( mst == targetmst )
 	{
 	  mst = mst->next;
 	  continue;
@@ -1364,9 +1312,9 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
 	   targetmst->starttime < mst->endtime )
 	{
 	  /* Determine priority:
-	   *  -1 = mst > targetmst
-	   *   0 = mst == targetmst
-	   *   1 = mst < targetmst */
+	   *  -1 : mst > targetmst
+	   *   0 : mst == targetmst
+	   *   1 : mst < targetmst */
 	  priority = 0;
 	  
 	  /* If best quality is requested compare the qualities to determine priority */
@@ -1386,202 +1334,128 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst)
 	  /* If overlapping trace is a higher priority than targetmst add to coverage */
 	  if ( priority == -1 )
 	    {
-
+	      /* Loop through list of associated Records, determine
+		 contiguous coverage and store in an MSTraceGroup */
+	      recmap = (RecordMap *) mst->prvtptr;
+	      rec = recmap->first;
+	      newsegment = 1;
+	      while ( rec )
+		{
+		  /* Check if record has been marked as non-contributing */
+		  if ( rec->reclen == 0 )
+		    {
+		      rec = rec->next;
+		      continue;
+		    }
+		  
+		  /* Determine effective record start and end times */
+		  effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
+		  effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
+		  
+		  /* Create a new segment if a break in the time-series is detected */
+		  if ( cmst )
+		    if ( llabs((cmst->endtime + hpdelta) - effstarttime) > hptimetol )
+		      newsegment = 1;
+		  
+		  if ( newsegment )
+		    {
+		      newsegment = 0;
+		      
+		      cmst = mst_init (NULL);
+		      
+		      if ( cmst )
+			{
+			  mst_addtracetogroup (cmstg, cmst);
+			  
+			  cmst->dataquality = mst->dataquality;
+			  cmst->starttime = effstarttime;
+			}
+		    }
+		  
+		  if ( cmst )
+		    cmst->endtime = effendtime;
+		  else
+		    ms_log (2, "ACK! covergage mst is not allocated!?  PLEASE REPORT\n");
+		  
+		  rec = rec->next;
+		}
 	    }
 	}
-
+      
       mst = mst->next;
     }
   
+  /* Heal the coverage MSTraceGroup */
+  if ( mst_groupheal (cmstg, timetol, sampratetol) < 0 )
+    {
+      ms_log (2, "Cannot heal coverage trace group\n");
+      return NULL;
+    }
+  
+  return cmstg;
 }  /* End of getcoverage() */
 
 
 /***************************************************************************
- * addcoverage():
+ * trimtrace():
  *
- * Add time coverage from a RecordMap to a list of TimeSegments.
+ * Adjust Record entries associated with the target MSTrace that are
+ * overlapping the time represented by the coverage MSTraceGroup in
+ * two different ways: 1) mark records that are completely overlapped
+ * and 2) determine partial record trim boundaries (new record times)
+ * if sample level pruning is requested.
  *
- * Returns 0 on success and -1 on error.
- ***************************************************************************/
-static int
-addcoverage (TimeSegment *coverage, RecordMap *recmap)
-{
-  TimeSegment *ts;
-  Record *rec;
-  int newsegment;
-  
-  /* Loop through overlapping trace records and add to TimeSegment coverage list */
-  rec = recmap->first;
-  newsegment = 1;
-  
-  while ( rec )
-    {
-      /* Check if record has been marked as non-contributing (removed) */
-      if ( rec->reclen == 0 )
-	{
-	  rec = rec->next;
-	  continue;
-	}
-      
-      /* Determine effective record start and end times */
-      effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
-      effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
-      
-      /* Search for current TimeSegment entry to extend */
-      ts = coverage;
-      newsegment = 0;
-      while ( ts )
-	{
-	  
-	  
-	  ts = ts->next;
-	}
-      
-      /* Create a new segment if a break in the time-series is detected */
-      if ( tsp )
-	if ( llabs((tsp->endtime + hpdelta) - effstarttime) > hptimetol )
-	  newsegment = 1;
-		  
-      if ( newsegment )
-	{
-	  newsegment = 0;
-		      
-	  newts = (TimeSegment *) malloc (sizeof(TimeSegment));
-		      
-	  if ( ts == 0 )
-	    ts = tsp = newts;
-		      
-	  tsp->next = newts;
-	  tsp = newts;
-	  tsp->next = 0;
-		      
-	  tsp->starttime = effstarttime;
-	}
-		  
-      tsp->endtime = effendtime;
-		  
-      rec = rec->next;
-    }
-  
-}  /* End of addcoverage() */
-
-
-/***************************************************************************
- * trimtraces():
- *
- * Mark Records in the lower priority MSTrace that are completely
- * overlapped by the higher priority MSTrace.  Record entries are
- * marked by setting Record.reclen = 0.
- *
- * Time coverage for the higher priority MSTrace is determined and
- * stored in a series of TimeSegments structs.  Each Record in the
- * lower priority MSTrace is then compared to each TimeSegment to see
- * if it's completely overlapped.
- *
- * The record map chain (MSTrace->prvtptr->first pointer) must be time
- * ordered.
- *
- * lptrace = lower priority MSTrace (LP)
- * hptrace = higher priority MSTrace (HP)
+ * Completely overlapping Record entries are marked for omission by
+ * setting Record.reclen = 0.  Partial Record overlaps are noted by
+ * setting Record.newstart and Record.newend when sample level pruning
+ * is requested.  The actual trimming of the data records, complete or
+ * partial, is performed during the output sequence, not in this
+ * routine.
  *
  * Returns the number of Record modifications on success and -1 on error.
  ***************************************************************************/
 static int
-trimtraces (MSTrace *lptrace, MSTrace *hptrace)
+trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
 {
   RecordMap *recmap;
   Record *rec;
-  
-  TimeSegment *ts = 0;
-  TimeSegment *tsp = 0;
-  TimeSegment *newts;
-  hptime_t hpdelta, hptimetol;
+  MSTrace *cmst;
   hptime_t effstarttime, effendtime;
-  int newsegment;
-
+  hptime_t hpdelta, hptimetol;
   char srcname[50];
   char stime[30];
   char etime[30];
   int modcount = 0;
   
-  if ( ! lptrace || ! hptrace )
+  if ( ! targetmst || ! coverage )
     return -1;
   
   /* Determine sample period in high precision time ticks */
-  hpdelta = ( hptrace->samprate ) ? (hptime_t) (HPTMODULUS / hptrace->samprate) : 0;
+  hpdelta = ( targetmst->samprate ) ? (hptime_t) (HPTMODULUS / targetmst->samprate) : 0;
   
   /* Determine time tolerance in high precision time ticks */
   hptimetol = ( timetol == -1 ) ? (hpdelta / 2) : (hptime_t) (HPTMODULUS * timetol);
-  
-  /* Build a TimeSegment list of coverage in the HP MSTrace.  Records
-   * are in time order otherwise they wouldn't be in the MSTrace.
-   * This re-calculation of the time coverage is done as an
-   * optimization to avoid the need for each record in the HP MSTrace
-   * to be compared to each record in the LP MSTrace.  The optimizaion
-   * becomes less effective as gaps in the HP MSTrace coverage
-   * increase. */
-  recmap = (RecordMap *) hptrace->prvtptr;
-  rec = recmap->first;
-  newsegment = 1;
-  while ( rec )
-    {
-      /* Check if record has been marked as non-contributing */
-      if ( rec->reclen == 0 )
-	{
-	  rec = rec->next;
-	  continue;
-	}
-      
-      /* Determine effective record start and end times */
-      effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
-      effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
-      
-      /* Create a new segment if a break in the time-series is detected */
-      if ( tsp )
-	if ( llabs((tsp->endtime + hpdelta) - effstarttime) > hptimetol )
-	  newsegment = 1;
-      
-      if ( newsegment )
-	{
-	  newsegment = 0;
-	  
-	  newts = (TimeSegment *) malloc (sizeof(TimeSegment));
-	  
-	  if ( ts == 0 )
-	    ts = tsp = newts;
-	  
-	  tsp->next = newts;
-	  tsp = newts;
-	  tsp->next = 0;
-	  
-	  tsp->starttime = effstarttime;
-	}
-      
-      tsp->endtime = effendtime;
-      
-      rec = rec->next;
-    }
-  
-  /* Traverse the Record chain for the LP MSTrace and mark Records
-   * that are completely overlapped by the HP MSTrace coverage */
-  recmap = (RecordMap *) lptrace->prvtptr;
+
+  /* Traverse the Record chain for the target MSTrace and mark Records
+   * that are completely overlapped by the HP MSTraceGroup coverage */
+  recmap = (RecordMap *) targetmst->prvtptr;
   rec = recmap->first;
   while ( rec )
     {
-      tsp = ts;
-      while ( tsp )
+      cmst = coverage->traces;
+      while ( cmst )
 	{
 	  /* Determine effective record start and end times for comparison */
 	  effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
 	  effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
 	  
-	  /* Mark Record if it is completely overlaped by HP data */
-	  if ( effstarttime >= tsp->starttime &&
-	       effendtime <= tsp->endtime )
+	  /* Mark Record if it is completely overlaped by the coverage */
+	  if ( effstarttime >= cmst->starttime &&
+	       effendtime <= cmst->endtime )
 	    {
 	      if ( verbose > 1 )
 		{
-		  mst_srcname (lptrace, srcname, 1);
+		  mst_srcname (targetmst, srcname, 1);
 		  ms_hptime2seedtimestr (rec->starttime, stime, 1);
 		  ms_hptime2seedtimestr (rec->endtime, etime, 1);
 		  ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
@@ -1597,40 +1471,30 @@ trimtraces (MSTrace *lptrace, MSTrace *hptrace)
 	  if ( prunedata == 's' && rec->reclen != 0 )
 	    {
 	      /* Record overlaps beginning of HP coverage */
-	      if ( effstarttime <= hptrace->starttime &&
-		   effendtime >= hptrace->starttime )
+	      if ( effstarttime <= cmst->starttime &&
+		   effendtime >= cmst->starttime )
 		{
 		  /* Set Record new end time boundary including specified time tolerance */
-		  rec->newend = hptrace->starttime - hpdelta + hptimetol;
+		  rec->newend = cmst->starttime - hpdelta + hptimetol;
 		  rec->flp->rectrimcount++;
 		  modcount++;
 		}
 	      
 	      /* Record overlaps end of HP coverage */
-	      if ( effstarttime <= hptrace->endtime &&
-		   effendtime >= hptrace->endtime )
+	      if ( effstarttime <= cmst->endtime &&
+		   effendtime >= cmst->endtime )
 		{
 		  /* Set Record new start time boundary including specified time tolerance */
-		  rec->newstart = hptrace->endtime + hpdelta - hptimetol;
+		  rec->newstart = cmst->endtime + hpdelta - hptimetol;
 		  rec->flp->rectrimcount++;
 		  modcount++;
 		}
 	    }
 	  
-	  tsp = tsp->next;
+	  cmst = cmst->next;
 	}
       
       rec = rec->next;
-    }
-  
-  /* Free the TimeSegment list */
-  tsp = ts;
-  while ( tsp )
-    {
-      ts = tsp;
-      tsp = tsp->next;
-      
-      free (ts);
     }
   
   return modcount;
