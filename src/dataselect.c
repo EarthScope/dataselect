@@ -1379,7 +1379,7 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
 			  mst_addtracetogroup (*ppcoverage, cmst);
 			  
 			  cmst->dataquality = mst->dataquality;
-			  cmst->samplerate = mst->samplerate;
+			  cmst->samprate = mst->samprate;
 			  cmst->starttime = effstarttime;
 			}
 		    }
