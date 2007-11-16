@@ -210,7 +210,7 @@ static void printrecordmap (RecordMap *recmap, flag details);
 static int processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
 static int strparse (const char *string, const char *delim, StrList **list);
-static void addfile (Filelink *filelist, char *filename, ReqRec *reqrec);
+static void addfile (Filelink **ppfilelist, char *filename, ReqRec *reqrec);
 static int  addarchive (const char *path, const char *layout);
 static int readregexfile (char *regexfile, char **pppattern);
 static void freefilelist (Filelink *filelist);
@@ -242,7 +242,7 @@ static Archive *archiveroot   = 0;    /* Output file structures */
 
 static char     recordbuf[16384];     /* Global record buffer */
 
-static Filelink *gfilelist = 0;       /* List of input files */
+static Filelink *gfilelist    = 0;    /* List of input files */
 
 
 int
@@ -337,7 +337,7 @@ processpod (char *requestfile, char *datadir)
 		poddatadir, hound->station, hound->filename);
       
       /* Add file to list to be pruned and mark it as pruned */
-      addfile (filelist, tmpfilename, hound);
+      addfile (&filelist, tmpfilename, hound);
       hound->pruned = 1;
       filecount = 1;
       
@@ -361,7 +361,7 @@ processpod (char *requestfile, char *datadir)
 			poddatadir, fox->station, fox->filename);
 	      
 	      /* Add file to list to be pruned and mark it as pruned */
-	      addfile (filelist, tmpfilename, fox);
+	      addfile (&filelist, tmpfilename, fox);
 	      fox->pruned = 1;
 	      filecount++;
 	    }
@@ -2332,7 +2332,7 @@ processparam (int argcount, char **argvec)
       else
 	{
 	  /* Add file to global file list */
-	  addfile (gfilelist, argvec[optind], NULL);
+	  addfile (&gfilelist, argvec[optind], NULL);
 	}
     }
   
@@ -2451,10 +2451,10 @@ getoptval (int argcount, char **argvec, int argopt)
 /***************************************************************************
  * addfile:
  *
- * Add file to end of the global file list (filelist).
+ * Add file to end of the specified file list.
  ***************************************************************************/
 static void
-addfile (Filelink *filelist, char *filename, ReqRec *reqrec)
+addfile (Filelink **ppfilelist, char *filename, ReqRec *reqrec)
 {
   Filelink *lastlp, *newlp;
   
@@ -2464,7 +2464,7 @@ addfile (Filelink *filelist, char *filename, ReqRec *reqrec)
       return;
     }
   
-  lastlp = filelist;
+  lastlp = *ppfilelist;
   while ( lastlp != 0 )
     {
       if ( lastlp->next == 0 )
@@ -2489,7 +2489,7 @@ addfile (Filelink *filelist, char *filename, ReqRec *reqrec)
   newlp->next = 0;
   
   if ( lastlp == 0 )
-    filelist = newlp;
+    *ppfilelist = newlp;
   else
     lastlp->next = newlp;
   
