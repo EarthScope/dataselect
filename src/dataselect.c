@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.318
+ * modified 2007.319
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.1"
+#define VERSION "0.9.2"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -160,7 +160,7 @@ typedef struct Filelink_s {
 typedef struct Archive_s {
   DataStream  datastream;
   struct Archive_s *next;
-} Archive; 
+} Archive;
 
 /* Mini-SEED record information structures */
 typedef struct Record_s {
@@ -189,8 +189,8 @@ static int setofilelimit (int limit);
 static ReqRec *readreqfile (char *requestfile);
 static int writereqfile (char *requestfile, ReqRec *rrlist);
 
-static int processtraces (void);
-static int writetraces (MSTraceGroup *mstg);
+static int processtraces (MSTraceGroup *mstg, Filelink *filelist);
+static int writetraces (MSTraceGroup *mstg, Filelink *filelist);
 static int trimrecord (Record *rec, char *recbuf);
 static void record_handler (char *record, int reclen, void *handlerdata);
 
@@ -201,19 +201,19 @@ static int trimtrace (MSTrace *targetmst, MSTraceGroup *coverage);
 static int reconcile_tracetimes (MSTraceGroup *mstg);
 static int qcompare (const char quality1, const char quality2);
 
-static int readfiles (void);
+static int readfiles (Filelink *flp, MSTraceGroup **ppmstg);
 static MSTraceGroup *reinitgroup (MSTraceGroup *mstg);
-static void printmodsummary (flag nomods);
+static void printmodsummary (Filelink *filelist, flag nomods);
 static void printtracemap (MSTraceGroup *mstg);
 static void printrecordmap (RecordMap *recmap, flag details);
 
 static int processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
 static int strparse (const char *string, const char *delim, StrList **list);
-static void addfile (char *filename, ReqRec *reqrec);
-static int  addarchive(const char *path, const char *layout);
+static void addfile (Filelink *filelist, char *filename, ReqRec *reqrec);
+static int  addarchive (const char *path, const char *layout);
 static int readregexfile (char *regexfile, char **pppattern);
-static void freefilelist (void);
+static void freefilelist (Filelink *filelist);
 static void usage (int level);
 
 static flag     verbose       = 0;
@@ -242,14 +242,13 @@ static Archive *archiveroot   = 0;    /* Output file structures */
 
 static char     recordbuf[16384];     /* Global record buffer */
 
-static Filelink *filelist = 0;        /* List of input files */
-
-static MSTraceGroup *gmstg = 0;       /* Global MSTraceGroup */
+static Filelink *gfilelist = 0;       /* List of input files */
 
 
 int
 main ( int argc, char **argv )
 {
+  MSTraceGroup *mstg = 0;
   
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
@@ -261,12 +260,12 @@ main ( int argc, char **argv )
   if ( podreqfile && poddatadir )
     {
       if ( verbose > 2 )
-	ms_log (1, "Pruning POD structure:\nrequest file: %s, data dir: %s\n",
+	ms_log (1, "Procesing POD structure:\nrequest file: %s, data dir: %s\n",
 		podreqfile, poddatadir);
       
       if ( processpod (podreqfile, poddatadir) )
 	{
-	  ms_log (2, "Cannot processing POD structure\n");
+	  ms_log (2, "Cannot process POD structure\n");
 	  return 1;
 	}
     }
@@ -276,16 +275,16 @@ main ( int argc, char **argv )
 	ms_log (1, "Processing input files\n");
       
       /* Read and process all files specified on the command line */
-      if ( readfiles () )
+      if ( readfiles (gfilelist, &mstg) )
 	return 1;
       
-      if ( processtraces () )
+      if ( processtraces (mstg, gfilelist) )
 	return 1;
       
       if ( modsummary )
-	printmodsummary (verbose);
+	printmodsummary (gfilelist, verbose);
       
-      freefilelist ();
+      freefilelist (gfilelist);
     }
   
   return 0;
@@ -303,6 +302,8 @@ main ( int argc, char **argv )
 static int
 processpod (char *requestfile, char *datadir)
 {
+  Filelink *filelist = 0;
+  MSTraceGroup *mstg = 0;
   ReqRec *reqrecs;
   ReqRec *fox, *hound;
   ReqRec *reciter, *recnext;
@@ -336,7 +337,7 @@ processpod (char *requestfile, char *datadir)
 		poddatadir, hound->station, hound->filename);
       
       /* Add file to list to be pruned and mark it as pruned */
-      addfile (tmpfilename, hound);
+      addfile (filelist, tmpfilename, hound);
       hound->pruned = 1;
       filecount = 1;
       
@@ -360,7 +361,7 @@ processpod (char *requestfile, char *datadir)
 			poddatadir, fox->station, fox->filename);
 	      
 	      /* Add file to list to be pruned and mark it as pruned */
-	      addfile (tmpfilename, fox);
+	      addfile (filelist, tmpfilename, fox);
 	      fox->pruned = 1;
 	      filecount++;
 	    }
@@ -372,16 +373,16 @@ processpod (char *requestfile, char *datadir)
        * we need 2 X the filecount and some wiggle room. */
       if ( setofilelimit ((filecount * 2) + 20) == -1 )
 	{
-	  freefilelist ();
+	  freefilelist (filelist);
 	  hound = hound->next;
 	  continue;
 	}
       
       /* Read data files & prune time coverage */
-      if ( readfiles () )
+      if ( readfiles (filelist, &mstg) )
 	return -1;
       
-      if ( processtraces () )
+      if ( processtraces (mstg, filelist) )
 	return -1;
       
       /* Update the time values in the request records */
@@ -403,10 +404,10 @@ processpod (char *requestfile, char *datadir)
 	}
       
       if ( modsummary )
-	printmodsummary (verbose);
+	printmodsummary (filelist, verbose);
       
-      /* Clean up global file list */
-      freefilelist ();
+      /* Clean up file list */
+      freefilelist (filelist);
       
       hound = hound->next;
     }
@@ -711,32 +712,32 @@ writereqfile (char *requestfile, ReqRec *rrlist)
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
 static int
-processtraces (void)
+processtraces (MSTraceGroup *mstg, Filelink *filelist)
 {
   
   /* Sort global trace group by srcname, sample rate, starttime and descending end time */
-  mst_groupsort (gmstg, 0);
+  mst_groupsort (mstg, 0);
   
   if ( verbose > 2 )
-    printtracemap (gmstg);
+    printtracemap (mstg);
   
   /* Prune data */
   if ( prunedata )
     {
       /* Perform pre-identified pruning actions */
-      if ( prunetraces (gmstg) )
+      if ( prunetraces (mstg) )
 	return -1;
       
       /* Reconcile MSTrace times with associated record maps */
-      if ( reconcile_tracetimes (gmstg) )
+      if ( reconcile_tracetimes (mstg) )
 	return -1;
       
       /* Re-sort trace group by srcname, sample rate, starttime and descending end time */
-      mst_groupsort (gmstg, 0);
+      mst_groupsort (mstg, 0);
     }
   
   /* Write all MSTrace associated records to output file(s) */
-  if ( writetraces (gmstg) )
+  if ( writetraces (mstg, filelist) )
     return -1;
   
   return 0;
@@ -761,7 +762,7 @@ processtraces (void)
  * Returns 0 on success and 1 on error.
  ***************************************************************************/
 static int
-writetraces (MSTraceGroup *mstg)
+writetraces (MSTraceGroup *mstg, Filelink *filelist)
 {
   static int totalrecsout = 0;
   static int totalbytesout = 0;
@@ -1629,14 +1630,14 @@ qcompare (const char quality1, const char quality2)
 /***************************************************************************
  * readfiles:
  *
- * Read input files (global file list) building a MSTraceGroup and
- * record maps for each trace.  All input files are renamed with a
- * ".orig" suffix before being read.
+ * Read input files specified as a Filelink list and populate an
+ * MSTraceGroup and record maps for each trace.  All input files are
+ * renamed with a ".orig" suffix before being read.
  *
  * Returns 0 on success and -1 otherwise.
  ***************************************************************************/
 static int
-readfiles (void)
+readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 {
   Filelink *flp;
   MSRecord *msr = 0;
@@ -1663,13 +1664,13 @@ readfiles (void)
   
   int infilenamelen;
   
-  if ( ! filelist )
+  if ( ! filelist || ! ppmstg )
     return -1;
   
-  /* (Re)Initialize global MSTraceGroup */
-  gmstg = reinitgroup (gmstg);
+  /* (Re)Initialize MSTraceGroup */
+  *ppmstg = reinitgroup (*ppmstg);
   
-  if ( ! gmstg )
+  if ( ! *ppmstg )
     {
       ms_log (2, "readfiles(): cannot initialize MSTraceGroup\n");
       return -1;
@@ -1768,7 +1769,7 @@ readfiles (void)
 	    msr_print (msr, verbose - 3);
 	  
 	  /* Add record to the MSTraceGroup */
-	  if ( ! (mst = mst_addmsrtogroup (gmstg, msr, bestquality, timetol, sampratetol)) )
+	  if ( ! (mst = mst_addmsrtogroup (*ppmstg, msr, bestquality, timetol, sampratetol)) )
 	    {
 	      ms_log (2, "Cannot add record to trace group, %s, %s\n", srcname, stime);
 	    }
@@ -2024,7 +2025,7 @@ reinitgroup (MSTraceGroup *mstg)
  * include files that were not modified.
  ***************************************************************************/
 static void
-printmodsummary (flag nomods)
+printmodsummary (Filelink *filelist, flag nomods)
 {
   Filelink *flp;
   
@@ -2330,19 +2331,20 @@ processparam (int argcount, char **argvec)
 	}
       else
 	{
-	  addfile (argvec[optind], NULL);
+	  /* Add file to global file list */
+	  addfile (gfilelist, argvec[optind], NULL);
 	}
     }
   
   /* Cannot specify both input files and POD */
-  if ( filelist && (podreqfile && poddatadir) )
+  if ( gfilelist && (podreqfile && poddatadir) )
     {
       ms_log (2, "Cannot specify both input files and POD structure\n");
       exit (1);
     }
   
   /* Make sure input file(s) or POD were specified */
-  if ( filelist == 0 && ! (podreqfile && poddatadir) )
+  if ( gfilelist == 0 && ! (podreqfile && poddatadir) )
     {
       ms_log (2, "No input files were specified\n\n");
       ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
@@ -2452,7 +2454,7 @@ getoptval (int argcount, char **argvec, int argopt)
  * Add file to end of the global file list (filelist).
  ***************************************************************************/
 static void
-addfile (char *filename, ReqRec *reqrec)
+addfile (Filelink *filelist, char *filename, ReqRec *reqrec)
 {
   Filelink *lastlp, *newlp;
   
@@ -2622,12 +2624,12 @@ readregexfile (char *regexfile, char **pppattern)
  * Free all memory assocated with global file list.
  ***************************************************************************/
 static void
-freefilelist (void)
+freefilelist (Filelink *filelist)
 {
   Filelink *flp, *nextflp;
-   
+  
   flp = filelist;
-
+  
   while ( flp )
     {
       nextflp = flp->next;
