@@ -1,6 +1,6 @@
-.TH DATASELECT 2007/04/12
+.TH DATASELECT 2007/11/15
 .SH NAME
-Mini-SEED data selection and shifting
+Mini-SEED data selection, sorting and pruning
 
 .SH SYNOPSIS
 .nf
@@ -22,12 +22,11 @@ will remove any overlap and splice data to within the time-series
 tolerance, this requires the unpacking and repacking of data records
 and is done in a modification-minimizing way.
 
-When removing data records or samples the time coverage of different
-time-series the concept of priority is used to determine from which
-time-series data should be removed if overlaps are detected.  By
-default the priority is given to the highest quality data (Q, D, R,
-etc.).  When the qualities are the same priority is given to the
-longest time-series.
+When removing overlapping data records or samples the concept of
+priority is used to determine from which time-series data should be
+removed if overlaps are detected.  By default the priority is given to
+the highest quality data (M > Q > D > R).  When the qualities are the
+same priority is given to the longer segment.
 
 If '-' is specified standard input will be read.  Multiple input files
 will be processed all together.
@@ -51,14 +50,6 @@ specification and exit.
 Be more verbose.  This flag can be used multiple times ("-v -v" or
 "-vv") for more verbosity.
 
-.IP "-s         "
-Print a basic summary including the number of records and the number
-of samples they included after processing all input records.
-
-.IP "-Q \fQDR\fP"
-Re-stamp all output data records with the specified SEED quality code:
-either Q, D or R.
-
 .IP "-tt \fIsecs\fP"
 Specify a time tolerance for constructing continous trace
 segments. The tolerance is specified in seconds.  The default
@@ -77,15 +68,15 @@ quality indicator: (highest) Q > D > R (lowest).
 
 .IP "-ts \fItime\fP"
 Limit processing to Mini-SEED records that start after \fItime\fP.
-The format of the \fItime\fP arguement
-is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
-commas (,), colons (:) or periods (.).
+The format of the \fItime\fP argument is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]'
+where valid delimiters are either commas (,), colons (:) or periods
+(.).
 
 .IP "-te \fItime\fP"
-Limit processing to Mini-SEED records that end before \fItime\fP.
-The format of the \fItime\fP arguement
-is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
-commas (,), colons (:) or periods (.).
+Limit processing to Mini-SEED records that end before \fItime\fP.  The
+format of the \fItime\fP argument is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]'
+where valid delimiters are either commas (,), colons (:) or periods
+(.).
 
 .IP "-M \fImatch\fP"
 Limit input to records that match this regular expression, the
@@ -102,8 +93,8 @@ Replace input files.  By default this will rename the original files
 by adding a '.orig' suffix.
 
 .IP "-nb"
-Do not keep backups of rhe original input files if replacing them by
-using the -rep option.
+Do not keep backups of renamed original input files if replacing them
+by using the -rep option.
 
 .IP "-o \fIfile\fP"
 Write all output data to output \fIfile\fP instead of replacing the
@@ -157,9 +148,10 @@ should remain ('.orig' is appended to the original).
 
 .SH THE PRUNING PROCESS
 
-The pruning algorithm used is independant of the file structure.  Data
-from all input files is parsed and a map created for every data record
-and their relationship in continuous time series.
+The pruning algorithm used is independant of the file structure and
+organization.  Data from all input files is parsed and a map created
+for every data record and their relationship in continuous time
+series.
 
 Each data record time coverage in each continuous time-series is
 compared to the time coverage of every other continous time-series.
