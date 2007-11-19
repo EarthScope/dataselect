@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.319
+ * modified 2007.323
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.2"
+#define VERSION "0.9.3"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -213,7 +213,7 @@ static int strparse (const char *string, const char *delim, StrList **list);
 static void addfile (Filelink **ppfilelist, char *filename, ReqRec *reqrec);
 static int  addarchive (const char *path, const char *layout);
 static int readregexfile (char *regexfile, char **pppattern);
-static void freefilelist (Filelink *filelist);
+static void freefilelist (Filelink **ppfilelist);
 static void usage (int level);
 
 static flag     verbose       = 0;
@@ -284,7 +284,7 @@ main ( int argc, char **argv )
       if ( modsummary )
 	printmodsummary (gfilelist, verbose);
       
-      freefilelist (gfilelist);
+      freefilelist (&gfilelist);
     }
   
   return 0;
@@ -373,7 +373,7 @@ processpod (char *requestfile, char *datadir)
        * we need 2 X the filecount and some wiggle room. */
       if ( setofilelimit ((filecount * 2) + 20) == -1 )
 	{
-	  freefilelist (filelist);
+	  freefilelist (&filelist);
 	  hound = hound->next;
 	  continue;
 	}
@@ -407,7 +407,7 @@ processpod (char *requestfile, char *datadir)
 	printmodsummary (filelist, verbose);
       
       /* Clean up file list */
-      freefilelist (filelist);
+      freefilelist (&filelist);
       
       hound = hound->next;
     }
@@ -2624,11 +2624,14 @@ readregexfile (char *regexfile, char **pppattern)
  * Free all memory assocated with global file list.
  ***************************************************************************/
 static void
-freefilelist (Filelink *filelist)
+freefilelist (Filelink **ppfilelist)
 {
   Filelink *flp, *nextflp;
   
-  flp = filelist;
+  if ( ! ppfilelist )
+    return;
+  
+  flp = *ppfilelist;
   
   while ( flp )
     {
@@ -2643,8 +2646,8 @@ freefilelist (Filelink *filelist)
       
       flp = nextflp;
     }
-
-  filelist = 0;
+  
+  *ppfilelist = 0;
   
   return;
 }  /* End of freefilelist() */
