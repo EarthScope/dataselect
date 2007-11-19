@@ -213,6 +213,7 @@ static int strparse (const char *string, const char *delim, StrList **list);
 static void addfile (Filelink **ppfilelist, char *filename, ReqRec *reqrec);
 static int  addarchive (const char *path, const char *layout);
 static int readregexfile (char *regexfile, char **pppattern);
+static void freereqrec (ReqRec *reqrec);
 static void freefilelist (Filelink **ppfilelist);
 static void usage (int level);
 
@@ -436,7 +437,7 @@ processpod (char *requestfile, char *datadir)
 	      reciter->next->prev = reciter->prev;
 	    }
 	  
-	  free (reciter);
+	  freereqrec (reciter);
 	}
       
       reciter = recnext;
@@ -462,20 +463,7 @@ processpod (char *requestfile, char *datadir)
     {
       recnext = reciter->next;
       
-      if ( reciter->station )
-	free (reciter->station);
-      if ( reciter->network )
-	free (reciter->network);
-      if ( reciter->channel )
-	free (reciter->channel);
-      if ( reciter->location )
-	free (reciter->location);
-      if ( reciter->filename )
-	free (reciter->filename);
-      if ( reciter->headerdir )
-	free (reciter->headerdir);
-      
-      free (reciter);
+      freereqrec (reciter);
       
       reciter = recnext;
     }
@@ -2645,13 +2633,43 @@ readregexfile (char *regexfile, char **pppattern)
   fclose (fp);
   
   return regexcnt;
-}  /* End readregexfile() */
+}  /* End of readregexfile() */
+
+
+/***************************************************************************
+ * freereqrec:
+ *
+ * Free all memory assocated with a ReqRec.
+ ***************************************************************************/
+static void
+freereqrec (ReqRec *reqrec)
+{
+  if ( ! reqrec )
+    return;
+  
+  if ( reqrec->station )
+    free (reqrec->station);
+  if ( reqrec->network )
+    free (reqrec->network);
+  if ( reqrec->channel )
+    free (reqrec->channel);
+  if ( reqrec->location )
+    free (reqrec->location);
+  if ( reqrec->filename )
+    free (reqrec->filename);
+  if ( reqrec->headerdir )
+    free (reqrec->headerdir);
+  
+  free (reqrec);
+  
+  return;
+}  /* End of freereqrec() */
 
 
 /***************************************************************************
  * freefilelist:
  *
- * Free all memory assocated with global file list.
+ * Free all memory assocated with a specified file list.
  ***************************************************************************/
 static void
 freefilelist (Filelink **ppfilelist)
