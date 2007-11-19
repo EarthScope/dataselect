@@ -456,6 +456,30 @@ processpod (char *requestfile, char *datadir)
   if ( writereqfile (requestfile, reqrecs) )
     return -1;
   
+  /* Free memory associated with the request records */
+  reciter = reqrecs;
+  while ( reciter )
+    {
+      recnext = reciter->next;
+      
+      if ( reciter->station )
+	free (reciter->station);
+      if ( reciter->network )
+	free (reciter->network);
+      if ( reciter->channel )
+	free (reciter->channel);
+      if ( reciter->location )
+	free (reciter->location);
+      if ( reciter->filename )
+	free (reciter->filename);
+      if ( reciter->headerdir )
+	free (reciter->headerdir);
+      
+      free (reciter);
+      
+      reciter = recnext;
+    }
+  
   return 0;
 }  /* End of processpod() */
 
