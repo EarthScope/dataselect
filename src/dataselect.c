@@ -557,31 +557,34 @@ readreqfile (char *requestfile)
       
       listptr = list;
       
-      newrr->station = listptr->element;
+      newrr->station = strdup(listptr->element);   /* 1 */
       listptr = listptr->next;
-      newrr->network = listptr->element;
+      newrr->network = strdup(listptr->element);   /* 2 */
       listptr = listptr->next;
-      newrr->channel = listptr->element;
+      newrr->channel = strdup(listptr->element);   /* 3 */
       listptr = listptr->next;
-      newrr->location = listptr->element;
+      newrr->location = strdup(listptr->element);  /* 4 */
       listptr = listptr->next;
-      newrr->datastart = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));
+      newrr->datastart = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element))); /* 5 */
       listptr = listptr->next;
-      newrr->dataend = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));
+      newrr->dataend = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));   /* 6 */
       listptr = listptr->next;
-      newrr->filename = listptr->element;
+      newrr->filename = strdup(listptr->element);  /* 7 */
       listptr = listptr->next;
-      newrr->headerdir = listptr->element;
+      newrr->headerdir = strdup(listptr->element); /* 8 */
       listptr = listptr->next;
-      newrr->reqstart = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));
+      newrr->reqstart = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));  /* 9 */
       listptr = listptr->next;
-      newrr->reqend = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));
+      newrr->reqend = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));   /* 10 */
       listptr = listptr->next;
       
       newrr->pruned = 0;
       newrr->prev = 0;
       newrr->next = 0;
       
+      /* Free the parsed string list */
+      strparse (0, 0, &list);
+
       /* Build appropriate data file name using base data dir and record file name */
       snprintf (tmpfilename, sizeof(tmpfilename), "%s/%s/%s",
 		poddatadir, newrr->station, newrr->filename);
@@ -2662,9 +2665,9 @@ freefilelist (Filelink **ppfilelist)
  * splits a 'string' on 'delim' and puts each part into a linked list
  * pointed to by 'list' (a pointer to a pointer).  The last entry has
  * it's 'next' set to 0.  All elements are NULL terminated strings.
- * If both 'string' and 'delim' are NULL then the linked list is
- * traversed and the memory used is free'd and the list pointer is
- * set to NULL.
+ * If both 'string' and 'delim' are 0 then the linked list is
+ * traversed and the memory used is free'd and the list pointer is set
+ * to 0.
  *
  * Returns the number of elements added to the list, or 0 when freeing
  * the linked list.
@@ -2681,17 +2684,16 @@ strparse (const char *string, const char *delim, StrList **list)
   StrList *curlist = 0;
   StrList *tmplist = 0;
 
-  if (string != NULL && delim != NULL)
+  if ( string && delim )
     {
       total = strlen (string);
       beg = string;
-
-      while (!stop)
+      
+      while ( ! stop )
 	{
-
 	  /* Find delimiter */
 	  del = strstr (beg, delim);
-
+	  
 	  /* Delimiter not found or empty */
 	  if (del == NULL || strlen (delim) == 0)
 	    {
@@ -2729,15 +2731,15 @@ strparse (const char *string, const char *delim, StrList **list)
   else
     {
       curlist = *list;
-      while (curlist != NULL)
+      while ( curlist )
 	{
 	  tmplist = curlist->next;
 	  free (curlist->element);
 	  free (curlist);
 	  curlist = tmplist;
 	}
-      *list = NULL;
-
+      *list = 0;
+      
       return 0;
     }
 }  /* End of strparse() */
