@@ -1,5 +1,6 @@
 2007.324: 0.9.3
 	- Fix free'ing of file lists, which fixes POD processing.
+	- Fix coverage detection of exactly matching trace entries.
 	- Fix small mostly unimportant memory leaks.
 
 2007.319: 0.9.2

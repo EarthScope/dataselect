@@ -195,8 +195,8 @@ static int trimrecord (Record *rec, char *recbuf);
 static void record_handler (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MSTraceGroup *mstg);
-static int getcoverage (MSTraceGroup *mstg, MSTrace *targetmst,
-			MSTraceGroup **ppcoverage);
+static int findcoverage (MSTraceGroup *mstg, MSTrace *targetmst,
+			 MSTraceGroup **ppcoverage);
 static int trimtrace (MSTrace *targetmst, MSTraceGroup *coverage);
 static int reconcile_tracetimes (MSTraceGroup *mstg);
 static int qcompare (const char quality1, const char quality2);
@@ -716,7 +716,7 @@ writereqfile (char *requestfile, ReqRec *rrlist)
   
   if ( verbose )
     ms_log (1, "Wrote %d request records (lines)\n", reqreccnt);
-
+  
   return 0;
 } /* End of writereqfile() */
 
@@ -1198,11 +1198,10 @@ record_handler (char *record, int reclen, void *handlerdata)
  * the specified MSTraces.
  *
  * For each MSTrace determine the coverage of the RecordMap associated
- * with each overlapping, higher-priority MSTrace using getcoverage().
+ * with each overlapping, higher-priority MSTrace using findcoverage().
  * If some higher-priority overlap was determined to exist modify the
  * RecordMap of the MSTrace in question to mark the overlapping data
  * using trimtrace().
- *
  *
  * Return 0 on success and -1 on failure.
  ***************************************************************************/
@@ -1229,11 +1228,11 @@ prunetraces (MSTraceGroup *mstg)
   while ( mst )
     {
       /* Determine overlapping MSTrace coverage */
-      retval = getcoverage (mstg, mst, &coverage);
+      retval = findcoverage (mstg, mst, &coverage);
       
       if ( retval )
 	{
-	  ms_log (2, "cannot getcoverage()\n");
+	  ms_log (2, "cannot findcoverage()\n");
 	  return -1;
 	}
       else if ( coverage )
@@ -1256,7 +1255,7 @@ prunetraces (MSTraceGroup *mstg)
 
 
 /***************************************************************************
- * getcoverage():
+ * findcoverage():
  *
  * Search an MSTraceGroup for entries that overlap the target MSTrace
  * and, from the Record entries of the overlapping MSTraces, build a
@@ -1283,7 +1282,7 @@ prunetraces (MSTraceGroup *mstg)
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
 static int
-getcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
+findcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
 {
   MSTrace *cmst = 0;
   MSTrace *mst;
@@ -1327,8 +1326,8 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
 	}
       
       /* Test for overlap with targetmst */
-      if ( targetmst->endtime > mst->starttime &&
-	   targetmst->starttime < mst->endtime )
+      if ( targetmst->endtime >= mst->starttime &&
+	   targetmst->starttime <= mst->endtime )
 	{
 	  /* Determine priority:
 	   *  -1 : mst > targetmst
@@ -1344,7 +1343,7 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
 	   * give priority to the longest MSTrace */
 	  if ( priority == 0 )
 	    {
-	      if ( (mst->endtime - mst->starttime) > (targetmst->endtime - targetmst->starttime) )
+	      if ( (mst->endtime - mst->starttime) >= (targetmst->endtime - targetmst->starttime) )
 		priority = -1;
 	      else
 		priority = 1;
@@ -1417,7 +1416,7 @@ getcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
       }
   
   return 0;
-}  /* End of getcoverage() */
+}  /* End of findcoverage() */
 
 
 /***************************************************************************
