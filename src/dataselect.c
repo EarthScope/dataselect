@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.323
+ * modified 2007.324
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.3"
+#define VERSION "0.9.3dev"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -596,7 +596,7 @@ readreqfile (char *requestfile)
       
       /* Free the parsed string list */
       strparse (0, 0, &list);
-
+      
       /* Build appropriate data file name using base data dir and record file name */
       snprintf (tmpfilename, sizeof(tmpfilename), "%s/%s/%s",
 		poddatadir, newrr->station, newrr->filename);
@@ -637,7 +637,7 @@ readreqfile (char *requestfile)
 		  if ( looprr->reqend < newrr->reqend )
 		    looprr->reqend = newrr->reqend;
 		  
-		  free ( newrr );
+		  freereqrec (newrr);
 		  break;
 		}
 	      
