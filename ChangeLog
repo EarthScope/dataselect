@@ -1,3 +1,9 @@
+2007.337: 0.9.4
+	- Exit with message when no output options were specified. 
+	- Do not allow deleting of backup files (nobackups) when not
+	replacing input files.
+	- The POD option now implicitly means replacing input files.
+ 
 2007.324: 0.9.3
 	- Fix free'ing of file lists, which fixes POD processing.
 	- Fix coverage detection of exactly matching trace entries.

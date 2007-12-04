@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.324
+ * modified 2007.337
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.3"
+#define VERSION "0.9.4"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -2309,6 +2309,9 @@ processparam (int argcount, char **argvec)
 	      poddatadir = argvec[optind+1];
 	  optind++;
 	  
+	  /* POD processing implies replacing the input files */
+	  replaceinput = 1;
+	  
 	  if ( ! podreqfile || ! poddatadir )
 	    {
 	      ms_log (2, "Option -POD requires two values, try -h for usage\n");
@@ -2368,6 +2371,19 @@ processparam (int argcount, char **argvec)
       ms_log (1, "Try %s -h for usage\n", PACKAGE);
       exit (0);
     }
+
+  /* Make sure output file(s) were specified or replacing originals */
+  if ( archiveroot == 0 && outputfile == 0 && replaceinput == 0 )
+    {
+      ms_log (2, "No output files were specified\n\n");
+      ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
+      ms_log (1, "Try %s -h for usage\n", PACKAGE);
+      exit (0);
+    }
+  
+  /* The no backups option cannot be used when not replacing the originals */
+  if ( nobackups && ! replaceinput )
+    nobackups = 0;
   
   /* Expand match pattern from a file if prefixed by '@' */
   if ( matchpattern )
@@ -2814,7 +2830,7 @@ usage (int level)
 	   "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
 	   "\n"
 	   " ## Output options ##\n"
-	   " -rep         Replace input files, default leaves .orig files\n"
+	   " -rep         Replace input files, creating backup (.orig) files\n"
 	   " -nb          Do not keep backups of original input files if replacing them\n"
 	   " -o file      Specify a single output file\n"
 	   " -A format    Write all records in a custom directory/file layout (try -H)\n"
@@ -2829,7 +2845,7 @@ usage (int level)
 	   "\n"
 	   " ## Input data ##\n"
 	   " -POD reqfile datadir\n"
-	   "              Prune data from a POD structure\n"
+	   "              Prune data from a POD structure\n\n"
 	   " file#        Files(s) of Mini-SEED records\n"
 	   "\n");
   
