@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.337
+ * modified 2007.353
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.4"
+#define VERSION "0.9.5"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -1317,6 +1317,13 @@ findcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
 	  continue;
 	}
       
+      /* Skip out-of-band (0 samprate) trace */
+      if ( mst->samprate == 0.0 )
+	{
+	  mst = mst->next;
+	  continue;
+	}
+
       /* Continue with next if srcname or sample rate are different */
       if ( memcmp (mst->network, targetmst->network, 44) ||
 	   ! MS_ISRATETOLERABLE (mst->samprate, targetmst->samprate) )
@@ -1659,6 +1666,7 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
   Filelink *flp;
   MSRecord *msr = 0;
   MSTrace *mst = 0;
+  MSTrace *oobmst = 0;
   int retcode;
   flag whence;
   
@@ -1785,39 +1793,78 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 	  if ( verbose > 2 )
 	    msr_print (msr, verbose - 3);
 	  
-	  /* Add record to the MSTraceGroup */
-	  if ( ! (mst = mst_addmsrtogroup (*ppmstg, msr, bestquality, timetol, sampratetol)) )
+	  /* Add record to the MSTraceGroup if sample rate is not zero */
+	  if ( msr->samprate != 0.0 )
 	    {
-	      ms_log (2, "Cannot add record to trace group, %s, %s\n", srcname, stime);
-	    }
-	  
-	  /* Determine where the record fit this MSTrace
-	   * whence:
-	   * 0 = New MSTrace
-	   * 1 = End of MSTrace
-	   * 2 = Beginning of MSTrace
-	   */
-	  whence = 0;
-	  if ( mst->prvtptr )
-	    {
-	      if ( mst->endtime == recendtime )
-		whence = 1;
-	      else if ( mst->starttime == recstarttime )
-		whence = 2;
-	      else if ( recendtime == recstarttime )
+	      if ( ! (mst = mst_addmsrtogroup (*ppmstg, msr, bestquality, timetol, sampratetol)) )
 		{
-		  /* Determine best fit for records with no span (not added to the MSTrace coverage) */
-		  if ( llabs (recstarttime - mst->endtime) < llabs (recstarttime - mst->starttime) )
+		  ms_log (2, "Cannot add record to trace group, %s, %s\n", srcname, stime);
+		  continue;
+		}
+
+	      /* Determine where the record fit this MSTrace
+	       * whence:
+	       * 0 = New MSTrace
+	       * 1 = End of MSTrace
+	       * 2 = Beginning of MSTrace
+	       */
+	      whence = 0;
+	      if ( mst->prvtptr )
+		{
+		  if ( mst->endtime == recendtime )
 		    whence = 1;
-		  else
+		  else if ( mst->starttime == recstarttime )
 		    whence = 2;
+		  else if ( recendtime == recstarttime )
+		    {
+		      /* Determine best fit for records with no span (not added to the MSTrace coverage) */
+		      if ( llabs (recstarttime - mst->endtime) < llabs (recstarttime - mst->starttime) )
+			whence = 1;
+		      else
+			whence = 2;
+		    }
+		  else
+		    {
+		      ms_log (2, "Cannot determine where record fit relative to trace\n");
+		      msr_print (msr, 1);
+		      continue;
+		    }
+		}
+	    }
+	  /* Otherwise add this record to an out-of-band MSTrace */
+	  else
+	    {
+	      /* Initialize the out-of-band MSTrace if needed */
+	      if ( ! oobmst )
+		{
+		  /* Initialize out-of-band MSTrace */
+		  if ( ! (oobmst = mst_init(NULL)) )
+		    {
+		      ms_log (2, "Cannot initilize zero Hz trace\n");
+		      continue;
+		    }
+		  
+		  /* Populate some values of out-of-band MSTrace
+		   * The 'z's will force this MSTrace to be sorted last */
+		  strncpy (oobmst->network, "zz", sizeof(oobmst->network));
+		  strncpy (oobmst->station, "zzzzz", sizeof(oobmst->station));
+		  strncpy (oobmst->channel, "OOB", sizeof(oobmst->channel));
+		  oobmst->samprate = 0.0;
+		  
+		  /* Add out-of-band MSTrace to MSTraceGroup */
+		  mst_addtracetogroup (*ppmstg, oobmst);
+		  
+		  /* A new RecordMap */
+		  whence = 0;
 		}
 	      else
 		{
-		  ms_log (2, "Cannot determine where record fit relative to trace\n");
-		  msr_print (msr, 1);
-		  continue;
+		  /* Add to existing RecordMap */
+		  whence = 1;
 		}
+	      
+	      /* Target MSTrace is the out-of-band MSTrace */
+	      mst = oobmst;
 	    }
 	  
 	  /* Create and populate new Record structure */
@@ -1955,7 +2002,11 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 	      if ( mst->prvtptr )
 		ms_log (2, "Supposedly first record, but RecordMap not empty, report this\n");
 	      
-	      recmap = (RecordMap *) malloc (sizeof(RecordMap));
+	      if ( ! (recmap = (RecordMap *) malloc (sizeof(RecordMap))) )
+		{
+		  ms_log (2, "Cannot allocate memory for new RecordMap\n");
+		  return -1;
+		}
 	      recmap->first = newrecmap.first;
 	      recmap->last = newrecmap.last;
 	      recmap->recordcnt = newrecmap.recordcnt;

@@ -1,3 +1,9 @@
+2007.353: 0.9.5
+	- Create a special out-of-band MSTrace to hold records with
+	zero sample rate (e.g. LOG, ACE, etc channels).  This avoids
+	the creation of an MSTrace for each record.
+	- Specifically exclude the OOB MSTrace from pruning.
+
 2007.337: 0.9.4
 	- Exit with message when no output options were specified. 
 	- Do not allow deleting of backup files (nobackups) when not
