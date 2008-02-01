@@ -67,16 +67,16 @@ pruning.  By default priority is given the the data with the highest
 quality indicator: (highest) Q > D > R (lowest).
 
 .IP "-ts \fItime\fP"
-Limit processing to Mini-SEED records that start after \fItime\fP.
-The format of the \fItime\fP argument is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]'
-where valid delimiters are either commas (,), colons (:) or periods
-(.).
+Limit processing to Mini-SEED records that start after or contain
+\fItime\fP.  The format of the \fItime\fP argument
+is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
+commas (,), colons (:) or periods (.).
 
 .IP "-te \fItime\fP"
-Limit processing to Mini-SEED records that end before \fItime\fP.  The
-format of the \fItime\fP argument is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]'
-where valid delimiters are either commas (,), colons (:) or periods
-(.).
+Limit processing to Mini-SEED records that end before or contain
+\fItime\fP.  The format of the \fItime\fP argument
+is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
+commas (,), colons (:) or periods (.).
 
 .IP "-M \fImatch\fP"
 Limit input to records that match this regular expression, the

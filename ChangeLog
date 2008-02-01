@@ -1,3 +1,7 @@
+2008.032: 0.9.7
+	- Change timewindowing logic to include a data record when
+	the start or end time is contained within the record.
+
 2008.032: 0.9.6
 	- Return 0 instead of 1 when no data is going to be output
 	but no other problems were encountered.

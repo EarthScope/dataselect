@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.6"
+#define VERSION "0.9.7"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -226,8 +226,8 @@ static double   sampratetol   = -1.0; /* Sample rate tolerance for continuous tr
 static char     restampqind   = 0;    /* Re-stamp data record/quality indicator */
 static int      reclen        = -1;   /* Input data record length, autodetected in most cases */
 static flag     modsummary    = 0;    /* Print modification summary after all processing */
-static hptime_t starttime     = HPTERROR;  /* Limit to records after starttime */
-static hptime_t endtime       = HPTERROR;  /* Limit to records before endtime */
+static hptime_t starttime     = HPTERROR;  /* Limit to records containing or after starttime */
+static hptime_t endtime       = HPTERROR;  /* Limit to records containing or before endtime */
 static char     splitboundary = 0;    /* Split records on day(d), hour(h) or minute(m) boundaries */
 
 static regex_t *match         = 0;    /* Compiled match regex */
@@ -1760,16 +1760,16 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 	  /* Generate an ASCII start time string */
 	  ms_hptime2seedtimestr (recstarttime, stime, 1);
 	  
-	  /* Check if record matches start time criteria */
-	  if ( (starttime != HPTERROR) && (recstarttime < starttime) )
+	  /* Check if record matches start time criteria: starts after or contains starttime */
+	  if ( (starttime != HPTERROR) && (recstarttime < starttime && ! (recstarttime <= starttime && recendtime >= starttime)) )
 	    {
 	      if ( verbose >= 3 )
 		ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
 	      continue;
 	    }
 	  
-	  /* Check if record matches end time criteria */
-	  if ( (endtime != HPTERROR) && (recendtime > endtime) )
+	  /* Check if record matches end time criteria: ends after or contains endtime */
+	  if ( (endtime != HPTERROR) && (recendtime > endtime && ! (recstarttime <= endtime && recendtime >= endtime)) )
 	    {
 	      if ( verbose >= 3 )
 		ms_log (1, "Skipping (endtime) %s, %s\n", srcname, stime);
