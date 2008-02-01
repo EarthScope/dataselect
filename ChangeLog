@@ -1,3 +1,9 @@
+2008.032: 0.9.6
+	- Return 0 instead of 1 when no data is going to be output
+	but no other problems were encountered.
+	- Add section in man page regarding error messages and exit
+	codes.
+
 2007.353: 0.9.5
 	- Create a special out-of-band MSTrace to hold records with
 	zero sample rate (e.g. LOG, ACE, etc channels).  This avoids

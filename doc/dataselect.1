@@ -1,4 +1,4 @@
-.TH DATASELECT 2007/11/15
+.TH DATASELECT 2008/02/01
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -214,6 +214,12 @@ would expand to:
 resulting in day length files because the hour, minute and second are
 specified with the non-defining modifier.  The hour, minute and second
 fields are from the first record in the file.
+
+.SH ERROR HANDLING AND RETURN CODES
+Any significant error message will be pre-pended with "ERROR" which
+can be parsed to determine run-time errors.  Additionally the program
+will return an exit code of 0 on successful operation and 1 when any
+errors were encountered.
 
 .SH AUTHOR
 .nf

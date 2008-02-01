@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2007.353
+ * modified 2008.032
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.5"
+#define VERSION "0.9.6"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -253,7 +253,7 @@ main ( int argc, char **argv )
   
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
-  
+    
   /* Process input parameters */
   if ( processparam (argc, argv) < 0 )
     return 1;
@@ -275,11 +275,19 @@ main ( int argc, char **argv )
       if ( verbose > 2 )
 	ms_log (1, "Processing input files\n");
       
+      /* Initialize trace group structure */
+      if ( ! (mstg = mst_initgroup (mstg)) )
+	{
+	  ms_log (2, "Cannot initilize MSTraceGroup\n");
+	  return 1;
+	}
+      
       /* Read and process all files specified on the command line */
       if ( readfiles (gfilelist, &mstg) )
 	return 1;
       
-      if ( processtraces (mstg, gfilelist) )
+      /* Processes traces */
+      if ( mstg->numtraces > 0 && processtraces (mstg, gfilelist) )
 	return 1;
       
       if ( modsummary )
