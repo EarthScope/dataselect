@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2008.032
+ * modified 2008.042
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.7"
+#define VERSION "0.9.8"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -612,7 +612,7 @@ readreqfile (char *requestfile)
       /* Check for file access */
       if ( access(tmpfilename, F_OK) )
 	{
-	  ms_log (2, "Cannot find file '%s', keeping a placeholder\n", tmpfilename);
+	  ms_log (1, "Warning: cannot find file '%s', keeping a placeholder\n", tmpfilename);
 	  newrr->pruned = 1;
 	}
       
@@ -1742,9 +1742,9 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
       if ( verbose )
 	{
 	  if ( replaceinput ) 
-	    ms_log (1, "Processing: %s (was %s)\n", flp->infilename, flp->outfilename);
+	    ms_log (1, "Reading: %s (was %s)\n", flp->infilename, flp->outfilename);
 	  else
-	    ms_log (1, "Processing: %s\n", flp->infilename);
+	    ms_log (1, "Reading: %s\n", flp->infilename);
 	}
       
       /* Loop over the input file */
@@ -1852,7 +1852,7 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 		      continue;
 		    }
 		  
-		  /* Populate some values of out-of-band MSTrace
+		  /* Populate some key values of the out-of-band MSTrace
 		   * The 'z's will force this MSTrace to be sorted last */
 		  strncpy (oobmst->network, "zz", sizeof(oobmst->network));
 		  strncpy (oobmst->station, "zzzzz", sizeof(oobmst->station));

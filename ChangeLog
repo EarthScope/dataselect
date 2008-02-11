@@ -1,3 +1,8 @@
+2008.042: 0.9.8
+	- Change log message prefix from "ERROR" to "Warning" when
+        files in the request records (of the "h" file) cannot be
+	found during POD processing.
+
 2008.032: 0.9.7
 	- Change timewindowing logic to include a data record when
 	the start or end time is contained within the record.
