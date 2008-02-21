@@ -2885,7 +2885,7 @@ usage (int level)
 	   " -te time     Limit to records that end before time\n"
 	   "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
 	   " -M match     Limit to records matching the specified regular expression\n"
-	   " -R reject    Limit to records not matchint the specfied regular expression\n"
+	   " -R reject    Limit to records not matching the specfied regular expression\n"
 	   "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
 	   "\n"
 	   " ## Output options ##\n"
