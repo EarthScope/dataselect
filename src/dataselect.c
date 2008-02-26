@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2008.042
+ * modified 2008.056
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "0.9.8"
+#define VERSION "0.9.9"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -1475,7 +1475,7 @@ trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
   hptimetol = ( timetol == -1 ) ? (hpdelta / 2) : (hptime_t) (HPTMODULUS * timetol);
 
   /* Traverse the Record chain for the target MSTrace and mark Records
-   * that are completely overlapped by the HP MSTraceGroup coverage */
+   * that are completely overlapped by the MSTraceGroup coverage */
   recmap = (RecordMap *) targetmst->prvtptr;
   rec = recmap->first;
   while ( rec )
@@ -1487,9 +1487,9 @@ trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
 	  effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
 	  effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
 	  
-	  /* Mark Record if it is completely overlaped by the coverage */
-	  if ( effstarttime >= cmst->starttime &&
-	       effendtime <= cmst->endtime )
+	  /* Mark Record if it is completely overlaped by the coverage including tolerance */
+	  if ( effstarttime >= (cmst->starttime - hptimetol) &&
+	       effendtime <= (cmst->endtime + hptimetol) )
 	    {
 	      if ( verbose > 1 )
 		{

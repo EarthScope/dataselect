@@ -1,3 +1,8 @@
+2008.056: 0.9.9
+	- Use defined time-tolerance to determine if a record is
+	completely overlapped or should be trimmed to avoid confusion
+	when trimming sub-sample (impossible) time slices.
+
 2008.042: 0.9.8
 	- Change log message prefix from "ERROR" to "Warning" when
         files in the request records (of the "h" file) cannot be
