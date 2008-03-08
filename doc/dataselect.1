@@ -1,4 +1,4 @@
-.TH DATASELECT 2008/02/01
+.TH DATASELECT 2008/03/07
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -10,9 +10,9 @@ dataselect [options] file1 [file2 file3 ...]
 .SH DESCRIPTION
 \fBdataselect\fP selects, sorts and prunes Mini-SEED data.  Any output
 data will always be sorted by ascending time-series.  Various data
-selection operations are possible including the removal of duplicate
-data and the splicing of partially overlapping data records to form
-continuous time-series.
+selection operations are possible including time criteria, the removal
+of duplicate data and the splicing of partially overlapping data
+records to form continuous time-series.
 
 Data pruning, removal of overlap, can be performed at either the
 record or sample level.  Pruning at the record level guarantees that
@@ -28,8 +28,10 @@ removed if overlaps are detected.  By default the priority is given to
 the highest quality data (M > Q > D > R).  When the qualities are the
 same priority is given to the longer segment.
 
-If '-' is specified standard input will be read.  Multiple input files
-will be processed all together.
+Multiple input files will be read in the order specified and processed
+all together as if all the data records were from the same file.  The
+program must read input data from files, input from pipes, etc. is not
+possible.
 
 When a input file is full SEED including both SEED headers and data
 records all of the headers will be skipped and completely unprocessed.
@@ -99,14 +101,25 @@ by using the -rep option.
 .IP "-o \fIfile\fP"
 Write all output data to output \fIfile\fP instead of replacing the
 original files.  When this option is used no backups will be created
-and the original files will not be modified in any way.
+and the original files will not be modified in any way.  If '-' is
+specified as the output file all output data will be written to
+standard out.
 
 .IP "-A \fIformat\fR"
 All output records will be written to a directory/file layout defined
 by \fIformat\fP.  All directories implied in the \fIformat\fP string
 will be created if necessary.  The option may be used multiple times
 to write input records to multiple archives.  See the \fBArchive
-Format\fR section below.
+Format\fR section below for more details including pre-defined archive
+layouts.
+
+.IP "-CHAN \fIdirectory\fR"
+.IP "-QCHAN \fIdirectory\fR"
+.IP "-CDAY \fIdirectory\fR"
+.IP "-BUD \fIdirectory\fR"
+.IP "-CSS \fIdirectory\fR"
+Pre-defined output archive formats, see the \fBArchive Format\fR
+section below for more details.
 
 .IP "-Pr         "
 Prune, remove overlap data, at the record level.  This will result in
@@ -151,7 +164,7 @@ should remain ('.orig' is appended to the original).
 The pruning algorithm used is independant of the file structure and
 organization.  Data from all input files is parsed and a map created
 for every data record and their relationship in continuous time
-series.
+series segments.
 
 Each data record time coverage in each continuous time-series is
 compared to the time coverage of every other continous time-series.
@@ -160,6 +173,16 @@ time-series until the overlap is minimized or completely removed
 depending on the pruning option specified.
 
 .SH "Archive Format"
+The pre-defined archive layouts are as follows:
+
+.nf
+-CHAN dir   :: dir/%n.%s.%l.%c
+-QCHAN dir  :: dir/%n.%s.%l.%c.%q
+-CDAY dir   :: dir/%n.%s.%l.%c.%Y:%j:#H:#M:#S
+-BUD dir    :: dir/%n/%s/%s.%n.%l.%c.%Y.%j
+-CSS dir    :: dir/%Y/%j/%s.%c.%Y:%j:#H:#M:#S
+.fi
+
 An archive format is expanded for each record using the following
 substitution flags:
 

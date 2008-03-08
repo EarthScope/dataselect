@@ -1,3 +1,6 @@
+2000.067: 1.0
+	- Update man page.
+
 2008.056: 0.9.9
 	- Use defined time-tolerance to determine if a record is
 	completely overlapped or should be trimmed to avoid confusion
