@@ -1,4 +1,4 @@
-.TH DATASELECT 2008/03/07
+.TH DATASELECT 2008/05/23
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -83,12 +83,16 @@ commas (,), colons (:) or periods (.).
 .IP "-M \fImatch\fP"
 Limit input to records that match this regular expression, the
 \fImatch\fP is tested against the full source
-name: 'NET_STA_LOC_CHAN_QUAL'.
+name: 'NET_STA_LOC_CHAN_QUAL'.  If the match expression begins with
+an '@' character it is assumed to indicate a file containing a list of
+expressions to match, see the \fBLIST FILE\fR section below.
 
 .IP "-R \fIreject\fP"
 Limit input to records that do not match this regular expression, the
 \fIreject\fP is tested against the full source
-name: 'NET_STA_LOC_CHAN_QUAL'.
+name: 'NET_STA_LOC_CHAN_QUAL'.  If the reject expression begins with
+an '@' character it is assumed to indicate a file containing a list of
+expressions to reject, see the \fBLIST FILE\fR section below.
 
 .IP "-rep"
 Replace input files.  By default this will rename the original files
@@ -96,7 +100,7 @@ by adding a '.orig' suffix.
 
 .IP "-nb"
 Do not keep backups of renamed original input files if replacing them
-by using the -rep option.
+by using the \fI-rep\fP option.
 
 .IP "-o \fIfile\fP"
 Write all output data to output \fIfile\fP instead of replacing the
@@ -109,8 +113,8 @@ standard out.
 All output records will be written to a directory/file layout defined
 by \fIformat\fP.  All directories implied in the \fIformat\fP string
 will be created if necessary.  The option may be used multiple times
-to write input records to multiple archives.  See the \fBArchive
-Format\fR section below for more details including pre-defined archive
+to write input records to multiple archives.  See the \fBARCHIVE
+FORMAT\fR section below for more details including pre-defined archive
 layouts.
 
 .IP "-CHAN \fIdirectory\fR"
@@ -172,7 +176,26 @@ When overlap is detected, data is removed from the lower priority
 time-series until the overlap is minimized or completely removed
 depending on the pruning option specified.
 
-.SH "Archive Format"
+.SH "LIST FILE"
+A list file used with either the \fB-M\fP or \fB-R\fP contains a list
+of regular expressions (one on each line) that will be combined into a
+single compound expression.  The initial '@' character indicating a
+list file is not considered part of the file name.  As an example, if
+the following command line option was used:
+
+.nf
+\fB-M @match.list\fP
+.fi
+
+The 'match.list' file might look like this:
+
+.nf
+IU_ANMO_.*
+IU_ADK_00_BHZ.*
+II_BFO_00_BHZ_Q
+.fi
+
+.SH "ARCHIVE FORMAT"
 The pre-defined archive layouts are as follows:
 
 .nf
