@@ -10,7 +10,7 @@
  * file.  The definition of the groups is implied by the format of the
  * archive.
  *
- * modified: 2006.354
+ * modified: 2008.162
  ***************************************************************************/
 
 #include <stdio.h>
@@ -62,6 +62,7 @@ extern int
 ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 {
   DataStreamGroup *foundgroup = NULL;
+  BTime stime;
   strlist *fnlist, *fnptr;
   char net[3], sta[6], loc[3], chan[4];
   char filename[400];
@@ -112,7 +113,15 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 	  return -1;
 	}
     }
-
+  
+  /* Convert normalized starttime to BTime structure */
+  if ( ms_hptime2btime (msr->starttime, &stime) )
+    {
+      fprintf (stderr, "ds_streamproc(): cannot convert start time to separate fields\n");
+      strparse (NULL, NULL, &fnlist);
+      return -1;
+    }
+  
   while ( fnptr != 0 )
     {
       int tdy;
@@ -169,14 +178,14 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 	      p = w + 1;
 	      break;
 	    case 'Y' :
-	      snprintf (tstr, sizeof(tstr), "%04d", (int) msr->fsdh->start_time.year);
+	      snprintf (tstr, sizeof(tstr), "%04d", (int) stime.year);
 	      strncat (filename, tstr, (sizeof(filename) - fnlen));
 	      if ( def ) strncat (definition, tstr, (sizeof(definition) - fnlen));
 	      fnlen = strlen (filename);
 	      p = w + 1;
 	      break;
 	    case 'y' :
-	      tdy = (int) msr->fsdh->start_time.year;
+	      tdy = (int) stime.year;
 	      while ( tdy > 100 )
 		{
 		  tdy -= 100;
@@ -188,35 +197,35 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 	      p = w + 1;
 	      break;
 	    case 'j' :
-	      snprintf (tstr, sizeof(tstr), "%03d", (int) msr->fsdh->start_time.day);
+	      snprintf (tstr, sizeof(tstr), "%03d", (int) stime.day);
 	      strncat (filename, tstr, (sizeof(filename) - fnlen));
 	      if ( def ) strncat (definition, tstr, (sizeof(definition) - fnlen));
 	      fnlen = strlen (filename);
 	      p = w + 1;
 	      break;
 	    case 'H' :
-	      snprintf (tstr, sizeof(tstr), "%02d", (int) msr->fsdh->start_time.hour);
+	      snprintf (tstr, sizeof(tstr), "%02d", (int) stime.hour);
 	      strncat (filename, tstr, (sizeof(filename) - fnlen));
 	      if ( def ) strncat (definition, tstr, (sizeof(definition) - fnlen));
 	      fnlen = strlen (filename);
 	      p = w + 1;
 	      break;
 	    case 'M' :
-	      snprintf (tstr, sizeof(tstr), "%02d", (int) msr->fsdh->start_time.min);
+	      snprintf (tstr, sizeof(tstr), "%02d", (int) stime.min);
 	      strncat (filename, tstr, (sizeof(filename) - fnlen));
 	      if ( def ) strncat (definition, tstr, (sizeof(definition) - fnlen));
 	      fnlen = strlen (filename);
 	      p = w + 1;
 	      break;
 	    case 'S' :
-	      snprintf (tstr, sizeof(tstr), "%02d", (int) msr->fsdh->start_time.sec);
+	      snprintf (tstr, sizeof(tstr), "%02d", (int) stime.sec);
 	      strncat (filename, tstr, (sizeof(filename) - fnlen));
 	      if ( def ) strncat (definition, tstr, (sizeof(definition) - fnlen));
 	      fnlen = strlen (filename);
 	      p = w + 1;
 	      break;
 	    case 'F' :
-	      snprintf (tstr, sizeof(tstr), "%04d", (int) msr->fsdh->start_time.fract);
+	      snprintf (tstr, sizeof(tstr), "%04d", (int) stime.fract);
 	      strncat (filename, tstr, (sizeof(filename) - fnlen));
 	      if ( def ) strncat (definition, tstr, (sizeof(definition) - fnlen));
 	      fnlen = strlen (filename);

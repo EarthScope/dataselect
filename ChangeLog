@@ -1,3 +1,7 @@
+2008.162: 1.1
+	- Use normalized (time correction applied) start time when
+	writing records to user defined archive files.
+	
 2000.067: 1.0
 	- Update man page.
 
