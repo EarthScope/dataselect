@@ -1,4 +1,5 @@
 2008.162: 1.1
+	- Update libmseed to 2.1.5.
 	- Use normalized (time correction applied) start time when
 	writing records to user defined archive files.
 	
