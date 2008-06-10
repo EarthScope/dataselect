@@ -293,7 +293,7 @@ main ( int argc, char **argv )
       if ( modsummary )
 	printmodsummary (gfilelist, verbose);
       
-      /* Clean up MSTraceGroup and file list */      
+      /* Clean up MSTraceGroup and file list */
       mst_freegroup (&mstg);      
       freefilelist (&gfilelist);
     }
