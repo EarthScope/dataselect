@@ -1,3 +1,7 @@
+2008.200:
+	- Change total record and byte count variables to 64-bit
+	integers to avoid overflow.
+
 2008.162: 1.1
 	- Update libmseed to 2.1.5.
 	- Use normalized (time correction applied) start time when

@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2008.056
+ * modified 2008.200
  ***************************************************************************/
 
 /***************************************************************************
@@ -790,8 +790,8 @@ processtraces (MSTraceGroup *mstg, Filelink *filelist)
 static int
 writetraces (MSTraceGroup *mstg, Filelink *filelist)
 {
-  static int totalrecsout = 0;
-  static int totalbytesout = 0;
+  static uint64_t totalrecsout = 0;
+  static uint64_t totalbytesout = 0;
   char *wb = "wb";
   char *ab = "ab";
   char *mode;
@@ -1029,7 +1029,7 @@ writetraces (MSTraceGroup *mstg, Filelink *filelist)
   
   if ( verbose )
     {
-      ms_log (1, "Wrote %d bytes of %d records to output file(s)\n",
+      ms_log (1, "Wrote %llu bytes of %llu records to output file(s)\n",
 	      totalbytesout, totalrecsout);
     }
   
