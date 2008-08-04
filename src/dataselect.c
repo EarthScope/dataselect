@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2008.200
+ * modified 2008.212
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "1.1"
+#define VERSION "1.2dev"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -780,8 +780,7 @@ processtraces (MSTraceGroup *mstg, Filelink *filelist)
  * 
  * This routine will also call trimrecord() to trim a record when data
  * suturing is requested.  Record trimming is triggered when
- * MSRecord.newstart or MSRecord.newend are set for any output
- * records.
+ * Record.newstart or Record.newend are set for any output records.
  *
  * The quality flag is optionally set for all output records.
  *
@@ -1067,14 +1066,20 @@ trimrecord (Record *rec, char *recordbuf)
   
   if ( ! rec || ! recordbuf )
     return -1;
+
+  srcname[0] = '\0';
+  stime[0] = '\0';
+  etime[0] = '\0';
   
   /* Sanity check for new start/end times */
   if ( (rec->newstart && rec->newend && rec->newstart >= rec->newend) ||
        (rec->newstart && (rec->newstart < rec->starttime || rec->newstart >= rec->endtime)) ||
        (rec->newend && (rec->newend > rec->endtime || rec->newend <= rec->starttime)) )
     {
-      ms_log (2, "Problem with new start/end record bound times, skipping.\n");
-      ms_log (2, "  Original record from %s\n", rec->flp->infilename);
+      ms_log (2, "Problem with new start/end record bound times.\n");
+      ms_recsrcname (recordbuf, srcname, 1);
+      ms_log (2, "  Original record %s from %s (byte offset: %llu)\n",
+	      srcname, rec->flp->infilename, (unsigned long long)rec->offset);
       ms_hptime2seedtimestr (rec->starttime, stime, 1);
       ms_hptime2seedtimestr (rec->endtime, etime, 1);
       ms_log (2, "       Start: %s       End: %s\n", stime, etime);
@@ -1083,6 +1088,8 @@ trimrecord (Record *rec, char *recordbuf)
       if ( rec->newend == 0 ) strcpy (etime, "NONE");
       else ms_hptime2seedtimestr (rec->newend, etime, 1);
       ms_log (2, " Start bound: %-24s End bound: %-24s\n", stime, etime);
+      
+      return -1;
     }
   
   /* Unpack data record */
@@ -1509,22 +1516,41 @@ trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
 	  if ( prunedata == 's' && rec->reclen != 0 )
 	    {
 	      /* Record overlaps beginning of HP coverage */
-	      if ( effstarttime <= cmst->starttime &&
+	      if ( effstarttime < cmst->starttime &&
 		   effendtime >= cmst->starttime )
 		{
 		  /* Set Record new end time boundary including specified time tolerance */
 		  rec->newend = cmst->starttime - hpdelta + hptimetol;
+		  effendtime = rec->newend;
 		  rec->flp->rectrimcount++;
 		  modcount++;
 		}
 	      
 	      /* Record overlaps end of HP coverage */
 	      if ( effstarttime <= cmst->endtime &&
-		   effendtime >= cmst->endtime )
+		   effendtime > cmst->endtime )
 		{
 		  /* Set Record new start time boundary including specified time tolerance */
 		  rec->newstart = cmst->endtime + hpdelta - hptimetol;
+		  effstarttime = rec->newstart;
 		  rec->flp->rectrimcount++;
+		  modcount++;
+		}
+	      
+	      /* Remove record if all samples have been pruned within tolerance */
+	      if ( effstarttime >= (effendtime - hptimetol) )
+		{
+		  if ( verbose > 1 )
+		    {
+		      mst_srcname (targetmst, srcname, 1);
+		      ms_hptime2seedtimestr (rec->starttime, stime, 1);
+		      ms_hptime2seedtimestr (rec->endtime, etime, 1);
+		      ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
+			      srcname, rec->quality, stime, etime);
+		    }
+		  
+		  rec->flp->recrmcount++;
+		  rec->reclen = 0;
 		  modcount++;
 		}
 	    }

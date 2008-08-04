@@ -1,3 +1,7 @@
+2008.212:
+	- Fix corner case pruning of exact record boundary matches.
+	- Improve error message when record trim boundaries are bad.
+
 2008.200:
 	- Change total record and byte count variables to 64-bit
 	integers to avoid overflow.
