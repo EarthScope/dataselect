@@ -1,3 +1,17 @@
+2008.220: 2.1.6
+	- Optimize Steim 1 & 2 encoders significantly by using small local
+	working buffers and eliminating many redundant calculations.
+	Thanks to Jean-Francois Fels.
+
+2008.171:
+	- Add Matlab/GNU Octave interface routines, thanks to Stefan Mertl.
+	- Remove 'const' qualifier from argument of log printing function
+	pointers, too many useless compiler warnings.
+
+2008.163:
+	- Allow data record sequence numbers to be NULL values in addition
+	to ASCII numbers.
+ 
 2008.161: 2.1.5
 	- Fix string parsing error for IRIS DMC packed files, thanks Sandy!
 	- Use a merge sort algorithm insteam of the bubble sort previsouly

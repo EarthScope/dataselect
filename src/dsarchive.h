@@ -8,6 +8,7 @@
 #define CHANLAYOUT  "%n.%s.%l.%c"
 #define QCHANLAYOUT "%n.%s.%l.%c.%q"
 #define CDAYLAYOUT  "%n.%s.%l.%c.%Y:%j:#H:#M:#S"
+#define SDAYLAYOUT  "%n.%s.%Y:%j"
 #define BUDLAYOUT   "%n/%s/%s.%n.%l.%c.%Y.%j"
 #define CSSLAYOUT   "%Y/%j/%s.%c.%Y:%j:#H:#M:#S"
 

@@ -1,4 +1,4 @@
-.TH DATASELECT 2008/05/23
+.TH DATASELECT 2008/08/06
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -120,6 +120,7 @@ layouts.
 .IP "-CHAN \fIdirectory\fR"
 .IP "-QCHAN \fIdirectory\fR"
 .IP "-CDAY \fIdirectory\fR"
+.IP "-SDAY \fIdirectory\fR"
 .IP "-BUD \fIdirectory\fR"
 .IP "-CSS \fIdirectory\fR"
 Pre-defined output archive formats, see the \fBArchive Format\fR
@@ -202,6 +203,7 @@ The pre-defined archive layouts are as follows:
 -CHAN dir   :: dir/%n.%s.%l.%c
 -QCHAN dir  :: dir/%n.%s.%l.%c.%q
 -CDAY dir   :: dir/%n.%s.%l.%c.%Y:%j:#H:#M:#S
+-SDAY dir   :: dir/%n.%s.%Y:%j
 -BUD dir    :: dir/%n/%s/%s.%n.%l.%c.%Y.%j
 -CSS dir    :: dir/%Y/%j/%s.%c.%Y:%j:#H:#M:#S
 .fi

@@ -1,3 +1,7 @@
+2008.219: 1.2
+	- Update libmseed to 2.1.6.
+	- Add SDAY pre-defined archive layout for station-day files.
+
 2008.212:
 	- Fix corner case pruning of exact record boundary matches.
 	- Improve error message when record trim boundaries are bad.

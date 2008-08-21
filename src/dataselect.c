@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2008.212
+ * modified 2008.219
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "1.2dev"
+#define VERSION "1.2"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -2418,6 +2418,11 @@ processparam (int argcount, char **argvec)
           if ( addarchive(getoptval(argcount, argvec, optind++), CDAYLAYOUT) == -1 )
             return -1;
         }
+      else if (strcmp (argvec[optind], "-SDAY") == 0)
+        {
+          if ( addarchive(getoptval(argcount, argvec, optind++), SDAYLAYOUT) == -1 )
+            return -1;
+        }
       else if (strcmp (argvec[optind], "-BUD") == 0)
         {
           if ( addarchive(getoptval(argcount, argvec, optind++), BUDLAYOUT) == -1 )
@@ -2941,7 +2946,8 @@ usage (int level)
 	       "  # Preset format layouts #\n"
 	       " -CHAN dir    Write records into separate Net.Sta.Loc.Chan files\n"
 	       " -QCHAN dir   Write records into separate Net.Sta.Loc.Chan.Quality files\n"
-	       " -CDAY dir    Write records into separate Net.Sta.Loc.Chan-day files\n"
+	       " -CDAY dir    Write records into separate Net.Sta.Loc.Chan.Year:Yday:<time> files\n"
+	       " -SDAY dir    Write records into separate Net.Sta.Year:Yday files\n"
 	       " -BUD BUDdir  Write records in a BUD file layout\n"
 	       " -CSS CSSdir  Write records in a CSS-like file layout\n"
 	       "\n"
