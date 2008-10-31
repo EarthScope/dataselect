@@ -2,7 +2,9 @@
  * dsarchive.c
  * Routines to archive Mini-SEED data records.
  *
- * Written by Chad Trabant, ORFEUS/EC-Project MEREDIAN
+ * Written by Chad Trabant
+ *   ORFEUS/EC-Project MEREDIAN
+ *   IRIS Data Management Center
  *
  * The philosophy: a "DataStream" describes an archive that Mini-SEED
  * records will be saved to.  Each archive can be separated into
@@ -10,7 +12,7 @@
  * file.  The definition of the groups is implied by the format of the
  * archive.
  *
- * modified: 2008.162
+ * modified: 2008.304
  ***************************************************************************/
 
 #include <stdio.h>
@@ -27,6 +29,10 @@
 #include <libmseed.h>
 
 #include "dsarchive.h"
+
+/* Maximum number of open files */
+int ds_maxopenfiles = 0;
+int ds_openfilecount = 0;
 
 /* For a linked list of strings, as filled by strparse() */
 typedef struct strlist_s {
@@ -484,7 +490,7 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
 /***************************************************************************
  * ds_openfile:
  *
- * Open a specified file, if the open file limit has been reach try
+ * Open a specified file, if the open file limit has been reached try
  * once to increase the limit, if that fails or has already been done
  * start closing idle files with decreasing idle timeouts until a file
  * can be opened.
@@ -499,66 +505,64 @@ ds_openfile (DataStream *datastream, const char *filename)
   struct rlimit rlim;
   int idletimeout = datastream->idletimeout;
   int oret = 0;
+  int flags = (O_RDWR | O_CREAT | O_APPEND);
+  mode_t mode = (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); /* Mode 0644 */
   
-  if ( (oret = open (filename, O_RDWR | O_CREAT | O_APPEND, 0644)) == -1 )
+  /* Lookup process open file limit and change ds_maxopenfiles if needed */
+  if ( ! rlimit )
     {
+      rlimit = 1;
       
-      /* Check if max number of files open */
-      if ( errno == EMFILE && rlimit == 0 )
-	{
-	  rlimit = 1;
-
-	  if ( dsverbose >= 1 )
-	    fprintf (stderr, "Too many open files, trying to increase limit\n");
-	  
-	  /* Set the soft open file limit to the hard open file limit */
-	  if ( getrlimit (RLIMIT_NOFILE, &rlim) == -1 )
-	    {
-	      fprintf (stderr, "getrlimit failed to get open file limit\n");
-	    }
-	  else
-	    {
-	      rlim.rlim_cur = rlim.rlim_max;
-	      
-	      if ( rlim.rlim_cur == RLIM_INFINITY )
-		{
-		  if ( dsverbose >= 2 )
-		    fprintf (stderr, "Setting open file limit to 'infinity'\n");
-		}
-	      else
-		{
-		  if ( dsverbose >= 2 )
-		    fprintf (stderr, "Setting open file limit to %ld\n", (long int) rlim.rlim_cur);
-		}
-	      
-	      if ( setrlimit (RLIMIT_NOFILE, &rlim) == -1 )
-		{
+      if ( getrlimit (RLIMIT_NOFILE, &rlim) == -1 )
+        {
+          fprintf (stderr, "getrlimit failed to get open file limit\n");
+        }
+      else
+        {
+          /* Increase process open file limit to ds_maxopenfiles or hard limit */
+          if ( ds_maxopenfiles && ds_maxopenfiles > rlim.rlim_cur )
+            {
+              if ( ds_maxopenfiles > rlim.rlim_max )
+                rlim.rlim_cur = rlim.rlim_max;
+              else
+                rlim.rlim_cur = ds_maxopenfiles;
+              
+	      if ( dsverbose >= 2 )
+		fprintf (stderr, "Setting open file limit to %lld\n", (int64_t) rlim.rlim_cur);
+              
+              if ( setrlimit (RLIMIT_NOFILE, &rlim) == -1 )
+                {
 		  fprintf (stderr, "setrlimit failed to set open file limit\n");
-		}
-	      else
-		{
-		  /* Try to open the file again */
-		  if ( (oret = open (filename, O_RDWR | O_CREAT | O_APPEND, 0644)) != -1 )
-		    return oret;
-		}
-	    }
-	}
+                }
+              
+              ds_maxopenfiles = rlim.rlim_cur;
+            }
+          /* Set max to current soft limit if not already specified */
+          else if ( ! ds_maxopenfiles )
+            {
+              ds_maxopenfiles = rlim.rlim_cur;
+            }
+        }
+    }
+  
+  /* Close open files from the DataStream if already at the limit of (ds_maxopenfiles - 10) */
+  if ( (ds_openfilecount + 10) > ds_maxopenfiles )
+    {
+      if ( dsverbose >= 1 )
+	fprintf (stderr, "Maximum open archive files reached (%d), closing idle stream files\n",
+		 (ds_maxopenfiles - 10));
       
-      if ( errno == EMFILE || errno == ENFILE )
-	{
-	  if ( dsverbose >= 1 )
-	    fprintf (stderr, "Too many open files, closing idle stream files\n");
-	  
-	  /* Close idle streams until we have free descriptors */
-	  while ( ds_closeidle (datastream, idletimeout) == 0 && idletimeout >= 0 )
-	    {
-	      idletimeout = (idletimeout / 2) - 1;
-	    }
-	  
-	  /* Try to open the file again */
-	  if ( (oret = open (filename, O_RDWR | O_CREAT | O_APPEND, 0644)) != -1 )
-	    return oret;
-	}
+      /* Close idle streams until we have free descriptors */
+      while ( ds_closeidle (datastream, idletimeout) == 0 && idletimeout >= 0 )
+        {
+          idletimeout = (idletimeout / 2) - 1;
+        }
+    }
+  
+  /* Open file */
+  if ( (oret = open (filename, flags, mode)) != -1 )
+    {
+      ds_openfilecount++;
     }
   
   return oret;
@@ -584,7 +588,7 @@ ds_closeidle (DataStream *datastream, int idletimeout)
   
   searchgroup = datastream->grouproot;
   curtime = time (NULL);
-
+  
   /* Traverse the stream chain */
   while (searchgroup != NULL)
     {
@@ -614,7 +618,7 @@ ds_closeidle (DataStream *datastream, int idletimeout)
 	  /* Close the associated file */
 	  if ( close (searchgroup->filed) )
 	    fprintf (stderr, "ds_closeidle(), closing data stream file, %s\n",
-		    strerror (errno));
+		     strerror (errno));
 	  else
 	    count++;
 	  
@@ -628,6 +632,8 @@ ds_closeidle (DataStream *datastream, int idletimeout)
       
       searchgroup = nextgroup;
     }
+  
+  ds_openfilecount -= count;
   
   return count;
 }  /* End of ds_closeidle() */

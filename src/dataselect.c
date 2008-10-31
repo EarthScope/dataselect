@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2008.219
+ * modified 2008.305
  ***************************************************************************/
 
 /***************************************************************************
@@ -112,7 +112,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "1.2"
+#define VERSION "1.3dev"
 #define PACKAGE "dataselect"
 
 /* For a linked list of strings, as filled by strparse() */
@@ -156,7 +156,7 @@ typedef struct Filelink_s {
   struct Filelink_s *next;
 } Filelink;
 
-/* Archive (output structure) definition containers */
+/* Archive output structure definition containers */
 typedef struct Archive_s {
   DataStream  datastream;
   struct Archive_s *next;
@@ -228,7 +228,7 @@ static int      reclen        = -1;   /* Input data record length, autodetected 
 static flag     modsummary    = 0;    /* Print modification summary after all processing */
 static hptime_t starttime     = HPTERROR;  /* Limit to records containing or after starttime */
 static hptime_t endtime       = HPTERROR;  /* Limit to records containing or before endtime */
-static char     splitboundary = 0;    /* Split records on day(d), hour(h) or minute(m) boundaries */
+static char     splitboundary = 0;    /* Split records on day 'd', hour 'h' or minute 'm' boundaries */
 
 static regex_t *match         = 0;    /* Compiled match regex */
 static regex_t *reject        = 0;    /* Compiled reject regex */
@@ -253,10 +253,14 @@ main ( int argc, char **argv )
   
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
-    
+  
   /* Process input parameters */
   if ( processparam (argc, argv) < 0 )
     return 1;
+  
+  /* Data stream archiving maximum concurrent open files */
+  if ( archiveroot )
+    ds_maxopenfiles = 50;
   
   if ( podreqfile && poddatadir )
     {
@@ -2066,6 +2070,10 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
       totalfiles++;
       flp = flp->next;
     } /* End of looping over file list */
+  
+  /* Increase open file limit if necessary, in general we need the
+   * filecount + ds_maxopenfiles and some wiggle room. */
+  setofilelimit (totalfiles + ds_maxopenfiles + 20);
   
   if ( basicsum )
     ms_log (0, "Files: %d, Records: %d, Samples: %d\n", totalfiles, totalrecs, totalsamps);

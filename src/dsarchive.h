@@ -29,6 +29,9 @@ typedef struct DataStream_s
 }
 DataStream;
 
+/* Maximum number of open files for all DataStreams */
+extern int ds_maxopenfiles;
+
 extern int ds_streamproc (DataStream *datastream, MSRecord *msr,
                           long suffix, int verbose);
 
