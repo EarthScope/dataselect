@@ -1,4 +1,7 @@
-2008.305: 
+2008.346: 1.3
+	- Update to libmseed 2.1.7.
+
+2008.305:
 	- Set open file limit to estimated needs.
         - Implement max open file limit in dsarchiving.[ch].
 	- Reword usage message regarding start/end times.

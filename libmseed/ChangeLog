@@ -1,3 +1,9 @@
+2008.283: 2.1.7
+	- Allow a caller of ms_readmsr()/ms_readmsr_r() to specify a
+	starting offset into the file by setting the value pointed to by
+	the fpos argument to a negative value (interpreted as a positive
+	offset).
+
 2008.220: 2.1.6
 	- Optimize Steim 1 & 2 encoders significantly by using small local
 	working buffers and eliminating many redundant calculations.

@@ -5,7 +5,7 @@
 MEX = /Applications/MATLAB74/bin/mex
 
 # Location of GNU Octave's mkoctfile
-MEX = /usr/local/bin/mkoctfile --mex
+#MEX = /usr/local/bin/mkoctfile --mex
 
 LIBSRC = ../libmseed.a
 
