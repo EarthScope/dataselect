@@ -1,5 +1,17 @@
+2009.078: 2.0rc1
+	- Update to libmseed 2.2rc3 and convert trace management to the
+	new MSTraceList, MSTraceID, MSTraceSeg functionality.
+	- Add -s option to specify arbitrary data selection criteria,
+	time windows specified using this option will be used as strict
+	boundaries when pruning at the sample level.
+	- Add file list capability, files specified on the command line
+	starting with '@' are files containing a list of input files.
+	- Remove POD structure processing and related special cases.
+	- Fix pruning of single sample overlaps when overlap is within
+	the time tolerance but not within a sample interval.
+
 2008.346: 1.3
-	- Update to libmseed 2.1.7.
+        - Update to libmseed 2.1.7.
 
 2008.305:
 	- Set open file limit to estimated needs.

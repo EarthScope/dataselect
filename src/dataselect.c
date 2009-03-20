@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2008.305
+ * modified 2009.078
  ***************************************************************************/
 
 /***************************************************************************
@@ -21,18 +21,21 @@
  *
  * The data map (using actual structure names):
  *
- * MSTraceGroup
- *   |-MSTrace
- *   |   |-RecordMap
- *   |        |-Record
- *   |        |-Record
- *   |        |-...
+ * MSTraceList
+ *   |-MSTraceID
+ *   |   |-MSTraceSeg
+ *   |        |-RecordMap
+ *   |            |-Record
+ *   |            |-Record
+ *   |            |-...
  *   |
- *   |-MSTrace
- *   |   |-RecordMap
- *   |        |-Record
- *   |        |-Record
- *   |        |-...
+ *   |-MSTraceID
+ *   |   |-MSTraceSeg
+ *   |        |-RecordMap
+ *   |            |-Record
+ *   |            |-Record
+ *   |            |-...
+ *   |
  *   |-...
  *
  * The program goes through the following stages:
@@ -40,13 +43,13 @@
  * 1) Read all input files constructing a data map of contiguous trace
  * segments and the data records that comprise them.  This operation
  * is done by reading each file record-by-record and as each record is
- * read, search the MSTraceGroup for an MSTrace that the record "fits"
+ * read, search the MSTraceList for an MSTraceSeg that the record "fits"
  * with (same channel and adjacent in time).  If the record is found
- * to fit with a specific MSTrace its coverage will be added to the
- * MSTrace information otherwise a new MSTrace is created and added to
- * the MSTraceGroup.
+ * to fit with a specific MSTraceSeg its coverage will be added to the
+ * MSTraceSeg information otherwise a new MSTraceSeg is created and
+ * added to the MSTraceGroup.
  *
- * Each MSTrace has an associated RecordMap which includes a list of
+ * Each MSTraceSeg has an associated RecordMap which includes a list of
  * Records.  A Record structure is not the actual data record itself
  * but meta information about the record coverage and location (file
  * and offset).  The list of Records is always in time order.
@@ -110,38 +113,14 @@
 
 #include <libmseed.h>
 
+#include "globmatch.h"
 #include "dsarchive.h"
 
-#define VERSION "1.3"
+#define VERSION "2.0rc1"
 #define PACKAGE "dataselect"
-
-/* For a linked list of strings, as filled by strparse() */
-typedef struct StrList_s {
-  char             *element;
-  struct StrList_s *next;
-} StrList;
-
-/* POD request record containers */
-typedef struct ReqRec_s {
-  struct StrList_s *strlist;
-  char  *network;
-  char  *station;
-  char  *location;
-  char  *channel;
-  time_t datastart;
-  time_t dataend;
-  char  *filename;
-  char  *headerdir;
-  time_t reqstart;
-  time_t reqend;
-  char   pruned;
-  struct ReqRec_s *prev;
-  struct ReqRec_s *next;
-} ReqRec;
 
 /* Input/output file information containers */
 typedef struct Filelink_s {
-  struct ReqRec_s *reqrec;
   char    *infilename;     /* Input file name */
   FILE    *infp;           /* Input file descriptor */
   char    *outfilename;    /* Output file name */
@@ -156,6 +135,18 @@ typedef struct Filelink_s {
   struct Filelink_s *next;
 } Filelink;
 
+/* Data selection structure definition containers */
+typedef struct Selectlink_s {
+  char    *network;        /* Matching (globbing) network codes */
+  char    *station;        /* Matching (globbing) station codes */
+  char    *location;       /* Matching (globbing) location IDs */
+  char    *channel;        /* Matching (globbing) channel codes */
+  char    *quality;        /* Matching (globbing) quality codes */
+  hptime_t starttime;      /* Earliest data for matching channels */
+  hptime_t endtime;        /* Latest data for matching channels */
+  struct Selectlink_s *next;
+} Selectlink;
+
 /* Archive output structure definition containers */
 typedef struct Archive_s {
   DataStream  datastream;
@@ -165,6 +156,7 @@ typedef struct Archive_s {
 /* Mini-SEED record information structures */
 typedef struct Record_s {
   struct Filelink_s *flp;
+  struct Selectlink_s *slp;
   off_t     offset;
   int       reclen;
   hptime_t  starttime;
@@ -184,37 +176,32 @@ typedef struct RecordMap_s {
 } RecordMap;
 
 
-static int processpod (char *requestfile, char *datadir);
 static int setofilelimit (int limit);
-static ReqRec *readreqfile (char *requestfile);
-static int writereqfile (char *requestfile, ReqRec *rrlist);
-
-static int processtraces (MSTraceGroup *mstg, Filelink *filelist);
-static int writetraces (MSTraceGroup *mstg, Filelink *filelist);
+static int processtraces (MSTraceList *mstl);
+static int writetraces (MSTraceList *mstl);
 static int trimrecord (Record *rec, char *recbuf);
 static void record_handler (char *record, int reclen, void *handlerdata);
 
-static int prunetraces (MSTraceGroup *mstg);
-static int findcoverage (MSTraceGroup *mstg, MSTrace *targetmst,
-			 MSTraceGroup **ppcoverage);
-static int trimtrace (MSTrace *targetmst, MSTraceGroup *coverage);
-static int reconcile_tracetimes (MSTraceGroup *mstg);
+static int prunetraces (MSTraceList *mstl);
+static int findcoverage (MSTraceList *mstl, MSTraceID *targetid,
+			 MSTraceSeg *targetseg, MSTraceGroup **ppcoverage);
+static int trimtrace (MSTraceSeg *targetseg, char *targetsrcname,
+		      MSTraceGroup *coverage);
+static int reconcile_tracetimes (MSTraceList *mstl);
 static int qcompare (const char quality1, const char quality2);
 
-static int readfiles (Filelink *flp, MSTraceGroup **ppmstg);
-static MSTraceGroup *reinitgroup (MSTraceGroup *mstg);
-static void printmodsummary (Filelink *filelist, flag nomods);
-static void printtracemap (MSTraceGroup *mstg);
+static int readfiles (MSTraceList **ppmstl);
+static void printmodsummary (flag nomods);
+static void printtracemap (MSTraceList *mstl);
 static void printrecordmap (RecordMap *recmap, flag details);
 
-static int processparam (int argcount, char **argvec);
+static int  processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
-static int strparse (const char *string, const char *delim, StrList **list);
-static void addfile (Filelink **ppfilelist, char *filename, ReqRec *reqrec);
+static int  addfile (char *filename);
+static int  addlistfile (char *filename);
+static int  readselectfile (char *selectfile);
 static int  addarchive (const char *path, const char *layout);
-static int readregexfile (char *regexfile, char **pppattern);
-static void freereqrec (ReqRec *reqrec);
-static void freefilelist (Filelink **ppfilelist);
+static int  readregexfile (char *regexfile, char **pppattern);
 static void usage (int level);
 
 static flag     verbose       = 0;
@@ -233,9 +220,6 @@ static char     splitboundary = 0;    /* Split records on day 'd', hour 'h' or m
 static regex_t *match         = 0;    /* Compiled match regex */
 static regex_t *reject        = 0;    /* Compiled reject regex */
 
-static char    *podreqfile    = 0;    /* POD h. request file */
-static char    *poddatadir    = 0;    /* POD data directory */
-
 static flag     replaceinput  = 0;    /* Replace input files */
 static flag     nobackups     = 0;    /* Remove re-named original files when done with them */
 static char    *outputfile    = 0;    /* Single output file */
@@ -243,13 +227,15 @@ static Archive *archiveroot   = 0;    /* Output file structures */
 
 static char     recordbuf[16384];     /* Global record buffer */
 
-static Filelink *gfilelist    = 0;    /* List of input files */
+static Filelink *filelist     = 0;    /* List of input files */
+static Filelink *filelisttail = 0;    /* Tail of list of input files */
+static Selectlink *selections = 0;    /* List of data selections */
 
 
 int
 main ( int argc, char **argv )
 {
-  MSTraceGroup *mstg = 0;
+  MSTraceList *mstl = 0;
   
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
@@ -262,226 +248,29 @@ main ( int argc, char **argv )
   if ( archiveroot )
     ds_maxopenfiles = 50;
   
-  if ( podreqfile && poddatadir )
+  if ( verbose > 2 )
+    ms_log (1, "Processing input files\n");
+  
+  /* Initialize trace group structure */
+  if ( ! (mstl = mstl_init (mstl)) )
     {
-      if ( verbose > 2 )
-	ms_log (1, "Procesing POD structure:\nrequest file: %s, data dir: %s\n",
-		podreqfile, poddatadir);
-      
-      if ( processpod (podreqfile, poddatadir) )
-	{
-	  ms_log (2, "Cannot process POD structure\n");
-	  return 1;
-	}
-    }
-  else
-    {
-      if ( verbose > 2 )
-	ms_log (1, "Processing input files\n");
-      
-      /* Initialize trace group structure */
-      if ( ! (mstg = mst_initgroup (mstg)) )
-	{
-	  ms_log (2, "Cannot initilize MSTraceGroup\n");
-	  return 1;
-	}
-      
-      /* Read and process all files specified on the command line */
-      if ( readfiles (gfilelist, &mstg) )
-	return 1;
-      
-      /* Processes traces */
-      if ( mstg->numtraces > 0 && processtraces (mstg, gfilelist) )
-	return 1;
-      
-      if ( modsummary )
-	printmodsummary (gfilelist, verbose);
-      
-      /* Clean up MSTraceGroup and file list */
-      mst_freegroup (&mstg);      
-      freefilelist (&gfilelist);
+      ms_log (2, "Cannot initilize MSTraceList\n");
+      return 1;
     }
   
+  /* Read and process all files specified on the command line */
+  if ( readfiles (&mstl) )
+    return 1;
+  
+  /* Processes traces */
+  if ( mstl->numtraces > 0 && processtraces (mstl) )
+    return 1;
+  
+  if ( modsummary )
+    printmodsummary (verbose);
+    
   return 0;
 }  /* End of main() */
-
-
-/***************************************************************************
- * processpod:
- *
- * Process data from a POD structure.  Group input data files by
- * channel and prune each group separately using a M > Q > D > R priority.
- *
- * Returns 0 on success and -1 on error.
- ***************************************************************************/
-static int
-processpod (char *requestfile, char *datadir)
-{
-  Filelink *filelist = 0;
-  MSTraceGroup *mstg = 0;
-  ReqRec *reqrecs;
-  ReqRec *fox, *hound;
-  ReqRec *reciter, *recnext;
-  Filelink *flp;
-  int filecount;
-
-  char tmpfilename[1024];
-  
-  /* Read the request file */
-  if ( ! (reqrecs = readreqfile(requestfile)) )
-    return -1;
-  
-  /* Group the input files by channel (complete matching NSLC) and
-   * prune as a group.
-   *
-   * All files in the request file will be pruned, grouping by channel
-   * is a minor memory footprint optimization.
-   */
-  
-  hound = reqrecs;
-  while ( hound )
-    {
-      if ( hound->pruned )
-	{
-	  hound = hound->next;
-	  continue;
-	}
-      
-      /* Build appropriate data file name using base data dir and record file name */
-      snprintf (tmpfilename, sizeof(tmpfilename), "%s/%s/%s",
-		poddatadir, hound->station, hound->filename);
-      
-      /* Add file to list to be pruned and mark it as pruned */
-      addfile (&filelist, tmpfilename, hound);
-      hound->pruned = 1;
-      filecount = 1;
-      
-      /* Find all the other matching NSLC files and add them to the list */
-      fox = reqrecs;
-      while ( fox )
-	{
-	  if ( fox == hound || fox->pruned )
-	    {
-	      fox = fox->next;
-	      continue;
-	    }
-	  
-	  if ( ! strcmp (hound->network, fox->network) &&
-	       ! strcmp (hound->station, fox->station) &&
-	       ! strcmp (hound->location, fox->location) &&
-	       ! strcmp (hound->channel, fox->channel) )
-	    {
-	      /* Build appropriate data file name using base data dir and record file name */
-	      snprintf (tmpfilename, sizeof(tmpfilename), "%s/%s/%s",
-			poddatadir, fox->station, fox->filename);
-	      
-	      /* Add file to list to be pruned and mark it as pruned */
-	      addfile (&filelist, tmpfilename, fox);
-	      fox->pruned = 1;
-	      filecount++;
-	    }
-	  
-	  fox = fox->next;
-	}
-      
-      /* Increase open file limit if necessary, in general
-       * we need 2 X the filecount and some wiggle room. */
-      if ( setofilelimit ((filecount * 2) + 20) == -1 )
-	{
-	  freefilelist (&filelist);
-	  hound = hound->next;
-	  continue;
-	}
-      
-      /* Read data files & prune time coverage */
-      if ( readfiles (filelist, &mstg) )
-	return -1;
-      
-      if ( processtraces (mstg, filelist) )
-	return -1;
-      
-      /* Update the time values in the request records */
-      flp = filelist;
-      while ( flp )
-	{
-	  if ( flp->byteswritten == 0 )
-	    {
-	      /* This signals no coverage, request record will be removed below */
-	      flp->reqrec->datastart = flp->reqrec->dataend = 0;
-	    }
-	  else
-	    {
-	      flp->reqrec->datastart = (time_t) (MS_HPTIME2EPOCH(flp->earliest));
-	      flp->reqrec->dataend = (time_t) (MS_HPTIME2EPOCH(flp->latest));
-	    }
-	  
-	  flp = flp->next;
-	}
-      
-      if ( modsummary )
-	printmodsummary (filelist, verbose);
-      
-      /* Clean up MSTraceGroup and file list */
-      mst_freegroup (&mstg);
-      freefilelist (&filelist);
-      
-      hound = hound->next;
-    }
-  
-  if ( verbose > 1 )
-    ms_log (1, "Renaming and rewriting request file (h.)\n");
-  
-  /* Remove request records that have no time coverage, i.e. all data pruned */
-  reciter = reqrecs;
-  while ( reciter )
-    {
-      recnext = reciter->next;
-      
-      if ( reciter->datastart == 0 && reciter->dataend == 0 )
-	{
-	  if ( reciter == reqrecs )  /* First in chain */
-	    reqrecs = reciter->next;
-	  else if ( reciter->next == 0 )  /* Last in chain */
-	    reciter->prev->next = 0;
-	  else  /* In middle of chain */
-	    {
-	      reciter->prev->next = reciter->next;
-	      reciter->next->prev = reciter->prev;
-	    }
-	  
-	  freereqrec (reciter);
-	}
-      
-      reciter = recnext;
-    }
-  
-  /* Rename original request file (add '.orig') */
-  snprintf (tmpfilename, sizeof(tmpfilename), "%s.orig", requestfile);
-  
-  if ( rename (requestfile, tmpfilename) )
-    {
-      ms_log (2, "cannot rename original request file: %s -> %s : '%s'\n",
-	      tmpfilename, requestfile, strerror(errno));
-      return -1;
-    }
-  
-  /* Write the request file */
-  if ( writereqfile (requestfile, reqrecs) )
-    return -1;
-  
-  /* Free memory associated with the request records */
-  reciter = reqrecs;
-  while ( reciter )
-    {
-      recnext = reciter->next;
-      
-      freereqrec (reciter);
-      
-      reciter = recnext;
-    }
-  
-  return 0;
-}  /* End of processpod() */
 
 
 /***************************************************************************
@@ -496,6 +285,7 @@ static int
 setofilelimit (int limit)
 {
   struct rlimit rlim;
+  rlim_t oldlimit;
   
   /* Get the current soft open file limit */
   if ( getrlimit (RLIMIT_NOFILE, &rlim) == -1 )
@@ -506,6 +296,7 @@ setofilelimit (int limit)
   
   if ( rlim.rlim_cur < limit )
     {
+      oldlimit = rlim.rlim_cur;
       rlim.rlim_cur = (rlim_t) limit;
       
       if ( verbose > 1 )
@@ -514,223 +305,14 @@ setofilelimit (int limit)
       
       if ( setrlimit (RLIMIT_NOFILE, &rlim) == -1 )
 	{
-	  ms_log (2, "ERROR setrlimit failed to set open file limit\n");
+	  ms_log (2, "setrlimit failed to raise open file limit from %d to %d (max: %d)\n",
+		  (int) oldlimit, (int) limit, rlim.rlim_max);
 	  return -1;
 	}
     }
   
   return (int) rlim.rlim_cur;
 }  /* End of setofilelimit() */
-
-
-/***************************************************************************
- * readreqfile:
- *
- * Parse the specified request file and return a chain of ReqRec structs.
- *
- * The request file (h. file) is can reference the same file multiple
- * times, but these request lines will be grouped together for
- * processing and the output request file will only have one line per
- * input file.  The data and request start/end times will be the
- * outermost times of any grouping.
- *
- * The request file is assumed to NEVER reference a file for more than
- * one channel, in otherwords there is never two or more unique
- * channels in a given file.
- *
- * Returns a pointer on success and NULL on error.
- ***************************************************************************/
-static ReqRec *
-readreqfile (char *requestfile)
-{
-  FILE *rf;
-  ReqRec *rr = 0;
-  ReqRec *lastrr = 0;
-  ReqRec *newrr;
-  ReqRec *looprr;
-  char reqline[200];
-  StrList *list = 0;
-  StrList *listptr;
-  int reqreccnt = 0;
-
-  char tmpfilename[1024];
-
-  if ( verbose )
-    ms_log (1, "Reading request file: %s\n", requestfile);
-  
-  if ( ! (rf = fopen (requestfile, "rb")) )
-    {
-      ms_log (2, "Cannot open request file '%s': %s\n",
-	      requestfile, strerror(errno));
-      return NULL;
-    }
-  
-  while ( fgets(reqline, sizeof(reqline), rf) )
-    {
-      if ( strparse(reqline, "\t", &list) != 10 )
-	{
-	  if ( verbose > 2 )
-	    ms_log (1, "skipping request line: '%s'\n", reqline);
-	  continue;
-	}
-      
-      reqreccnt++;
-      
-      newrr = (ReqRec *) malloc (sizeof(ReqRec));
-      newrr->strlist = list;
-      
-      listptr = list;
-      
-      newrr->station = strdup(listptr->element);   /* 1 */
-      listptr = listptr->next;
-      newrr->network = strdup(listptr->element);   /* 2 */
-      listptr = listptr->next;
-      newrr->channel = strdup(listptr->element);   /* 3 */
-      listptr = listptr->next;
-      newrr->location = strdup(listptr->element);  /* 4 */
-      listptr = listptr->next;
-      newrr->datastart = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element))); /* 5 */
-      listptr = listptr->next;
-      newrr->dataend = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));   /* 6 */
-      listptr = listptr->next;
-      newrr->filename = strdup(listptr->element);  /* 7 */
-      listptr = listptr->next;
-      newrr->headerdir = strdup(listptr->element); /* 8 */
-      listptr = listptr->next;
-      newrr->reqstart = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));  /* 9 */
-      listptr = listptr->next;
-      newrr->reqend = (time_t) (MS_HPTIME2EPOCH (ms_seedtimestr2hptime(listptr->element)));   /* 10 */
-      listptr = listptr->next;
-      
-      newrr->pruned = 0;
-      newrr->prev = 0;
-      newrr->next = 0;
-      
-      /* Free the parsed string list */
-      strparse (0, 0, &list);
-      
-      /* Build appropriate data file name using base data dir and record file name */
-      snprintf (tmpfilename, sizeof(tmpfilename), "%s/%s/%s",
-		poddatadir, newrr->station, newrr->filename);
-      
-      /* Check for file access */
-      if ( access(tmpfilename, F_OK) )
-	{
-	  ms_log (1, "Warning: cannot find file '%s', keeping a placeholder\n", tmpfilename);
-	  newrr->pruned = 1;
-	}
-      
-      /* If this is the first ReqRec */
-      if ( ! rr )
-	{
-	  rr = newrr;
-	  lastrr = newrr;
-	}
-      /* Other wise add to or update the ReqRec list */
-      else
-	{
-	  /* Search the list for matching files */
-	  looprr = rr;
-	  while ( looprr )
-	    {
-	      /* If a matching file name was found update the time stamps and
-	       * free this new one.  One buried assumption with this approach
-	       * is that there will never be more than one channel in a given
-	       * data file (unique Net, Sta, Loc, Chan & Quality) */
-	      if ( ! strcmp (looprr->filename, newrr->filename) )
-		{
-		  if ( looprr->datastart > newrr->datastart )
-		    looprr->datastart = newrr->datastart;
-		  if ( looprr->dataend < newrr->dataend )
-		    looprr->dataend = newrr->dataend;
-		  
-		  if ( looprr->reqstart > newrr->reqstart )
-		    looprr->reqstart = newrr->reqstart;
-		  if ( looprr->reqend < newrr->reqend )
-		    looprr->reqend = newrr->reqend;
-		  
-		  freereqrec (newrr);
-		  break;
-		}
-	      
-	      looprr = looprr->next;
-	    }
-	  
-	  /* If no match add new ReqRec to the list */
-	  if ( ! looprr )
-	    {
-	      newrr->prev = lastrr;
-	      lastrr->next = newrr;
-	      lastrr = newrr;
-	    }
-	}
-    }
-  
-  if ( verbose )
-    ms_log (1, "Read %d request records (lines)\n", reqreccnt);
-  
-  fclose (rf);
-  
-  return rr;
-} /* End of readreqfile() */
-
-
-/***************************************************************************
- * writereqfile:
- *
- * Write a request file for a chained ReqRec list.
- *
- * Returns 0 on success and -1 on error.
- ***************************************************************************/
-static int
-writereqfile (char *requestfile, ReqRec *rrlist)
-{
-  FILE *rf;
-  ReqRec *rr = 0;
-  char datastart[30];
-  char dataend[30];
-  char reqstart[30];
-  char reqend[30];
-  
-  int reqreccnt = 0;
-
-  if ( verbose )
-    ms_log (1, "Writing request file: %s\n", requestfile);
-  
-  if ( ! (rf = fopen (requestfile, "wb")) )
-    {
-      ms_log (2, "Cannot open request file '%s': %s\n",
-	      requestfile, strerror(errno));
-      return -1;
-    }
-  
-  rr = rrlist;
-  
-  while ( rr )
-    {
-      reqreccnt++;
-      
-      strftime (datastart, sizeof(datastart), "%Y,%j,%H:%M:%S", gmtime(&rr->datastart));
-      strftime (dataend, sizeof(dataend), "%Y,%j,%H:%M:%S", gmtime(&rr->dataend));
-      strftime (reqstart, sizeof(reqstart), "%Y,%j,%H:%M:%S", gmtime(&rr->reqstart));
-      strftime (reqend, sizeof(reqend), "%Y,%j,%H:%M:%S", gmtime(&rr->reqend));
-      
-      fprintf (rf,"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-	       rr->station,rr->network,rr->channel,rr->location,
-	       datastart, dataend,
-	       rr->filename, rr->headerdir,
-	       reqstart, reqend);
-      
-      rr = rr->next;
-    }
-  
-  fclose (rf);
-  
-  if ( verbose )
-    ms_log (1, "Wrote %d request records (lines)\n", reqreccnt);
-  
-  return 0;
-} /* End of writereqfile() */
 
 
 /***************************************************************************
@@ -742,32 +324,25 @@ writereqfile (char *requestfile, ReqRec *rrlist)
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
 static int
-processtraces (MSTraceGroup *mstg, Filelink *filelist)
+processtraces (MSTraceList *mstl)
 {
-  
-  /* Sort global trace group by srcname, sample rate, starttime and descending end time */
-  mst_groupsort (mstg, 0);
-  
   if ( verbose > 2 )
-    printtracemap (mstg);
+    printtracemap (mstl);
   
   /* Prune data */
   if ( prunedata )
     {
       /* Perform pre-identified pruning actions */
-      if ( prunetraces (mstg) )
+      if ( prunetraces (mstl) )
 	return -1;
       
-      /* Reconcile MSTrace times with associated record maps */
-      if ( reconcile_tracetimes (mstg) )
+      /* Reconcile MSTraceID times with associated record maps */
+      if ( reconcile_tracetimes (mstl) )
 	return -1;
-      
-      /* Re-sort trace group by srcname, sample rate, starttime and descending end time */
-      mst_groupsort (mstg, 0);
     }
   
   /* Write all MSTrace associated records to output file(s) */
-  if ( writetraces (mstg, filelist) )
+  if ( writetraces (mstl) )
     return -1;
   
   return 0;
@@ -791,7 +366,7 @@ processtraces (MSTraceGroup *mstg, Filelink *filelist)
  * Returns 0 on success and 1 on error.
  ***************************************************************************/
 static int
-writetraces (MSTraceGroup *mstg, Filelink *filelist)
+writetraces (MSTraceList *mstl)
 {
   static uint64_t totalrecsout = 0;
   static uint64_t totalbytesout = 0;
@@ -802,7 +377,9 @@ writetraces (MSTraceGroup *mstg, Filelink *filelist)
   
   hptime_t hpdelta;
   
-  MSTrace *mst;
+  MSTraceID *id;
+  MSTraceSeg *seg;
+  
   RecordMap *recmap;
   Record *rec;
   Filelink *flp;
@@ -810,10 +387,10 @@ writetraces (MSTraceGroup *mstg, Filelink *filelist)
   
   FILE *ofp = 0;
   
-  if ( ! mstg )
+  if ( ! mstl )
     return 1;
   
-  if ( ! mstg->traces )
+  if ( ! mstl->traces )
     return 1;
   
   /* Open the output file if specified */
@@ -834,157 +411,164 @@ writetraces (MSTraceGroup *mstg, Filelink *filelist)
         }
     }
   
-  mst = mstg->traces;
+  id = mstl->traces;
   
-  /* Loop through each MSTrace in the MSTraceGroup */
-  while ( mst && ! errflag )
+  /* Loop through each MSTraceSeg in the MSTraceList */
+  while ( id && ! errflag )
     {
-      recmap = (RecordMap *) mst->prvtptr;
-      rec = recmap->first;
+      seg = id->first;
       
-      /* Loop through each Record in the MSTrace's RecordMap.
-       * After records are read from the input files, perform any
-       * pre-identified pruning before writing data back out */
-      while ( rec && ! errflag )
+      while ( seg && ! errflag )
 	{
-	  /* Skip marked (pre-identified as non-contributing) records */
-	  if ( rec->reclen == 0 )
-	    {
-	      rec = rec->next;
-	      continue;
-	    }
+	  recmap = (RecordMap *) seg->prvtptr;
+	  rec = recmap->first;
 	  
-	  /* Make sure the record buffer is large enough */
-	  if ( rec->reclen > sizeof(recordbuf) )
+	  /* Loop through each Record in the MSTraceSeg's RecordMap.
+	   * After records are read from the input files, perform any
+	   * pre-identified pruning before writing data back out */
+	  while ( rec && ! errflag )
 	    {
-	      ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
-		      rec->reclen, (long long unsigned int) sizeof(recordbuf));
-	      errflag = 1;
-	      break;
-	    }
-	  
-	  /* Open file for reading if not already done */
-	  if ( ! rec->flp->infp )
-	    if ( ! (rec->flp->infp = fopen (rec->flp->infilename, "rb")) )
-	      {
-		ms_log (2, "Cannot open '%s' for reading: %s\n",
-			rec->flp->infilename, strerror(errno));
-		errflag = 1;
-		break;
-	      }
-	  
-	  /* Seek to record offset */
-	  if ( lmp_fseeko (rec->flp->infp, rec->offset, SEEK_SET) == -1 )
-	    {
-	      ms_log (2, "Cannot seek in '%s': %s\n",
-		      rec->flp->infilename, strerror(errno));
-	      errflag = 1;
-	      break;
-	    }
-	  
-	  /* Read record into buffer */
-	  if ( fread (recordbuf, rec->reclen, 1, rec->flp->infp) != 1 )
-	    {
-	      ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
-		      rec->reclen, (long long unsigned)rec->offset,
-		      rec->flp->infilename);
-	      errflag = 1;
-	      break;
-	    }
-	  
-	  /* Trim data from the record if new start or end times are specifed */
-	  if ( rec->newstart || rec->newend )
-	    {
-	      if ( trimrecord (rec, recordbuf) )
+	      /* Skip marked (pre-identified as non-contributing) records */
+	      if ( rec->reclen == 0 )
 		{
 		  rec = rec->next;
 		  continue;
 		}
-	    }
-	  
-	  /* Re-stamp quality indicator if specified */
-          if ( restampqind )
-            {
-              if ( verbose > 1 )
-                ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
-              
-              *(recordbuf + 6) = restampqind;
-            }
-	  
-	  /* Write to a single output file if specified */
-	  if ( ofp )
-	    {
-	      if ( fwrite (recordbuf, rec->reclen, 1, ofp) != 1 )
+	      
+	      /* Make sure the record buffer is large enough */
+	      if ( rec->reclen > sizeof(recordbuf) )
 		{
-		  ms_log (2, "Cannot write to '%s'\n", outputfile);
+		  ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
+			  rec->reclen, (long long unsigned int) sizeof(recordbuf));
 		  errflag = 1;
 		  break;
 		}
-	    }
-	  
-	  /* Write to Archive(s) if specified */
-	  if ( archiveroot )
-	    {
-	      MSRecord *msr = 0;
 	      
-	      if ( msr_unpack (recordbuf, rec->reclen, &msr, 0, verbose) != MS_NOERROR )
-		{
-		  ms_log (2, "Cannot unpack Mini-SEED, cannot write to archive\n");
-		}
-	      else
-		{
-		  arch = archiveroot;
-		  while ( arch )
-		    {
-		      ds_streamproc (&arch->datastream, msr, 0, verbose-1);
-		      arch = arch->next;
-		    }
-		}
-	      
-	      msr_free (&msr);
-	    }
-
-	  /* Open original file for output if replacing input and write */
-	  if ( replaceinput )
-	    {
-	      if ( ! rec->flp->outfp )
-		if ( ! (rec->flp->outfp = fopen (rec->flp->outfilename, "wb")) )
+	      /* Open file for reading if not already done */
+	      if ( ! rec->flp->infp )
+		if ( ! (rec->flp->infp = fopen (rec->flp->infilename, "rb")) )
 		  {
-		    ms_log (2, "Cannot open '%s' for writing: %s\n",
-			    rec->flp->outfilename, strerror(errno));
+		    ms_log (2, "Cannot open '%s' for reading: %s\n",
+			    rec->flp->infilename, strerror(errno));
 		    errflag = 1;
 		    break;
 		  }
 	      
-	      if ( fwrite (recordbuf, rec->reclen, 1, rec->flp->outfp) != 1 )
+	      /* Seek to record offset */
+	      if ( lmp_fseeko (rec->flp->infp, rec->offset, SEEK_SET) == -1 )
 		{
-		  ms_log (2, "Cannot write to '%s'\n", rec->flp->outfilename);
+		  ms_log (2, "Cannot seek in '%s': %s\n",
+			  rec->flp->infilename, strerror(errno));
 		  errflag = 1;
 		  break;
 		}
-	    }
+	      
+	      /* Read record into buffer */
+	      if ( fread (recordbuf, rec->reclen, 1, rec->flp->infp) != 1 )
+		{
+		  ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
+			  rec->reclen, (long long unsigned)rec->offset,
+			  rec->flp->infilename);
+		  errflag = 1;
+		  break;
+		}
+	      
+	      /* Trim data from the record if new start or end times are specifed */
+	      if ( rec->newstart || rec->newend )
+		{
+		  if ( trimrecord (rec, recordbuf) )
+		    {
+		      rec = rec->next;
+		      continue;
+		    }
+		}
+	      
+	      /* Re-stamp quality indicator if specified */
+	      if ( restampqind )
+		{
+		  if ( verbose > 1 )
+		    ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
+		  
+		  *(recordbuf + 6) = restampqind;
+		}
 	  
-	  /* Update file entry time stamps and counts */
-	  if ( ! rec->flp->earliest || (rec->flp->earliest > rec->starttime) )
-	    {
-	      rec->flp->earliest = rec->starttime;
-	    }
-	  if ( ! rec->flp->latest || (rec->flp->latest < rec->endtime) )
-	    {
-	      hpdelta = ( mst->samprate ) ? (hptime_t) (HPTMODULUS / mst->samprate) : 0;
-	      rec->flp->latest = rec->endtime + hpdelta;
-	    }
+	      /* Write to a single output file if specified */
+	      if ( ofp )
+		{
+		  if ( fwrite (recordbuf, rec->reclen, 1, ofp) != 1 )
+		    {
+		      ms_log (2, "Cannot write to '%s'\n", outputfile);
+		      errflag = 1;
+		      break;
+		    }
+		}
+	      
+	      /* Write to Archive(s) if specified */
+	      if ( archiveroot )
+		{
+		  MSRecord *msr = 0;
+		  
+		  if ( msr_unpack (recordbuf, rec->reclen, &msr, 0, verbose) != MS_NOERROR )
+		    {
+		      ms_log (2, "Cannot unpack Mini-SEED, cannot write to archive\n");
+		    }
+		  else
+		    {
+		      arch = archiveroot;
+		      while ( arch )
+			{
+			  ds_streamproc (&arch->datastream, msr, 0, verbose-1);
+			  arch = arch->next;
+			}
+		    }
+		  
+		  msr_free (&msr);
+		}
+	      
+	      /* Open original file for output if replacing input and write */
+	      if ( replaceinput )
+		{
+		  if ( ! rec->flp->outfp )
+		    if ( ! (rec->flp->outfp = fopen (rec->flp->outfilename, "wb")) )
+		      {
+			ms_log (2, "Cannot open '%s' for writing: %s\n",
+				rec->flp->outfilename, strerror(errno));
+			errflag = 1;
+			break;
+		      }
+		  
+		  if ( fwrite (recordbuf, rec->reclen, 1, rec->flp->outfp) != 1 )
+		    {
+		      ms_log (2, "Cannot write to '%s'\n", rec->flp->outfilename);
+		      errflag = 1;
+		      break;
+		    }
+		}
+	      
+	      /* Update file entry time stamps and counts */
+	      if ( ! rec->flp->earliest || (rec->flp->earliest > rec->starttime) )
+		{
+		  rec->flp->earliest = rec->starttime;
+		}
+	      if ( ! rec->flp->latest || (rec->flp->latest < rec->endtime) )
+		{
+		  hpdelta = ( seg->samprate ) ? (hptime_t) (HPTMODULUS / seg->samprate) : 0;
+		  rec->flp->latest = rec->endtime + hpdelta;
+		}
+	      
+	      rec->flp->byteswritten += rec->reclen;
+	      
+	      totalrecsout++;
+	      totalbytesout += rec->reclen;
+	      
+	      rec = rec->next;
+	    } /* Done looping through Records in the RecordMap */
 	  
-	  rec->flp->byteswritten += rec->reclen;
-	  
-	  totalrecsout++;
-	  totalbytesout += rec->reclen;
-	  
-	  rec = rec->next;
-	} /* Done looping through Records in the RecordMap */
-      
-      mst = mst->next;
-    } /* Done looping through MStraces in the MSTraceGroup */
+	  seg = seg->next;
+	} /* Done looping through MSTraceSegs in the MSTraceID */
+
+      id = id->next;
+    } /* Done looping through MSTraceIDs the MSTraceList */
   
   /* Close all open input & output files and remove backups if requested */
   flp = filelist;
@@ -1225,48 +809,55 @@ record_handler (char *record, int reclen, void *handlerdata)
  * Return 0 on success and -1 on failure.
  ***************************************************************************/
 static int
-prunetraces (MSTraceGroup *mstg)
+prunetraces (MSTraceList *mstl)
 {
-  MSTrace *mst = 0;
+  MSTraceID *id = 0;
+  MSTraceSeg *seg = 0;
   MSTraceGroup *coverage = 0;
   int retval;
   
-  if ( ! mstg )
+  if ( ! mstl )
     return -1;
   
-  if ( ! mstg->traces )
+  if ( ! mstl->traces )
     return -1;
   
   if ( verbose )
-    ms_log (1, "Pruning MSTrace data\n");
+    ms_log (1, "Pruning trace data\n");
   
-  /* For each MSTrace determine the coverage of the overlapping
+  /* For each MSTraceSeg determine the coverage of the overlapping
      Records from the other traces with a higher priority and prune
      the overlap. */
-  mst = mstg->traces;
-  while ( mst )
+  id = mstl->traces;
+  while ( id )
     {
-      /* Determine overlapping MSTrace coverage */
-      retval = findcoverage (mstg, mst, &coverage);
-      
-      if ( retval )
+      seg = id->first;
+      while ( seg )
 	{
-	  ms_log (2, "cannot findcoverage()\n");
-	  return -1;
-	}
-      else if ( coverage )
-	{
-	  if ( trimtrace (mst, coverage) < 0 )
+	  /* Determine overlapping trace coverage */
+	  retval = findcoverage (mstl, id, seg, &coverage);
+	  
+	  if ( retval )
 	    {
-	      ms_log (2, "cannot trimtraces()\n");
+	      ms_log (2, "cannot findcoverage()\n");
 	      return -1;
 	    }
+	  else if ( coverage )
+	    {
+	      if ( trimtrace (seg, id->srcname, coverage) < 0 )
+		{
+		  ms_log (2, "cannot trimtraces()\n");
+		  return -1;
+		}
+	    }
+	  
+	  /* Free the coverage MSTraceGroup for reuse */
+	  mst_freegroup (&coverage);
+	  
+	  seg = seg->next;
 	}
       
-      /* Free the coverage MSTraceGroup for reuse */
-      mst_freegroup (&coverage);
-      
-      mst = mst->next;
+      id = id->next;
     }
   
   return 0;
@@ -1276,23 +867,17 @@ prunetraces (MSTraceGroup *mstg)
 /***************************************************************************
  * findcoverage():
  *
- * Search an MSTraceGroup for entries that overlap the target MSTrace
- * and, from the Record entries of the overlapping MSTraces, build a
+ * Search an MSTraceList for entries that overlap the target MSTraceSeg
+ * and, from the Record entries of the overlapping MSTraceSegs, build a
  * coverage map in the form of a sparsely-populated MSTraceGroup.
  *
- * Only data with a higher priority than the target MSTrace will be
+ * Only data with a higher priority than the target MSTraceSeg will be
  * added to the overlap coverage.  Priority is determined using the
  * quality codes via qcompare() and if the qualities are equal the
  * longest time-series will be given priority.
  *
  * On success a new MSTraceGroup will be allocated and returned, it is
  * up to the caller to properly free this memory.
- *
- * To avoid numerous string operations this routine will compare
- * MSTrace srcnames by comparing 44 bytes starting from
- * MSTrace->network which should be the strings for network, station,
- * location and channel.  As long as the MSTrace struct does not
- * change this shortcut will be valid.
  *
  * When no overlap coverage is found *ppcoverage will be 0, otherwise
  * it will contain a list of MSTraces representing the overlap
@@ -1301,10 +886,12 @@ prunetraces (MSTraceGroup *mstg)
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
 static int
-findcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
+findcoverage (MSTraceList *mstl, MSTraceID *targetid, MSTraceSeg *targetseg,
+	      MSTraceGroup **ppcoverage)
 {
+  MSTraceID *id = 0;
+  MSTraceSeg *seg = 0;
   MSTrace *cmst = 0;
-  MSTrace *mst;
   RecordMap *recmap;
   Record *rec;
   hptime_t hpdelta, hptimetol;
@@ -1312,7 +899,7 @@ findcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
   int priority;
   int newsegment;
   
-  if ( ! mstg || ! targetmst || ! ppcoverage )
+  if ( ! mstl || ! targetseg || ! ppcoverage )
     return -1;
   
   /* Reset coverage MSTraceGroup if needed */
@@ -1320,126 +907,134 @@ findcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
     mst_freegroup (ppcoverage);
   
   /* Determine sample period in high precision time ticks */
-  hpdelta = ( targetmst->samprate ) ? (hptime_t) (HPTMODULUS / targetmst->samprate) : 0;
+  hpdelta = ( targetseg->samprate ) ? (hptime_t) (HPTMODULUS / targetseg->samprate) : 0;
   
   /* Determine time tolerance in high precision time ticks */
   hptimetol = ( timetol == -1 ) ? (hpdelta / 2) : (hptime_t) (HPTMODULUS * timetol);
   
-  /* Loop through each MSTrace in the group searching for target coverage */
-  mst = mstg->traces;
-  while ( mst )
+  /* Loop through each MSTraceID in the list */
+  id = mstl->traces;
+  while ( id )
     {
-      /* Skip target trace */
-      if ( mst == targetmst )
+      /* Continue with next if network, station, location or channel are different */
+      if ( targetid != id )
 	{
-	  mst = mst->next;
-	  continue;
-	}
-      
-      /* Skip out-of-band (0 samprate) trace */
-      if ( mst->samprate == 0.0 )
-	{
-	  mst = mst->next;
-	  continue;
-	}
-
-      /* Continue with next if srcname or sample rate are different */
-      if ( memcmp (mst->network, targetmst->network, 44) ||
-	   ! MS_ISRATETOLERABLE (mst->samprate, targetmst->samprate) )
-	{
-	  mst = mst->next;
-	  continue;
-	}
-      
-      /* Test for overlap with targetmst */
-      if ( targetmst->endtime >= mst->starttime &&
-	   targetmst->starttime <= mst->endtime )
-	{
-	  /* Determine priority:
-	   *  -1 : mst > targetmst
-	   *   0 : mst == targetmst
-	   *   1 : mst < targetmst */
-	  priority = 0;
-	  
-	  /* If best quality is requested compare the qualities to determine priority */
-	  if ( bestquality )
-	    priority = qcompare (mst->dataquality, targetmst->dataquality);
-	  
-	  /* If priorities are equal (qualities are equal or no checking) 
-	   * give priority to the longest MSTrace */
-	  if ( priority == 0 )
+	  if ( strcmp (id->network, targetid->network) || strcmp (id->station, targetid->station) ||
+	       strcmp (id->location, targetid->location) || strcmp (id->channel, targetid->channel) )
 	    {
-	      if ( (mst->endtime - mst->starttime) >= (targetmst->endtime - targetmst->starttime) )
-		priority = -1;
-	      else
-		priority = 1;
+	      id = id->next;
+	      continue;
+	    }
+	}
+      
+      seg = id->first;
+      while ( seg )
+	{
+	  /* Skip target segment */
+	  if ( seg == targetseg )
+	    {
+	      seg = seg->next;
+	      continue;
 	    }
 	  
-	  /* If overlapping trace is a higher priority than targetmst add to coverage */
-	  if ( priority == -1 )
+	  /* Skip out-of-band (0 samprate) trace */
+	  if ( seg->samprate == 0.0 )
 	    {
-	      /* Loop through list of associated Records, determine
-		 contiguous coverage and store in an MSTraceGroup */
-	      recmap = (RecordMap *) mst->prvtptr;
-	      rec = recmap->first;
-	      newsegment = 1;
-	      while ( rec )
+	      seg = seg->next;
+	      continue;
+	    }
+	  
+	  /* Continue with next if sample rate are different */
+	  if ( ! MS_ISRATETOLERABLE (seg->samprate, targetseg->samprate) )
+	    {
+	      seg = seg->next;
+	      continue;
+	    }
+	  
+	  /* Test for overlap with targetseg */
+	  if ( (targetseg->endtime + hptimetol) >= seg->starttime &&
+	       (targetseg->starttime - hptimetol) <= seg->endtime )
+	    {
+	      /* Determine priority:
+	       *  -1 : seg > targetseg
+	       *   0 : seg == targetseg
+	       *   1 : seg < targetseg */
+	      priority = 0;
+	      
+	      /* If best quality is requested compare the qualities to determine priority */
+	      if ( bestquality )
+		priority = qcompare (id->dataquality, targetid->dataquality);
+	      
+	      /* If priorities are equal (qualities are equal or no checking)
+	       * give priority to the longest segment */
+	      if ( priority == 0 )
 		{
-		  /* Check if record has been marked as non-contributing */
-		  if ( rec->reclen == 0 )
+		  if ( (seg->endtime - seg->starttime) >= (targetseg->endtime - targetseg->starttime) )
+		    priority = -1;
+		  else
+		    priority = 1;
+		}
+
+	      /* If overlapping trace is a higher priority than targetseg add to coverage */
+	      if ( priority == -1 )
+		{
+		  /* Loop through list of associated Records, determine
+		     contiguous coverage and store in an MSTraceGroup */
+		  recmap = (RecordMap *) seg->prvtptr;
+		  rec = recmap->first;
+		  newsegment = 1;
+		  while ( rec )
 		    {
-		      rec = rec->next;
-		      continue;
-		    }
-		  
-		  /* Determine effective record start and end times */
-		  effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
-		  effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
-		  
-		  /* Create a new segment if a break in the time-series is detected */
-		  if ( cmst )
-		    if ( llabs((cmst->endtime + hpdelta) - effstarttime) > hptimetol )
-		      newsegment = 1;
-		  
-		  if ( newsegment )
-		    {
-		      newsegment = 0;
+		      /* Check if record has been marked as non-contributing */
+		      if ( rec->reclen == 0 )
+			{
+			  rec = rec->next;
+			  continue;
+			}
 		      
-		      cmst = mst_init (NULL);
+		      /* Determine effective record start and end times */
+		      effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
+		      effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
+		      
+		      /* Create a new segment if a break in the time-series is detected */
+		      if ( cmst )
+			if ( llabs((cmst->endtime + hpdelta) - effstarttime) > hptimetol )
+			  newsegment = 1;
+		      
+		      if ( newsegment )
+			{
+			  newsegment = 0;
+			  
+			  cmst = mst_init (NULL);
+			  
+			  if ( cmst )
+			    {
+			      if ( ! *ppcoverage )
+				*ppcoverage = mst_initgroup (NULL);
+			      
+			      mst_addtracetogroup (*ppcoverage, cmst);
+			      
+			      cmst->dataquality = id->dataquality;
+			      cmst->samprate = seg->samprate;
+			      cmst->starttime = effstarttime;
+			    }
+			}
 		      
 		      if ( cmst )
-			{
-			  if ( ! *ppcoverage )
-			    *ppcoverage = mst_initgroup (NULL);
-			  
-			  mst_addtracetogroup (*ppcoverage, cmst);
-			  
-			  cmst->dataquality = mst->dataquality;
-			  cmst->samprate = mst->samprate;
-			  cmst->starttime = effstarttime;
-			}
+			cmst->endtime = effendtime;
+		      else
+			ms_log (2, "ACK! covergage MSTrace is not allocated!?  PLEASE REPORT\n");
+		      
+		      rec = rec->next;
 		    }
-		  
-		  if ( cmst )
-		    cmst->endtime = effendtime;
-		  else
-		    ms_log (2, "ACK! covergage MSTrace is not allocated!?  PLEASE REPORT\n");
-		  
-		  rec = rec->next;
 		}
 	    }
+	  
+	  seg = seg->next;
 	}
       
-      mst = mst->next;
+      id = id->next;
     }
-  
-  /* Heal the coverage MSTraceGroup */
-  if ( *ppcoverage )
-    if ( mst_groupheal (*ppcoverage, timetol, sampratetol) < 0 )
-      {
-	ms_log (2, "cannot heal coverage trace group\n");
-	return -1;
-      }
   
   return 0;
 }  /* End of findcoverage() */
@@ -1448,11 +1043,11 @@ findcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
 /***************************************************************************
  * trimtrace():
  *
- * Adjust Record entries associated with the target MSTrace that are
- * overlapping the time represented by the coverage MSTraceGroup in
- * two different ways: 1) mark records that are completely overlapped
- * and 2) determine partial record trim boundaries (new record times)
- * if sample level pruning is requested.
+ * Adjust Record entries associated with the target MSTraceSeg that
+ * are overlapping the time represented by the coverage MSTraceGroup
+ * in two different ways: 1) mark records that are completely
+ * overlapped and 2) determine partial record trim boundaries (new
+ * record times) if sample level pruning is requested.
  *
  * Completely overlapping Record entries are marked for omission by
  * setting Record.reclen = 0.  Partial Record overlaps are noted by
@@ -1464,30 +1059,29 @@ findcoverage (MSTraceGroup *mstg, MSTrace *targetmst, MSTraceGroup **ppcoverage)
  * Returns the number of Record modifications on success and -1 on error.
  ***************************************************************************/
 static int
-trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
+trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 {
   RecordMap *recmap;
   Record *rec;
   MSTrace *cmst;
   hptime_t effstarttime, effendtime;
   hptime_t hpdelta, hptimetol;
-  char srcname[50];
   char stime[30];
   char etime[30];
   int modcount = 0;
   
-  if ( ! targetmst || ! coverage )
+  if ( ! targetseg || ! coverage )
     return -1;
   
   /* Determine sample period in high precision time ticks */
-  hpdelta = ( targetmst->samprate ) ? (hptime_t) (HPTMODULUS / targetmst->samprate) : 0;
+  hpdelta = ( targetseg->samprate ) ? (hptime_t) (HPTMODULUS / targetseg->samprate) : 0;
   
   /* Determine time tolerance in high precision time ticks */
   hptimetol = ( timetol == -1 ) ? (hpdelta / 2) : (hptime_t) (HPTMODULUS * timetol);
-
+  
   /* Traverse the Record chain for the target MSTrace and mark Records
    * that are completely overlapped by the MSTraceGroup coverage */
-  recmap = (RecordMap *) targetmst->prvtptr;
+  recmap = (RecordMap *) targetseg->prvtptr;
   rec = recmap->first;
   while ( rec )
     {
@@ -1504,11 +1098,10 @@ trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
 	    {
 	      if ( verbose > 1 )
 		{
-		  mst_srcname (targetmst, srcname, 1);
 		  ms_hptime2seedtimestr (rec->starttime, stime, 1);
 		  ms_hptime2seedtimestr (rec->endtime, etime, 1);
 		  ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
-			  srcname, rec->quality, stime, etime);
+			  targetsrcname, rec->quality, stime, etime);
 		}
 	      
 	      rec->flp->recrmcount++;
@@ -1521,7 +1114,7 @@ trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
 	    {
 	      /* Record overlaps beginning of HP coverage */
 	      if ( effstarttime < cmst->starttime &&
-		   effendtime >= cmst->starttime )
+		   (effendtime + hptimetol) >= cmst->starttime )
 		{
 		  /* Set Record new end time boundary including specified time tolerance */
 		  rec->newend = cmst->starttime - hpdelta + hptimetol;
@@ -1531,7 +1124,7 @@ trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
 		}
 	      
 	      /* Record overlaps end of HP coverage */
-	      if ( effstarttime <= cmst->endtime &&
+	      if ( (effstarttime - hptimetol) <= cmst->endtime &&
 		   effendtime > cmst->endtime )
 		{
 		  /* Set Record new start time boundary including specified time tolerance */
@@ -1546,11 +1139,10 @@ trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
 		{
 		  if ( verbose > 1 )
 		    {
-		      mst_srcname (targetmst, srcname, 1);
 		      ms_hptime2seedtimestr (rec->starttime, stime, 1);
 		      ms_hptime2seedtimestr (rec->endtime, etime, 1);
 		      ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
-			      srcname, rec->quality, stime, etime);
+			      targetsrcname, rec->quality, stime, etime);
 		    }
 		  
 		  rec->flp->recrmcount++;
@@ -1583,77 +1175,83 @@ trimtrace (MSTrace *targetmst, MSTraceGroup *coverage)
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
 static int
-reconcile_tracetimes (MSTraceGroup *mstg)
+reconcile_tracetimes (MSTraceList *mstl)
 {
-  MSTrace *mst;
+  MSTraceID *id;
+  MSTraceSeg *seg;
   RecordMap *recmap;
   Record *rec;
   Record *first = 0;
   Record *last = 0;
   
-  if ( ! mstg )
+  if ( ! mstl )
     return -1;
   
-  if ( ! mstg->traces )
+  if ( ! mstl->traces )
     return -1;
   
-  mst = mstg->traces;
-  
-  while ( mst )
+  id = mstl->traces;
+  while ( id )
     {
-      recmap = (RecordMap *) mst->prvtptr;
-      
-      /* Find first contributing record (reclen != 0) */
-      rec = recmap->first;
-      while ( rec )
+      seg = id->first;
+      while ( seg )
 	{
-	  if ( rec->reclen > 0 )
+	  recmap = (RecordMap *) seg->prvtptr;
+	  
+	  /* Find first contributing record (reclen != 0) */
+	  rec = recmap->first;
+	  while ( rec )
 	    {
-	      first = rec;
-	      break;
+	      if ( rec->reclen > 0 )
+		{
+		  first = rec;
+		  break;
+		}
+	      
+	      rec = rec->next;
 	    }
 	  
-	  rec = rec->next;
-	}
-      
-      /* Find last contributing record (reclen != 0) */
-      rec = recmap->last;
-      while ( rec )
-	{
-	  if ( rec->reclen > 0 )
+	  /* Find last contributing record (reclen != 0) */
+	  rec = recmap->last;
+	  while ( rec )
 	    {
-	      last = rec;
-	      break;
+	      if ( rec->reclen > 0 )
+		{
+		  last = rec;
+		  break;
+		}
+	      
+	      rec = rec->prev;
 	    }
 	  
-	  rec = rec->prev;
+	  /* Set a new MSTrace start time */
+	  if ( first )
+	    {
+	      /* Use the new boundary start time if set and sane */
+	      if ( first->newstart && first->newstart > first->starttime )
+		seg->starttime = first->newstart;
+	      /* Otherwise use the record start time */
+	      else
+		seg->starttime = first->starttime;
+	    }
+	  
+	  /* Set a new MSTrace end time */
+	  if ( last )
+	    {
+	      /* Use the new boundary end time if set and sane */
+	      if ( last->newend && last->newend < last->endtime )
+		seg->endtime = last->newend;
+	      /* Otherwise use the record end time */
+	      else
+		seg->endtime = last->endtime;
+	    }
+	  
+	  first = 0;
+	  last = 0;
+	  seg = seg->next;
 	}
       
-      /* Set a new MSTrace start time */
-      if ( first )
-	{
-	  /* Use the new boundary start time if set and sane */
-	  if ( first->newstart && first->newstart > first->starttime )
-	    mst->starttime = first->newstart;
-	  /* Otherwise use the record start time */
-	  else
-	    mst->starttime = first->starttime;
-	}
-      
-      /* Set a new MSTrace end time */
-      if ( last )
-	{
-	  /* Use the new boundary end time if set and sane */
-	  if ( last->newend && last->newend < last->endtime )
-	    mst->endtime = last->newend;
-	  /* Otherwise use the record end time */
-	  else
-	    mst->endtime = last->endtime;
-	}
-      
-      first = 0;
-      last = 0;
-      mst = mst->next;
+      id = id->next;
     }
   
   return 0;
@@ -1693,24 +1291,27 @@ qcompare (const char quality1, const char quality2)
  * readfiles:
  *
  * Read input files specified as a Filelink list and populate an
- * MSTraceGroup and record maps for each trace.  All input files are
+ * MSTraceList and record maps for each trace.  All input files are
  * renamed with a ".orig" suffix before being read.
  *
  * Returns 0 on success and -1 otherwise.
  ***************************************************************************/
 static int
-readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
+readfiles (MSTraceList **ppmstl)
 {
   Filelink *flp;
   MSRecord *msr = 0;
-  MSTrace *mst = 0;
-  MSTrace *oobmst = 0;
+  MSTraceSeg *seg = 0;
+  
   int retcode;
   flag whence;
   
   int totalrecs  = 0;
   int totalsamps = 0;
   int totalfiles = 0;
+  
+  Selectlink *slp = 0;
+  Selectlink *matchslp = 0;
   
   RecordMap *recmap;
   Record *rec;
@@ -1727,24 +1328,24 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
   
   int infilenamelen;
   
-  if ( ! filelist || ! ppmstg )
+  if ( ! ppmstl )
     return -1;
   
-  /* (Re)Initialize MSTraceGroup */
-  *ppmstg = reinitgroup (*ppmstg);
+  /* Initialize MSTraceList */
+  *ppmstl = mstl_init (*ppmstl);
   
-  if ( ! *ppmstg )
+  if ( ! *ppmstl )
     {
-      ms_log (2, "readfiles(): cannot initialize MSTraceGroup\n");
+      ms_log (2, "readfiles(): cannot (re)initialize MSTraceList\n");
       return -1;
     }
   
   /* Read all input files and construct continuous traces, using the
-   * libmseed MSTrace and MSTraceGroup functionality.  For each trace
-   * maintain a list of each data record that contributed to the
-   * trace, implemented as a RecordMap struct (MSTrace->prvtptr) where
-   * a linked list of Record structs is maintained.  The records are
-   * always listed in time order.
+   * libmseed MSTraceList.  For each trace maintain a list of each
+   * data record that contributed to the trace, implemented as a
+   * RecordMap struct (MSTraceSeg->prvtptr) where a linked list of
+   * Record structs is maintained.  The records are always listed in
+   * time order.
    */
   
   flp = filelist;
@@ -1828,86 +1429,85 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 		}
 	    }
 	  
+	  /* Check if record is matched by selection */
+	  if ( selections )
+	    {
+	      char msrquality[2];
+	      
+	      /* Create a simple quality string for matching */
+	      msrquality[0] = msr->dataquality;
+	      msrquality[1] = '\0';
+	      
+	      slp = selections;
+	      matchslp = 0;
+	      
+	      while ( slp )
+		{
+		  if ( ! globmatch (msr->network, slp->network) ) { slp = slp->next; continue; }
+		  else if ( ! globmatch (msr->station, slp->station) ) { slp = slp->next; continue; } 
+		  else if ( ! globmatch (msr->location, slp->location) ) { slp = slp->next; continue; }
+		  else if ( ! globmatch (msr->channel, slp->channel) ) { slp = slp->next; continue; }
+		  else if ( slp->quality && ! globmatch (msrquality, slp->quality) ) { slp = slp->next; continue; }
+		  else if ( slp->starttime != HPTERROR && (recstarttime < slp->starttime && ! (recstarttime <= slp->starttime && recendtime >= slp->starttime)) )
+		    { slp = slp->next; continue; }
+		  else if ( slp->endtime != HPTERROR && (recendtime > slp->endtime && ! (recstarttime <= slp->endtime && recendtime >= slp->endtime)) )
+		    { slp = slp->next; continue; }
+		  
+		  matchslp = slp;
+		  break;
+		}
+	      
+	      if ( ! matchslp )
+		{
+		  if ( verbose >= 3 )
+		    ms_log (1, "Skipping (selection) %s, %s\n", srcname, stime);
+		  continue;
+		}
+	    }
+	  
 	  if ( verbose > 2 )
 	    msr_print (msr, verbose - 3);
 	  
-	  /* Add record to the MSTraceGroup if sample rate is not zero */
-	  if ( msr->samprate != 0.0 )
+	  /* Add record to the MSTraceList */
+	  if ( ! (seg = mstl_addmsr (*ppmstl, msr, bestquality, 0, timetol, sampratetol)) )
 	    {
-	      if ( ! (mst = mst_addmsrtogroup (*ppmstg, msr, bestquality, timetol, sampratetol)) )
-		{
-		  ms_log (2, "Cannot add record to trace group, %s, %s\n", srcname, stime);
-		  continue;
-		}
-
-	      /* Determine where the record fit this MSTrace
-	       * whence:
-	       * 0 = New MSTrace
-	       * 1 = End of MSTrace
-	       * 2 = Beginning of MSTrace
-	       */
-	      whence = 0;
-	      if ( mst->prvtptr )
-		{
-		  if ( mst->endtime == recendtime )
-		    whence = 1;
-		  else if ( mst->starttime == recstarttime )
-		    whence = 2;
-		  else if ( recendtime == recstarttime )
-		    {
-		      /* Determine best fit for records with no span (not added to the MSTrace coverage) */
-		      if ( llabs (recstarttime - mst->endtime) < llabs (recstarttime - mst->starttime) )
-			whence = 1;
-		      else
-			whence = 2;
-		    }
-		  else
-		    {
-		      ms_log (2, "Cannot determine where record fit relative to trace\n");
-		      msr_print (msr, 1);
-		      continue;
-		    }
-		}
+	      ms_log (2, "Cannot add record to trace list, %s, %s\n", srcname, stime);
+	      continue;
 	    }
-	  /* Otherwise add this record to an out-of-band MSTrace */
-	  else
+	  
+	  /* Determine where the record fit with this MSTraceSeg
+	   * whence:
+	   * 0 = New MSTrace
+	   * 1 = End of MSTrace
+	   * 2 = Beginning of MSTrace
+	   */
+	  whence = 0;
+	  if ( seg->prvtptr )
 	    {
-	      /* Initialize the out-of-band MSTrace if needed */
-	      if ( ! oobmst )
+	      if ( seg->endtime == recendtime )
+		whence = 1;
+	      else if ( seg->starttime == recstarttime )
+		whence = 2;
+	      else if ( recendtime == recstarttime )
 		{
-		  /* Initialize out-of-band MSTrace */
-		  if ( ! (oobmst = mst_init(NULL)) )
-		    {
-		      ms_log (2, "Cannot initilize zero Hz trace\n");
-		      continue;
-		    }
-		  
-		  /* Populate some key values of the out-of-band MSTrace
-		   * The 'z's will force this MSTrace to be sorted last */
-		  strncpy (oobmst->network, "zz", sizeof(oobmst->network));
-		  strncpy (oobmst->station, "zzzzz", sizeof(oobmst->station));
-		  strncpy (oobmst->channel, "OOB", sizeof(oobmst->channel));
-		  oobmst->samprate = 0.0;
-		  
-		  /* Add out-of-band MSTrace to MSTraceGroup */
-		  mst_addtracetogroup (*ppmstg, oobmst);
-		  
-		  /* A new RecordMap */
-		  whence = 0;
+		  /* Determine best fit for records with no span */
+		  if ( llabs (recstarttime - seg->endtime) < llabs (recstarttime - seg->starttime) )
+		    whence = 1;
+		  else
+		    whence = 2;
 		}
 	      else
 		{
-		  /* Add to existing RecordMap */
-		  whence = 1;
+		  ms_log (2, "Cannot determine where record fit relative to trace segment\n");
+		  msr_print (msr, 1);
+		  continue;
 		}
-	      
-	      /* Target MSTrace is the out-of-band MSTrace */
-	      mst = oobmst;
 	    }
 	  
 	  /* Create and populate new Record structure */
 	  rec = (Record *) malloc (sizeof(Record));
 	  rec->flp = flp;
+	  rec->slp = matchslp;
 	  rec->offset = fpos;
 	  rec->reclen = msr->reclen;
 	  rec->starttime = recstarttime;
@@ -1926,16 +1526,34 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 	  /* If pruning at the sample level trim right at the start/end times */
 	  if ( prunedata == 's' )
 	    {
+	      hptime_t seltime;
+	      
+	      /* Determine strictest start time */
+	      if ( starttime != HPTERROR && rec->slp && rec->slp->starttime != HPTERROR )
+		seltime = ( starttime > rec->slp->starttime ) ? starttime : rec->slp->starttime;
+	      else if ( rec->slp && rec->slp->starttime != HPTERROR )
+		seltime = rec->slp->starttime;
+	      else
+		seltime = starttime;
+	      
 	      /* If the Record crosses the start time */
-	      if ( starttime != HPTERROR && (starttime > recstarttime) && (starttime < recendtime) )
+	      if ( seltime != HPTERROR && (seltime > recstarttime) && (seltime < recendtime) )
 		{
-		  rec->newstart = starttime;
+		  rec->newstart = seltime;
 		}
 	      
+	      /* Determine strictest end time */
+	      if ( endtime != HPTERROR && rec->slp && rec->slp->endtime != HPTERROR )
+		seltime = ( endtime > rec->slp->endtime ) ? endtime : rec->slp->endtime;
+	      else if ( rec->slp && rec->slp->endtime != HPTERROR )
+		seltime = rec->slp->endtime;
+	      else
+		seltime = endtime;
+	      
 	      /* If the Record crosses the end time */
-	      if ( endtime != HPTERROR && (endtime > recstarttime) && (endtime < recendtime) )
+	      if ( seltime != HPTERROR && (seltime > recstarttime) && (seltime < recendtime) )
 		{
-		  rec->newend = endtime;
+		  rec->newend = seltime;
 		}
 	    }
 	  
@@ -2005,16 +1623,16 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 		}
 	    } /* Done splitting on time boundary */
 	  
-	  /* Add the new Record(s) to the RecordMap associated with the MSTrace */
-
+	  /* Add the new Record(s) to the RecordMap associated with the MSTraceSeg */
+	  
 	  /* Add new Record(s) to end of the RecordMap */
 	  if ( whence == 1 )
 	    {
-	      recmap = (RecordMap *) mst->prvtptr;
+	      recmap = (RecordMap *) seg->prvtptr;
 	      
 	      recmap->last->next = newrecmap.first;
 	      newrecmap.first->prev = recmap->last;
-
+	      
 	      recmap->last = newrecmap.last;
 	      
 	      recmap->recordcnt += newrecmap.recordcnt;
@@ -2022,7 +1640,7 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 	  /* Add new Record(s) to beginning of the RecordMap */
 	  else if ( whence == 2 )
 	    {
-	      recmap = (RecordMap *) mst->prvtptr;
+	      recmap = (RecordMap *) seg->prvtptr;
 	      
 	      recmap->first->prev = newrecmap.last;
 	      newrecmap.last->next = recmap->first;
@@ -2037,7 +1655,7 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 	  /* First Record(s) for this MSTrace, allocate RecordMap */
 	  else
 	    {
-	      if ( mst->prvtptr )
+	      if ( seg->prvtptr )
 		ms_log (2, "Supposedly first record, but RecordMap not empty, report this\n");
 	      
 	      if ( ! (recmap = (RecordMap *) malloc (sizeof(RecordMap))) )
@@ -2049,7 +1667,7 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 	      recmap->last = newrecmap.last;
 	      recmap->recordcnt = newrecmap.recordcnt;
 	      
-	      mst->prvtptr = recmap;
+	      seg->prvtptr = recmap;
 	    }
 	  
 	  totalrecs++;
@@ -2083,59 +1701,13 @@ readfiles (Filelink *filelist, MSTraceGroup **ppmstg)
 
 
 /***************************************************************************
- * reinitgroup():
- *
- * (Re)Initialize a MSTraceGroup, freeing all associated memory.
- *
- * Return pointer to (re)initialized MSTraceGroup.
- *********************.******************************************************/
-static MSTraceGroup *
-reinitgroup (MSTraceGroup *mstg)
-{
-  MSTrace *mst;
-  RecordMap *recmap;
-  Record *rec, *nextrec;
-  
-  if ( ! mstg )
-    {
-      return mst_initgroup (mstg);
-    }
-  
-  /* Free all Records from each MSTrace in group */
-  mst = mstg->traces;
-  
-  while ( mst )
-    {
-      recmap = (RecordMap *) mst->prvtptr;
-      rec = recmap->first;
-      
-      while (rec)
-	{
-	  nextrec = rec->next;
-	  free (rec);
-	  rec = nextrec;
-	}
-      
-      free (mst->prvtptr);
-      mst->prvtptr = 0;
-      
-      mst = mst->next;
-    }
-  
-  mst_initgroup (mstg);
-  
-  return mstg;
-}  /* End of reinitgroup() */
-
-
-/***************************************************************************
  * printmodsummary():
  *
  * Print a summary of modifications to stdout.  If 'nomods' is true
  * include files that were not modified.
  ***************************************************************************/
 static void
-printmodsummary (Filelink *filelist, flag nomods)
+printmodsummary (flag nomods)
 {
   Filelink *flp;
   
@@ -2171,55 +1743,57 @@ printmodsummary (Filelink *filelist, flag nomods)
  * Print record map for each MSTrace to stdout.
  ***************************************************************************/
 static void
-printtracemap (MSTraceGroup *mstg)
+printtracemap (MSTraceList *mstl)
 {
-  MSTrace *mst = 0;
-  char srcname[50];
+  MSTraceID *id = 0;
+  MSTraceSeg *seg = 0;
   char stime[30];
   char etime[30];
-  int tracecnt = 0;
+  int segcnt = 0;
   
-  if ( ! mstg )
+  if ( ! mstl )
     return;
   
-  mst = mstg->traces;
+  id = mstl->traces;
   
   /* Print out the appropriate header */
-  ms_log (0, "\nMSTrace Map:\n");
+  ms_log (0, "\nTrace Map:\n");
   ms_log (0, "   Source              Start sample             End sample        Hz   Samples\n");
   
-  while ( mst )
+  while ( id )
     {
-      mst_srcname (mst, srcname, 1);
+      seg = id->first;
       
-      /* Create formatted time strings */
-      if ( ms_hptime2seedtimestr (mst->starttime, stime, 1) == NULL )
-	ms_log (2, "Cannot convert trace start time for %s\n", srcname);
-      
-      if ( ms_hptime2seedtimestr (mst->endtime, etime, 1) == NULL )
-	ms_log (2, "Cannot convert trace end time for %s\n", srcname);
-      
-      /* Print MSTrace header */
-      ms_log (0, "%-15s %-24s %-24s %-4.4g %-d\n",
-	      srcname, stime, etime, mst->samprate, mst->samplecnt);
-      
-      if ( ! mst->prvtptr )
+      while ( seg )
 	{
-	  ms_log (2, "No record map associated with this MSTrace.\n");
-	}
-      else
-	{
-	  printrecordmap ((RecordMap *) mst->prvtptr, 0);
+	  /* Create formatted time strings */
+	  if ( ms_hptime2seedtimestr (seg->starttime, stime, 1) == NULL )
+	    ms_log (2, "Cannot convert trace start time for %s\n", id->srcname);
+	  
+	  if ( ms_hptime2seedtimestr (seg->endtime, etime, 1) == NULL )
+	    ms_log (2, "Cannot convert trace end time for %s\n", id->srcname);
+	  
+	  /* Print MSTraceSeg header */
+	  ms_log (0, "%-15s %-24s %-24s %-4.4g %-d\n",
+		  id->srcname, stime, etime, seg->samprate, seg->samplecnt);
+	  
+	  if ( ! seg->prvtptr )
+	    {
+	      ms_log (2, "No record map associated with this MSTrace.\n");
+	    }
+	  else
+	    {
+	      printrecordmap ((RecordMap *) seg->prvtptr, 0);
+	    }
+	  
+	  segcnt++;
+	  seg = seg->next;
 	}
       
-      tracecnt++;
-      mst = mst->next;
+      id = id->next;
     }
   
-  if ( tracecnt != mstg->numtraces )
-    ms_log (2, "printtracemap(): number of traces in trace group is inconsistent\n");
-  
-  ms_log (0, "End of MSTrace Map: %d trace(s)\n\n", tracecnt);
+  ms_log (0, "End of trace map: %d trace segment(s)\n\n", segcnt);
   
 }  /* End of printtracemap() */
 
@@ -2276,6 +1850,7 @@ static int
 processparam (int argcount, char **argvec)
 {
   int optind;
+  char *selectfile = 0;
   char *matchpattern = 0;
   char *rejectpattern = 0;
   char *tptr;
@@ -2313,6 +1888,10 @@ processparam (int argcount, char **argvec)
       else if (strcmp (argvec[optind], "-E") == 0)
 	{
 	  bestquality = 0;
+	}
+      else if (strcmp (argvec[optind], "-s") == 0)
+	{
+	  selectfile = getoptval(argcount, argvec, optind++);
 	}
       else if (strcmp (argvec[optind], "-ts") == 0)
 	{
@@ -2390,27 +1969,6 @@ processparam (int argcount, char **argvec)
         {
           modsummary = 1;
         }
-      else if (strcmp (argvec[optind], "-POD") == 0)
-	{
-	  if ( argvec[optind+1] )
-	    if ( (optind+1) < argcount && *argvec[optind+1] != '-' )
-	      podreqfile = argvec[optind+1];
-	  optind++;
-	  
-	  if ( argvec[optind+1] )
-	    if ( (optind+1) < argcount && *argvec[optind+1] != '-' )
-	      poddatadir = argvec[optind+1];
-	  optind++;
-	  
-	  /* POD processing implies replacing the input files */
-	  replaceinput = 1;
-	  
-	  if ( ! podreqfile || ! poddatadir )
-	    {
-	      ms_log (2, "Option -POD requires two values, try -h for usage\n");
-	      exit (1);
-	    }
-        }
       else if (strcmp (argvec[optind], "-CHAN") == 0)
         {
           if ( addarchive(getoptval(argcount, argvec, optind++), CHANLAYOUT) == -1 )
@@ -2449,20 +2007,32 @@ processparam (int argcount, char **argvec)
 	}
       else
 	{
-	  /* Add file to global file list */
-	  addfile (&gfilelist, argvec[optind], NULL);
+	  tptr = argvec[optind];
+	  
+          /* Check for an input file list */
+          if ( tptr[0] == '@' )
+            {
+              if ( addlistfile (tptr+1) < 0 )
+                {
+                  ms_log (2, "Error adding list file %s", tptr+1);
+                  exit (1);
+                }
+            }
+          /* Otherwise this is an input file */
+          else
+            {
+	      /* Add file to global file list */
+	      if ( addfile (tptr) )
+		{
+                  ms_log (2, "Error adding file to input list %s", tptr);
+                  exit (1);
+		}
+	    }
 	}
     }
   
-  /* Cannot specify both input files and POD */
-  if ( gfilelist && (podreqfile && poddatadir) )
-    {
-      ms_log (2, "Cannot specify both input files and POD structure\n");
-      exit (1);
-    }
-  
-  /* Make sure input file(s) or POD were specified */
-  if ( gfilelist == 0 && ! (podreqfile && poddatadir) )
+  /* Make sure input file(s) were specified */
+  if ( filelist == 0 )
     {
       ms_log (2, "No input files were specified\n\n");
       ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
@@ -2482,6 +2052,16 @@ processparam (int argcount, char **argvec)
   /* The no backups option cannot be used when not replacing the originals */
   if ( nobackups && ! replaceinput )
     nobackups = 0;
+  
+  /* Read data selection file */
+  if ( selectfile )
+    {
+      if ( readselectfile (selectfile) < 0 )
+	{
+	  ms_log (2, "Cannot read data selection file\n");
+	  exit (1);
+	}
+    }
   
   /* Expand match pattern from a file if prefixed by '@' */
   if ( matchpattern )
@@ -2535,7 +2115,7 @@ processparam (int argcount, char **argvec)
 	  ms_log (2, "Cannot compile reject regex: '%s'\n", rejectpattern);
 	}
     }
-
+  
   /* Report the program version */
   if ( verbose )
     ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
@@ -2583,48 +2163,253 @@ getoptval (int argcount, char **argvec, int argopt)
  * addfile:
  *
  * Add file to end of the specified file list.
+ *
+ * Returns 0 on success and -1 on error.
  ***************************************************************************/
-static void
-addfile (Filelink **ppfilelist, char *filename, ReqRec *reqrec)
+static int
+addfile (char *filename)
 {
-  Filelink *lastlp, *newlp;
+  Filelink *newlp;
   
-  if ( filename == NULL )
+  if ( ! filename )
     {
       ms_log (2, "addfile(): No file name specified\n");
-      return;
+      return -1;
     }
   
-  lastlp = *ppfilelist;
-  while ( lastlp != 0 )
+  newlp = (Filelink *) calloc (1, sizeof (Filelink));
+  
+  if ( ! newlp )
     {
-      if ( lastlp->next == 0 )
-	break;
-      
-      lastlp = lastlp->next;
+      ms_log (2, "addfile(): Error allocating memory\n");
+      return -1;
     }
   
-  newlp = (Filelink *) malloc (sizeof (Filelink));
-  newlp->reqrec = reqrec;
   newlp->infilename = strdup(filename);
-  newlp->infp = 0;
-  newlp->outfilename = 0;
-  newlp->outfp = 0;
-  newlp->reordercount = 0;
-  newlp->recsplitcount = 0;
-  newlp->recrmcount = 0;
-  newlp->rectrimcount = 0;
-  newlp->earliest = 0;
-  newlp->latest = 0;
-  newlp->byteswritten = 0;
-  newlp->next = 0;
   
-  if ( lastlp == 0 )
-    *ppfilelist = newlp;
+  /* Add new file to the end of the list */
+  if ( filelisttail == 0 )
+    {
+      filelist = newlp;
+      filelisttail = newlp;
+    }
   else
-    lastlp->next = newlp;
+    {
+      filelisttail->next = newlp;
+      filelisttail = newlp;
+    }
   
+  return 0;
 }  /* End of addfile() */
+
+
+/***************************************************************************
+ * addlistfile:
+ *
+ * Add files listed in the specified file to the global input file list.
+ *
+ * Returns count of files added on success and -1 on error.
+ ***************************************************************************/
+static int
+addlistfile (char *filename) 
+{
+  FILE *fp;
+  char filelistent[1024];
+  int filecount = 0;
+  
+  if ( verbose >= 1 )
+    ms_log (1, "Reading list file '%s'\n", filename);
+  
+  if ( ! (fp = fopen(filename, "rb")) )
+    {
+      ms_log (2, "Cannot open list file %s: %s\n", filename, strerror(errno));
+      return -1;
+    }
+  
+  while ( fgets (filelistent, sizeof(filelistent), fp) )
+    {
+      char *cp;
+      
+      /* End string at first newline character */
+      if ( (cp = strchr(filelistent, '\n')) )
+        *cp = '\0';
+      
+      /* Skip empty lines */
+      if ( ! strlen (filelistent) )
+        continue;
+      
+      /* Skip comment lines */
+      if ( *filelistent == '#' )
+        continue;
+      
+      if ( verbose > 1 )
+	ms_log (1, "Adding '%s' from list file\n", filelistent);
+      
+      if ( addfile (filelistent) )
+	return -1;
+      
+      filecount++;
+    }
+  
+  fclose (fp);
+  
+  return filecount;
+}  /* End of addlistfile() */
+
+
+/***************************************************************************
+ * readselectfile:
+ *
+ * Read a list of data selections from a file and add to the global
+ * selections list.  On errors this routine will leave allocated
+ * memory unreachable (leaked), it is expected that this is a program
+ * failing condition.
+ *
+ * As a special case, location IDs of "--" are translated to an empty
+ * string to match the space-space location ID for libmseed.
+ *
+ * Returns count of selections added on success and -1 on error.
+ ***************************************************************************/
+static int
+readselectfile (char *selectfile)
+{
+  FILE *fp;
+  Selectlink *newsl = 0;
+  char selectline[200];
+  char *selnet;
+  char *selsta;
+  char *selloc;
+  char *selchan;
+  char *selqual;
+  char *selstart;
+  char *selend;
+  char *cp;
+  char next;
+  int selectcount = 0;
+  int linecount = 0;
+  
+  if ( verbose >= 1 )
+    ms_log (1, "Reading selections file '%s'\n", selectfile);
+  
+  if ( ! (fp = fopen(selectfile, "rb")) )
+    {
+      ms_log (2, "Cannot open list file %s: %s\n", selectfile, strerror(errno));
+      return -1;
+    }
+  
+  while ( fgets (selectline, sizeof(selectline)-1, fp) )
+    {
+      selnet = 0;
+      selsta = 0;
+      selloc = 0;
+      selchan = 0;
+      selqual = 0;
+      selstart = 0;
+      selend = 0;
+      
+      linecount++;
+      
+      /* Guarantee termination */
+      selectline[sizeof(selectline)-1] = '\0';
+      
+      /* End string at first newline character if any */
+      if ( (cp = strchr(selectline, '\n')) )
+        *cp = '\0';
+      
+      /* Skip empty lines */
+      if ( ! strlen (selectline) )
+        continue;
+      
+      /* Skip comment lines */
+      if ( *selectline == '#' )
+        continue;
+      
+      /* Parse: identify components of selection and terminate */
+      cp = selectline;
+      next = 1;
+      while ( *cp )
+	{
+	  if ( *cp == ' ' || *cp == '\t' ) { *cp = '\0'; next = 1; }
+	  else if ( *cp == '#' ) { *cp = '\0'; break; }
+	  else if ( next && ! selnet ) { selnet = cp; next = 0; }
+	  else if ( next && ! selsta ) { selsta = cp; next = 0; }
+	  else if ( next && ! selloc ) { selloc = cp; next = 0; }
+	  else if ( next && ! selchan ) { selchan = cp; next = 0; }
+	  else if ( next && ! selqual ) { selqual = cp; next = 0; }
+	  else if ( next && ! selstart ) { selstart = cp; next = 0; }
+	  else if ( next && ! selend ) { selend = cp; next = 0; }
+	  else if ( next ) { *cp = '\0'; break; }
+	  cp++;
+	}
+      
+      /* Skip line if network, station, location and channel are note defined */
+      if ( ! selnet || ! selsta || ! selloc || ! selchan )
+	{
+	  ms_log (2, "[%s] Skipping data selection line number %d\n", selectfile, linecount);
+	  continue;
+	}
+      
+      /* Allocate new Selectlink and populate */
+      if ( ! (newsl = (Selectlink *) calloc (1, sizeof(Selectlink))) )
+	{
+	  ms_log (2, "Cannot allocate memory\n");
+	  return -1;
+	}
+      
+      newsl->network = strdup (selnet);
+      newsl->station = strdup (selsta);
+      newsl->location = (selloc[0] == '-' && selloc[1] == '-') ? "" : strdup (selloc);
+      newsl->channel = strdup (selchan);
+      
+      if ( selqual )
+	newsl->quality = strdup (selqual);
+      
+      if ( selstart )
+	{
+	  newsl->starttime = ms_seedtimestr2hptime (selstart);
+	  if ( newsl->starttime == HPTERROR )
+	    {
+	      ms_log (2, "Cannot convert data selection start time (line %d): %s\n", linecount, selstart);
+	      return -1;
+	    }
+	}
+      else
+	{
+	  newsl->starttime = HPTERROR;
+	}
+      
+      if ( selend )
+	{
+	  newsl->endtime = ms_seedtimestr2hptime (selend);
+	  if ( newsl->endtime == HPTERROR )
+	    {
+	      ms_log (2, "Cannot convert data selection end time (line %d): %s\n",  linecount, selend);
+	      return -1;
+	    }
+	}
+      else
+	{
+	  newsl->endtime = HPTERROR;
+	}
+      
+      /* Add new Selectlink to beggining of global list */
+      if ( ! selections ) 
+	{
+	  selections = newsl;
+	}
+      else
+	{
+	  newsl->next = selections;
+	  selections = newsl;
+	}
+      
+      selectcount++;
+    }
+  
+  fclose (fp);
+
+  return selectcount;
+}  /* End of readselectfile() */
 
 
 /***************************************************************************
@@ -2750,157 +2535,6 @@ readregexfile (char *regexfile, char **pppattern)
 
 
 /***************************************************************************
- * freereqrec:
- *
- * Free all memory assocated with a ReqRec.
- ***************************************************************************/
-static void
-freereqrec (ReqRec *reqrec)
-{
-  if ( ! reqrec )
-    return;
-  
-  if ( reqrec->station )
-    free (reqrec->station);
-  if ( reqrec->network )
-    free (reqrec->network);
-  if ( reqrec->channel )
-    free (reqrec->channel);
-  if ( reqrec->location )
-    free (reqrec->location);
-  if ( reqrec->filename )
-    free (reqrec->filename);
-  if ( reqrec->headerdir )
-    free (reqrec->headerdir);
-  
-  free (reqrec);
-  
-  return;
-}  /* End of freereqrec() */
-
-
-/***************************************************************************
- * freefilelist:
- *
- * Free all memory assocated with a specified file list.
- ***************************************************************************/
-static void
-freefilelist (Filelink **ppfilelist)
-{
-  Filelink *flp, *nextflp;
-  
-  if ( ! ppfilelist )
-    return;
-  
-  flp = *ppfilelist;
-  
-  while ( flp )
-    {
-      nextflp = flp->next;
-      
-      if ( flp->infilename )
-	free (flp->infilename);
-      if ( flp->outfilename )
-	free (flp->outfilename);
-      
-      free (flp);
-      
-      flp = nextflp;
-    }
-  
-  *ppfilelist = 0;
-  
-  return;
-}  /* End of freefilelist() */
-
-
-/***************************************************************************
- * strparse:
- *
- * splits a 'string' on 'delim' and puts each part into a linked list
- * pointed to by 'list' (a pointer to a pointer).  The last entry has
- * it's 'next' set to 0.  All elements are NULL terminated strings.
- * If both 'string' and 'delim' are 0 then the linked list is
- * traversed and the memory used is free'd and the list pointer is set
- * to 0.
- *
- * Returns the number of elements added to the list, or 0 when freeing
- * the linked list.
- ***************************************************************************/
-static int
-strparse (const char *string, const char *delim, StrList **list)
-{
-  const char *beg;			/* beginning of element */
-  const char *del;			/* delimiter */
-  int stop = 0;
-  int count = 0;
-  int total;
-
-  StrList *curlist = 0;
-  StrList *tmplist = 0;
-
-  if ( string && delim )
-    {
-      total = strlen (string);
-      beg = string;
-      
-      while ( ! stop )
-	{
-	  /* Find delimiter */
-	  del = strstr (beg, delim);
-	  
-	  /* Delimiter not found or empty */
-	  if (del == NULL || strlen (delim) == 0)
-	    {
-	      del = string + strlen (string);
-	      stop = 1;
-	    }
-
-	  tmplist = (StrList *) malloc (sizeof (StrList));
-	  tmplist->next = 0;
-
-	  tmplist->element = (char *) malloc (del - beg + 1);
-	  strncpy (tmplist->element, beg, (del - beg));
-	  tmplist->element[(del - beg)] = '\0';
-
-	  /* Add this to the list */
-	  if (count++ == 0)
-	    {
-	      curlist = tmplist;
-	      *list = curlist;
-	    }
-	  else
-	    {
-	      curlist->next = tmplist;
-	      curlist = curlist->next;
-	    }
-
-	  /* Update 'beg' */
-	  beg = (del + strlen (delim));
-	  if ((beg - string) > total)
-	    break;
-	}
-
-      return count;
-    }
-  else
-    {
-      curlist = *list;
-      while ( curlist )
-	{
-	  tmplist = curlist->next;
-	  free (curlist->element);
-	  free (curlist);
-	  curlist = tmplist;
-	}
-      *list = 0;
-      
-      return 0;
-    }
-}  /* End of strparse() */
-
-
-/***************************************************************************
  * usage():
  * Print the usage message.
  ***************************************************************************/
@@ -2920,6 +2554,7 @@ usage (int level)
 	   " -E           Consider all qualities equal instead of 'best' prioritization\n"
 	   "\n"
 	   " ## Data selection options ##\n"
+	   " -s file      Specify a file containing selection criteria\n"
 	   " -ts time     Limit to records that contain or start after time\n"
 	   " -te time     Limit to records that contain or end before time\n"
 	   "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
@@ -2942,8 +2577,6 @@ usage (int level)
 	   " -mod         Print summary of file modifications after processing\n"
 	   "\n"
 	   " ## Input data ##\n"
-	   " -POD reqfile datadir\n"
-	   "              Prune data from a POD structure\n\n"
 	   " file#        Files(s) of Mini-SEED records\n"
 	   "\n");
   

@@ -1,4 +1,4 @@
-.TH DATASELECT 2008/08/06
+.TH DATASELECT 2009/03/13
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -9,10 +9,10 @@ dataselect [options] file1 [file2 file3 ...]
 .fi
 .SH DESCRIPTION
 \fBdataselect\fP selects, sorts and prunes Mini-SEED data.  Any output
-data will always be sorted by ascending time-series.  Various data
-selection operations are possible including time criteria, the removal
-of duplicate data and the splicing of partially overlapping data
-records to form continuous time-series.
+data will always be sorted by ascending time-series segments.  Various
+data selection operations are possible including time criteria, the
+removal of duplicate data and the splicing of partially overlapping
+data records to form continuous time-series.
 
 Data pruning, removal of overlap, can be performed at either the
 record or sample level.  Pruning at the record level guarantees that
@@ -68,6 +68,12 @@ Consider all data qualities equal when determining priority for
 pruning.  By default priority is given the the data with the highest
 quality indicator: (highest) Q > D > R (lowest).
 
+.IP "-s \fIselectfile\fP"
+Limit processing to Mini-SEED records that match a selection in the
+specified file.  The selection file contains parameters to match the
+network, station, location, channel, quality and time range for input
+records.  For more details see the \fBSELECTION FILE\fR section below.
+
 .IP "-ts \fItime\fP"
 Limit processing to Mini-SEED records that start after or contain
 \fItime\fP.  The format of the \fItime\fP argument
@@ -85,14 +91,16 @@ Limit input to records that match this regular expression, the
 \fImatch\fP is tested against the full source
 name: 'NET_STA_LOC_CHAN_QUAL'.  If the match expression begins with
 an '@' character it is assumed to indicate a file containing a list of
-expressions to match, see the \fBLIST FILE\fR section below.
+expressions to match, see the \fBMATCH OR REJECT LIST FILE\fR section
+below.
 
 .IP "-R \fIreject\fP"
 Limit input to records that do not match this regular expression, the
 \fIreject\fP is tested against the full source
 name: 'NET_STA_LOC_CHAN_QUAL'.  If the reject expression begins with
 an '@' character it is assumed to indicate a file containing a list of
-expressions to reject, see the \fBLIST FILE\fR section below.
+expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fR
+section below.
 
 .IP "-rep"
 Replace input files.  By default this will rename the original files
@@ -154,15 +162,9 @@ Print a basic summary of input data after reading all the files.
 .IP "-mod         "
 Print a file modification summary after processing an input group.
 For files specified on the command line all files constitute a group.
-For POD structure processing input files are grouped by channel and
-processed separately.  By default this summary will only include the
-files that were modified, if the verbose option is used the summary
-will include all files processed.
-
-.IP "-POD \fIreqfile\fP \fIdatadir\fP"
-Prune a POD data structure based on the supplied request file and data
-directory.  The request file is re-written and a backup of the original
-should remain ('.orig' is appended to the original).
+By default this summary will only include the files that were
+modified, if the verbose option is used the summary will include all
+files processed.
 
 .SH THE PRUNING PROCESS
 
@@ -173,11 +175,48 @@ series segments.
 
 Each data record time coverage in each continuous time-series is
 compared to the time coverage of every other continous time-series.
-When overlap is detected, data is removed from the lower priority
-time-series until the overlap is minimized or completely removed
-depending on the pruning option specified.
+When overlap is detected, data is optionally removed from the lower
+priority time-series until the overlap is minimized or completely
+removed depending on the pruning option specified.
 
-.SH "LIST FILE"
+.SH "SELECTION FILE"
+A selection file is used to match input data records based on network,
+station, location and channel information.  Optionally a quality and
+time range may also be specified for more refined selection.  The
+non-time fields may use the '*' wildcard to match multiple characters
+and the '?' wildcard to match single characters.  Character sets may
+also be used, for example '[ENZ]' will match either E, N or Z.
+The '#' character indicates the remaining portion of the line will be
+ignored.
+
+Example selection file entires (the first four fields are required)
+.nf
+#net sta  loc  chan  qual  start             end
+IU   ANMO *    BH?
+II   *    *    *     Q     
+IU   COLA 00   LH[ENZ] R
+IU   COLA 00   LHZ   *     2008,100,10,00,00 2008,100,10,30,00
+.fi
+
+.SH "INPUT LIST FILE"
+A list file can be used to specify input files, one file per line.
+The initial '@' character indicating a list file is not considered
+part of the file name.  As an example, if the following command line
+option was used:
+
+.nf
+\fB@files.list\fP
+.fi
+
+The 'files.list' file might look like this:
+
+.nf
+data/day1.mseed
+data/day2.mseed
+data/day3.mseed
+.fi
+
+.SH "MATCH OR REJECT LIST FILE"
 A list file used with either the \fB-M\fP or \fB-R\fP contains a list
 of regular expressions (one on each line) that will be combined into a
 single compound expression.  The initial '@' character indicating a

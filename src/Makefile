@@ -16,7 +16,7 @@ BIN = dataselect
 LDFLAGS = -L../libmseed
 LDLIBS = -lmseed 
 
-OBJS = $(BIN).o dsarchive.o
+OBJS = $(BIN).o globmatch.o dsarchive.o
 
 all: $(BIN)
 
