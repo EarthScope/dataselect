@@ -1,3 +1,7 @@
+2008.079: 2.0rc2
+	- Add test for records with no time coverage (e.g. single sample)
+	while pruning whole records.
+
 2009.078: 2.0rc1
 	- Update to libmseed 2.2rc3 and convert trace management to the
 	new MSTraceList, MSTraceID, MSTraceSeg functionality.

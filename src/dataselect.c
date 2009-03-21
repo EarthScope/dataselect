@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2009.078
+ * modified 2009.079
  ***************************************************************************/
 
 /***************************************************************************
@@ -116,7 +116,7 @@
 #include "globmatch.h"
 #include "dsarchive.h"
 
-#define VERSION "2.0rc1"
+#define VERSION "2.0rc2"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -491,7 +491,7 @@ writetraces (MSTraceList *mstl)
 		  
 		  *(recordbuf + 6) = restampqind;
 		}
-	  
+	      
 	      /* Write to a single output file if specified */
 	      if ( ofp )
 		{
@@ -1134,8 +1134,12 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 		  modcount++;
 		}
 	      
-	      /* Remove record if all samples have been pruned within tolerance */
-	      if ( effstarttime >= (effendtime - hptimetol) )
+	      /* Remove record if all samples have been pruned within tolerance,
+	       * test for special case of no time coverage (single sample) and no pruning */
+	      if ( effstarttime >= (effendtime - hptimetol) &&
+		   ! (rec->starttime == rec->endtime &&
+		      rec->starttime == effstarttime &&
+		      rec->endtime == effendtime) )
 		{
 		  if ( verbose > 1 )
 		    {
