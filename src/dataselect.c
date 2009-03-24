@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2009.079
+ * modified 2009.082
  ***************************************************************************/
 
 /***************************************************************************
@@ -2185,11 +2185,17 @@ addfile (char *filename)
   
   if ( ! newlp )
     {
-      ms_log (2, "addfile(): Error allocating memory\n");
+      ms_log (2, "addfile(): Cannot allocate memory\n");
       return -1;
     }
   
   newlp->infilename = strdup(filename);
+  
+  if ( ! newlp->infilename )
+    {
+      ms_log (2, "addfile(): Cannot duplicate string\n");
+      return -1;
+    }
   
   /* Add new file to the end of the list */
   if ( filelisttail == 0 )

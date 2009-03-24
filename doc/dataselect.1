@@ -1,4 +1,4 @@
-.TH DATASELECT 2009/03/13
+.TH DATASELECT 2009/03/23
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -32,6 +32,10 @@ Multiple input files will be read in the order specified and processed
 all together as if all the data records were from the same file.  The
 program must read input data from files, input from pipes, etc. is not
 possible.
+
+Files on the command line prefixed with a '@' character are input list
+files and are expected to contain a simple list of input files, see
+\fBINPUT LIST FILE\fR for more details.
 
 When a input file is full SEED including both SEED headers and data
 records all of the headers will be skipped and completely unprocessed.
