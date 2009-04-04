@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2009.082
+ * modified 2009.094
  ***************************************************************************/
 
 /***************************************************************************
@@ -116,7 +116,7 @@
 #include "globmatch.h"
 #include "dsarchive.h"
 
-#define VERSION "2.0rc2"
+#define VERSION "2.0rc3"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -1306,10 +1306,7 @@ readfiles (MSTraceList **ppmstl)
   Filelink *flp;
   MSRecord *msr = 0;
   MSTraceSeg *seg = 0;
-  
-  int retcode;
-  flag whence;
-  
+    
   int totalrecs  = 0;
   int totalsamps = 0;
   int totalfiles = 0;
@@ -1317,21 +1314,23 @@ readfiles (MSTraceList **ppmstl)
   Selectlink *slp = 0;
   Selectlink *matchslp = 0;
   
-  RecordMap *recmap;
-  Record *rec;
+  RecordMap *recmap = 0;
+  Record *rec = 0;
   
   RecordMap newrecmap;
-  Record *newrec;
+  Record *newrec = 0;
   
-  off_t fpos;
+  off_t fpos = 0;
   hptime_t recstarttime;
   hptime_t recendtime;
   
   char srcname[50];
   char stime[30];
   
-  int infilenamelen;
-  
+  int infilenamelen = 0;
+  int retcode;
+  flag whence;
+
   if ( ! ppmstl )
     return -1;
   

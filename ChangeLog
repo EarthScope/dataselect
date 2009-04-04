@@ -1,4 +1,7 @@
-2008.079: 2.0rc2
+2009.094: 2.0rc3
+	- Initialize fpos variable to avoid spurious initial states.
+
+2009.079: 2.0rc2
 	- Add test for records with no time coverage (e.g. single sample)
 	while pruning whole records.
 
