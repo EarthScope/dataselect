@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2009.094
+ * modified 2009.096
  ***************************************************************************/
 
 /***************************************************************************
@@ -135,15 +135,17 @@ typedef struct Filelink_s {
   struct Filelink_s *next;
 } Filelink;
 
-/* Data selection structure definition containers */
-typedef struct Selectlink_s {
-  char    *network;        /* Matching (globbing) network codes */
-  char    *station;        /* Matching (globbing) station codes */
-  char    *location;       /* Matching (globbing) location IDs */
-  char    *channel;        /* Matching (globbing) channel codes */
-  char    *quality;        /* Matching (globbing) quality codes */
+/* Data selection structure time window definition containers */
+typedef struct Selecttime_s {
   hptime_t starttime;      /* Earliest data for matching channels */
   hptime_t endtime;        /* Latest data for matching channels */
+  struct Selecttime_s *next;
+} Selectlink;
+
+/* Data selection structure definition containers */
+typedef struct Selectlink_s {
+  char     srcname[100];   /* Matching (globbing) source name: Net_Sta_Loc_Chan_Qaul */
+  struct Selecttime_s *timewindows;
   struct Selectlink_s *next;
 } Selectlink;
 
