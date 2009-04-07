@@ -2078,6 +2078,7 @@ processparam (int argcount, char **argvec)
     char stime[100];
     char etime[100];
     while ( slp ) {
+      fprintf (stderr, "Working on %s\n", slp->srcname);
       stp = slp->timewindows;
       while ( stp ) {
 	ms_hptime2seedtimestr (stp->starttime, stime, 1);
@@ -2393,7 +2394,7 @@ readselectfile (char *selectfile)
 	selqual = "?";
       
       /* Create the srcname globbing match for this entry */
-      snprintf (srcname, sizeof(newsl->srcname), "%s_%s_%s_%s_%s",
+      snprintf (srcname, sizeof(srcname), "%s_%s_%s_%s_%s",
 		selnet, selsta, selloc, selchan, selqual);
       
       /* Allocate new Selecttime and populate */
