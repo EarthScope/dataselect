@@ -1,3 +1,6 @@
+2009.096: 2.0rc4
+	- Optimize selection file matching logic.
+
 2009.094: 2.0rc3
 	- Initialize fpos variable to avoid spurious initial states.
 

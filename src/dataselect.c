@@ -116,7 +116,7 @@
 #include "globmatch.h"
 #include "dsarchive.h"
 
-#define VERSION "2.0rc3"
+#define VERSION "2.0rc4"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -140,7 +140,7 @@ typedef struct Selecttime_s {
   hptime_t starttime;      /* Earliest data for matching channels */
   hptime_t endtime;        /* Latest data for matching channels */
   struct Selecttime_s *next;
-} Selectlink;
+} Selecttime;
 
 /* Data selection structure definition containers */
 typedef struct Selectlink_s {
@@ -158,7 +158,7 @@ typedef struct Archive_s {
 /* Mini-SEED record information structures */
 typedef struct Record_s {
   struct Filelink_s *flp;
-  struct Selectlink_s *slp;
+  struct Selecttime_s *stp;
   off_t     offset;
   int       reclen;
   hptime_t  starttime;
@@ -1314,7 +1314,8 @@ readfiles (MSTraceList **ppmstl)
   int totalfiles = 0;
   
   Selectlink *slp = 0;
-  Selectlink *matchslp = 0;
+  Selecttime *stp = 0;
+  Selecttime *matchstp = 0;
   
   RecordMap *recmap = 0;
   Record *rec = 0;
@@ -1437,32 +1438,34 @@ readfiles (MSTraceList **ppmstl)
 	  /* Check if record is matched by selection */
 	  if ( selections )
 	    {
-	      char msrquality[2];
-	      
-	      /* Create a simple quality string for matching */
-	      msrquality[0] = msr->dataquality;
-	      msrquality[1] = '\0';
-	      
 	      slp = selections;
-	      matchslp = 0;
+	      matchstp = 0;
 	      
 	      while ( slp )
 		{
-		  if ( ! globmatch (msr->network, slp->network) ) { slp = slp->next; continue; }
-		  else if ( ! globmatch (msr->station, slp->station) ) { slp = slp->next; continue; } 
-		  else if ( ! globmatch (msr->location, slp->location) ) { slp = slp->next; continue; }
-		  else if ( ! globmatch (msr->channel, slp->channel) ) { slp = slp->next; continue; }
-		  else if ( slp->quality && ! globmatch (msrquality, slp->quality) ) { slp = slp->next; continue; }
-		  else if ( slp->starttime != HPTERROR && (recstarttime < slp->starttime && ! (recstarttime <= slp->starttime && recendtime >= slp->starttime)) )
-		    { slp = slp->next; continue; }
-		  else if ( slp->endtime != HPTERROR && (recendtime > slp->endtime && ! (recstarttime <= slp->endtime && recendtime >= slp->endtime)) )
-		    { slp = slp->next; continue; }
+		  if ( globmatch (srcname, slp->srcname) )
+		    {
+		      stp = slp->timewindows;
+		      
+		      while ( stp )
+			{
+			  if ( stp->starttime != HPTERROR && (recstarttime < stp->starttime && ! (recstarttime <= stp->starttime && recendtime >= stp->starttime)) )
+			    { stp = stp->next; continue; }
+			  else if ( stp->endtime != HPTERROR && (recendtime > stp->endtime && ! (recstarttime <= stp->endtime && recendtime >= stp->endtime)) )
+			    { stp = stp->next; continue; }
+			  
+			  matchstp = stp;
+			  break;
+			}
+		    }
 		  
-		  matchslp = slp;
-		  break;
+		  if ( matchstp )
+		    break;
+		  else
+		    slp = slp->next;
 		}
 	      
-	      if ( ! matchslp )
+	      if ( ! matchstp )
 		{
 		  if ( verbose >= 3 )
 		    ms_log (1, "Skipping (selection) %s, %s\n", srcname, stime);
@@ -1512,7 +1515,7 @@ readfiles (MSTraceList **ppmstl)
 	  /* Create and populate new Record structure */
 	  rec = (Record *) malloc (sizeof(Record));
 	  rec->flp = flp;
-	  rec->slp = matchslp;
+	  rec->stp = matchstp;
 	  rec->offset = fpos;
 	  rec->reclen = msr->reclen;
 	  rec->starttime = recstarttime;
@@ -1534,10 +1537,10 @@ readfiles (MSTraceList **ppmstl)
 	      hptime_t seltime;
 	      
 	      /* Determine strictest start time */
-	      if ( starttime != HPTERROR && rec->slp && rec->slp->starttime != HPTERROR )
-		seltime = ( starttime > rec->slp->starttime ) ? starttime : rec->slp->starttime;
-	      else if ( rec->slp && rec->slp->starttime != HPTERROR )
-		seltime = rec->slp->starttime;
+	      if ( starttime != HPTERROR && rec->stp && rec->stp->starttime != HPTERROR )
+		seltime = ( starttime > rec->stp->starttime ) ? starttime : rec->stp->starttime;
+	      else if ( rec->stp && rec->stp->starttime != HPTERROR )
+		seltime = rec->stp->starttime;
 	      else
 		seltime = starttime;
 	      
@@ -1548,10 +1551,10 @@ readfiles (MSTraceList **ppmstl)
 		}
 	      
 	      /* Determine strictest end time */
-	      if ( endtime != HPTERROR && rec->slp && rec->slp->endtime != HPTERROR )
-		seltime = ( endtime > rec->slp->endtime ) ? endtime : rec->slp->endtime;
-	      else if ( rec->slp && rec->slp->endtime != HPTERROR )
-		seltime = rec->slp->endtime;
+	      if ( endtime != HPTERROR && rec->stp && rec->stp->endtime != HPTERROR )
+		seltime = ( endtime > rec->stp->endtime ) ? endtime : rec->stp->endtime;
+	      else if ( rec->stp && rec->stp->endtime != HPTERROR )
+		seltime = rec->stp->endtime;
 	      else
 		seltime = endtime;
 	      
@@ -2286,6 +2289,8 @@ readselectfile (char *selectfile)
 {
   FILE *fp;
   Selectlink *newsl = 0;
+  Selecttime *newst = 0;
+  char srcname[100];
   char selectline[200];
   char *selnet;
   char *selsta;
@@ -2353,32 +2358,36 @@ readselectfile (char *selectfile)
 	  cp++;
 	}
       
-      /* Skip line if network, station, location and channel are note defined */
+      /* Skip line if network, station, location and channel are not defined */
       if ( ! selnet || ! selsta || ! selloc || ! selchan )
 	{
 	  ms_log (2, "[%s] Skipping data selection line number %d\n", selectfile, linecount);
 	  continue;
 	}
       
-      /* Allocate new Selectlink and populate */
-      if ( ! (newsl = (Selectlink *) calloc (1, sizeof(Selectlink))) )
+      /* Test for special case blank location ID */
+      if ( selloc[0] == '-' && selloc[1] == '-' )
+	selloc[0] = '\0';
+      
+      /* Substitute single character wildcard if quality not specified */
+      if ( ! selqual )
+	selqual = "?";
+      
+      /* Create the srcname globbing match for this entry */
+      snprintf (srcname, sizeof(newsl->srcname), "%s_%s_%s_%s_%s",
+		selnet, selsta, selloc, selchan, selqual);
+      
+      /* Allocate new Selecttime and populate */
+      if ( ! (newst = (Selecttime *) calloc (1, sizeof(Selecttime))) )
 	{
 	  ms_log (2, "Cannot allocate memory\n");
 	  return -1;
 	}
       
-      newsl->network = strdup (selnet);
-      newsl->station = strdup (selsta);
-      newsl->location = (selloc[0] == '-' && selloc[1] == '-') ? "" : strdup (selloc);
-      newsl->channel = strdup (selchan);
-      
-      if ( selqual )
-	newsl->quality = strdup (selqual);
-      
       if ( selstart )
 	{
-	  newsl->starttime = ms_seedtimestr2hptime (selstart);
-	  if ( newsl->starttime == HPTERROR )
+	  newst->starttime = ms_seedtimestr2hptime (selstart);
+	  if ( newst->starttime == HPTERROR )
 	    {
 	      ms_log (2, "Cannot convert data selection start time (line %d): %s\n", linecount, selstart);
 	      return -1;
@@ -2386,13 +2395,13 @@ readselectfile (char *selectfile)
 	}
       else
 	{
-	  newsl->starttime = HPTERROR;
+	  newst->starttime = HPTERROR;
 	}
       
       if ( selend )
 	{
-	  newsl->endtime = ms_seedtimestr2hptime (selend);
-	  if ( newsl->endtime == HPTERROR )
+	  newst->endtime = ms_seedtimestr2hptime (selend);
+	  if ( newst->endtime == HPTERROR )
 	    {
 	      ms_log (2, "Cannot convert data selection end time (line %d): %s\n",  linecount, selend);
 	      return -1;
@@ -2400,25 +2409,71 @@ readselectfile (char *selectfile)
 	}
       else
 	{
-	  newsl->endtime = HPTERROR;
+	  newst->endtime = HPTERROR;
 	}
       
-      /* Add new Selectlink to beggining of global list */
+      /* Add new Selectlink to begining of global list */
       if ( ! selections ) 
 	{
+	  /* Allocate new Selectlink and populate */
+	  if ( ! (newsl = (Selectlink *) calloc (1, sizeof(Selectlink))) )
+	    {
+	      ms_log (2, "Cannot allocate memory\n");
+	      return -1;
+	    }
+	  
+	  strncpy (newsl->srcname, srcname, sizeof(newsl->srcname));
+	  
+	  /* Add new Selectlink as first in global list */
 	  selections = newsl;
+	  newsl->timewindows = newst;
 	}
       else
 	{
-	  newsl->next = selections;
-	  selections = newsl;
+	  Selectlink *findsl = selections;
+	  Selectlink *matchsl = 0;
+	  
+	  /* Search for matching Selectlink entry */
+	  while ( findsl )
+	    {
+	      if ( ! strcmp (findsl->srcname, newsl->srcname) )
+		{
+		  matchsl = findsl;
+		  break;
+		}
+	      
+	      findsl = findsl->next;
+	    }
+	  
+	  if ( matchsl )
+	    {
+	      /* Add time window selection to beginning of window list */
+	      newst->next = matchsl->timewindows;
+	      matchsl->timewindows = newst;
+	    }
+	  else
+	    {
+	      /* Allocate new Selectlink and populate */
+	      if ( ! (newsl = (Selectlink *) calloc (1, sizeof(Selectlink))) )
+		{
+		  ms_log (2, "Cannot allocate memory\n");
+		  return -1;
+		}
+	      
+	      strncpy (newsl->srcname, srcname, sizeof(newsl->srcname));
+	      
+	      /* Add new Selectlink to beginning of global list */
+	      newsl->next = selections;
+	      selections = newsl;
+	      newsl->timewindows = newst;
+	    }
 	}
       
       selectcount++;
     }
   
   fclose (fp);
-
+  
   return selectcount;
 }  /* End of readselectfile() */
 
