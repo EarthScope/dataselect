@@ -2071,25 +2071,6 @@ processparam (int argcount, char **argvec)
 	}
     }
   
-  // DEBUG
-  if (selections) {
-    Selectlink *slp = selections;
-    Selecttime *stp = 0;
-    char stime[100];
-    char etime[100];
-    
-    while ( slp ) {
-      stp = slp->timewindows;
-      while ( stp ) {
-	ms_hptime2seedtimestr (stp->starttime, stime, 1);
-	ms_hptime2seedtimestr (stp->endtime, etime, 1);
-	fprintf (stderr, "%s: %s - %s\n", slp->srcname, stime, etime);
-	stp = stp->next;
-      }
-      slp = slp->next;
-    }
-  }
-  
   /* Expand match pattern from a file if prefixed by '@' */
   if ( matchpattern )
     {
