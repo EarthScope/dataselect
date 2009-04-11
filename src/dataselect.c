@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2009.096
+ * modified 2009.100
  ***************************************************************************/
 
 /***************************************************************************
@@ -116,7 +116,7 @@
 #include "globmatch.h"
 #include "dsarchive.h"
 
-#define VERSION "2.0rc4"
+#define VERSION "2.0rc5"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -253,13 +253,6 @@ main ( int argc, char **argv )
   if ( verbose > 2 )
     ms_log (1, "Processing input files\n");
   
-  /* Initialize trace group structure */
-  if ( ! (mstl = mstl_init (mstl)) )
-    {
-      ms_log (2, "Cannot initilize MSTraceList\n");
-      return 1;
-    }
-  
   /* Read and process all files specified on the command line */
   if ( readfiles (&mstl) )
     return 1;
@@ -270,7 +263,7 @@ main ( int argc, char **argv )
   
   if ( modsummary )
     printmodsummary (verbose);
-    
+  
   return 0;
 }  /* End of main() */
 
@@ -2436,7 +2429,7 @@ readselectfile (char *selectfile)
 	  /* Search for matching Selectlink entry */
 	  while ( findsl )
 	    {
-	      if ( ! strcmp (findsl->srcname, newsl->srcname) )
+	      if ( ! strcmp (findsl->srcname, srcname) )
 		{
 		  matchsl = findsl;
 		  break;
@@ -2517,6 +2510,7 @@ addarchive ( const char *path, const char *layout )
   else
     snprintf (newarch->datastream.path, pathlayout, "%s", path);
   
+  newarch->datastream.idletimeout = 60;
   newarch->datastream.grouproot = NULL;
   
   if ( newarch->datastream.path == NULL )

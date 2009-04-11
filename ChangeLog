@@ -1,3 +1,7 @@
+2009.100: 2.0rc5
+	- Fix selection file criteria population.
+	- Set DataStream idle timeout to 60 seconds.
+
 2009.096: 2.0rc4
 	- Optimize selection file matching logic.
 
