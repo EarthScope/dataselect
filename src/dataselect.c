@@ -116,7 +116,7 @@
 #include "globmatch.h"
 #include "dsarchive.h"
 
-#define VERSION "2.1rc"
+#define VERSION "2.1"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
