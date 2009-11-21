@@ -12,7 +12,7 @@
  * file.  The definition of the groups is implied by the format of the
  * archive.
  *
- * modified: 2008.304
+ * modified: 2009.325
  ***************************************************************************/
 
 #include <stdio.h>
@@ -528,7 +528,7 @@ ds_openfile (DataStream *datastream, const char *filename)
                 rlim.rlim_cur = ds_maxopenfiles;
               
 	      if ( dsverbose >= 2 )
-		fprintf (stderr, "Setting open file limit to %lld\n", (int64_t) rlim.rlim_cur);
+		fprintf (stderr, "Setting open file limit to %lld\n", (long long int) rlim.rlim_cur);
               
               if ( setrlimit (RLIMIT_NOFILE, &rlim) == -1 )
                 {
