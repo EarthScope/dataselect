@@ -1362,7 +1362,7 @@ readfiles (MSTraceList **ppmstl)
 	}
       
       /* Loop over the input file */
-      while ( (retcode = ms_readmsr (&msfp, &msr, flp->infilename, reclen, &fpos, NULL, 1, 0, selections, verbose-2))
+      while ( (retcode = ms_readmsr_main (&msfp, &msr, flp->infilename, reclen, &fpos, NULL, 1, 0, selections, verbose-2))
 	      == MS_NOERROR )
 	{
 	  recstarttime = msr_starttime (msr);
