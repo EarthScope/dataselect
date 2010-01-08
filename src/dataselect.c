@@ -1282,10 +1282,12 @@ qcompare (const char quality1, const char quality2)
 static int
 readfiles (MSTraceList **ppmstl)
 {
+  MSFileParam myMSFileParam = {NULL, NULL, "", 1, MINRECLEN, 0, 0, 0, 0};
+  MSFileParam *msfp = &myMSFileParam;
   Filelink *flp;
   MSRecord *msr = 0;
   MSTraceSeg *seg = 0;
-    
+  
   int totalrecs  = 0;
   int totalsamps = 0;
   int totalfiles = 0;
@@ -1360,7 +1362,7 @@ readfiles (MSTraceList **ppmstl)
 	}
       
       /* Loop over the input file */
-      while ( (retcode = ms_readmsr (&msr, flp->infilename, reclen, &fpos, NULL, 1, 0, verbose-2))
+      while ( (retcode = ms_readmsr (&msfp, &msr, flp->infilename, reclen, &fpos, NULL, 1, 0, selections, verbose-2))
 	      == MS_NOERROR )
 	{
 	  recstarttime = msr_starttime (msr);
