@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2009.100
+ * modified 2010.007
  ***************************************************************************/
 
 /***************************************************************************
@@ -113,10 +113,9 @@
 
 #include <libmseed.h>
 
-#include "globmatch.h"
 #include "dsarchive.h"
 
-#define VERSION "2.1"
+#define VERSION "2.2dev"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -135,20 +134,6 @@ typedef struct Filelink_s {
   struct Filelink_s *next;
 } Filelink;
 
-/* Data selection structure time window definition containers */
-typedef struct Selecttime_s {
-  hptime_t starttime;      /* Earliest data for matching channels */
-  hptime_t endtime;        /* Latest data for matching channels */
-  struct Selecttime_s *next;
-} Selecttime;
-
-/* Data selection structure definition containers */
-typedef struct Selectlink_s {
-  char     srcname[100];   /* Matching (globbing) source name: Net_Sta_Loc_Chan_Qaul */
-  struct Selecttime_s *timewindows;
-  struct Selectlink_s *next;
-} Selectlink;
-
 /* Archive output structure definition containers */
 typedef struct Archive_s {
   DataStream  datastream;
@@ -158,7 +143,7 @@ typedef struct Archive_s {
 /* Mini-SEED record information structures */
 typedef struct Record_s {
   struct Filelink_s *flp;
-  struct Selecttime_s *stp;
+  struct SelectTime_s *stp;
   off_t     offset;
   int       reclen;
   hptime_t  starttime;
@@ -201,7 +186,6 @@ static int  processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
 static int  addfile (char *filename);
 static int  addlistfile (char *filename);
-static int  readselectfile (char *selectfile);
 static int  addarchive (const char *path, const char *layout);
 static int  readregexfile (char *regexfile, char **pppattern);
 static void usage (int level);
@@ -231,7 +215,7 @@ static char     recordbuf[16384];     /* Global record buffer */
 
 static Filelink *filelist     = 0;    /* List of input files */
 static Filelink *filelisttail = 0;    /* Tail of list of input files */
-static Selectlink *selections = 0;    /* List of data selections */
+static Selections *selections = 0;    /* List of data selections */
 
 
 int
@@ -1306,9 +1290,7 @@ readfiles (MSTraceList **ppmstl)
   int totalsamps = 0;
   int totalfiles = 0;
   
-  Selectlink *slp = 0;
-  Selecttime *stp = 0;
-  Selecttime *matchstp = 0;
+  SelectTime *matchstp = 0;
   
   RecordMap *recmap = 0;
   Record *rec = 0;
@@ -1431,34 +1413,7 @@ readfiles (MSTraceList **ppmstl)
 	  /* Check if record is matched by selection */
 	  if ( selections )
 	    {
-	      slp = selections;
-	      matchstp = 0;
-	      
-	      while ( slp )
-		{
-		  if ( globmatch (srcname, slp->srcname) )
-		    {
-		      stp = slp->timewindows;
-		      
-		      while ( stp )
-			{
-			  if ( stp->starttime != HPTERROR && (recstarttime < stp->starttime && ! (recstarttime <= stp->starttime && recendtime >= stp->starttime)) )
-			    { stp = stp->next; continue; }
-			  else if ( stp->endtime != HPTERROR && (recendtime > stp->endtime && ! (recstarttime <= stp->endtime && recendtime >= stp->endtime)) )
-			    { stp = stp->next; continue; }
-			  
-			  matchstp = stp;
-			  break;
-			}
-		    }
-		  
-		  if ( matchstp )
-		    break;
-		  else
-		    slp = slp->next;
-		}
-	      
-	      if ( ! matchstp )
+	      if ( ! ms_matchselect (selections, srcname, recstarttime, recendtime, &matchstp) )
 		{
 		  if ( verbose >= 3 )
 		    ms_log (1, "Skipping (selection) %s, %s\n", srcname, stime);
@@ -2057,7 +2012,7 @@ processparam (int argcount, char **argvec)
   /* Read data selection file */
   if ( selectfile )
     {
-      if ( readselectfile (selectfile) < 0 )
+      if ( ms_readselectionsfile (&selections, selectfile) < 0 )
 	{
 	  ms_log (2, "Cannot read data selection file\n");
 	  exit (1);
@@ -2262,213 +2217,6 @@ addlistfile (char *filename)
   
   return filecount;
 }  /* End of addlistfile() */
-
-
-/***************************************************************************
- * readselectfile:
- *
- * Read a list of data selections from a file and add to the global
- * selections list.  On errors this routine will leave allocated
- * memory unreachable (leaked), it is expected that this is a program
- * failing condition.
- *
- * As a special case, location IDs of "--" are translated to an empty
- * string to match the space-space location ID for libmseed.
- *
- * Returns count of selections added on success and -1 on error.
- ***************************************************************************/
-static int
-readselectfile (char *selectfile)
-{
-  FILE *fp;
-  Selectlink *newsl = 0;
-  Selecttime *newst = 0;
-  char srcname[100];
-  char selectline[200];
-  char *selnet;
-  char *selsta;
-  char *selloc;
-  char *selchan;
-  char *selqual;
-  char *selstart;
-  char *selend;
-  char *cp;
-  char next;
-  int selectcount = 0;
-  int linecount = 0;
-  
-  if ( verbose >= 1 )
-    ms_log (1, "Reading selections file '%s'\n", selectfile);
-  
-  if ( ! (fp = fopen(selectfile, "rb")) )
-    {
-      ms_log (2, "Cannot open list file %s: %s\n", selectfile, strerror(errno));
-      return -1;
-    }
-  
-  while ( fgets (selectline, sizeof(selectline)-1, fp) )
-    {
-      selnet = 0;
-      selsta = 0;
-      selloc = 0;
-      selchan = 0;
-      selqual = 0;
-      selstart = 0;
-      selend = 0;
-      
-      linecount++;
-      
-      /* Guarantee termination */
-      selectline[sizeof(selectline)-1] = '\0';
-      
-      /* End string at first newline character if any */
-      if ( (cp = strchr(selectline, '\n')) )
-        *cp = '\0';
-      
-      /* Skip empty lines */
-      if ( ! strlen (selectline) )
-        continue;
-      
-      /* Skip comment lines */
-      if ( *selectline == '#' )
-        continue;
-      
-      /* Parse: identify components of selection and terminate */
-      cp = selectline;
-      next = 1;
-      while ( *cp )
-	{
-	  if ( *cp == ' ' || *cp == '\t' ) { *cp = '\0'; next = 1; }
-	  else if ( *cp == '#' ) { *cp = '\0'; break; }
-	  else if ( next && ! selnet ) { selnet = cp; next = 0; }
-	  else if ( next && ! selsta ) { selsta = cp; next = 0; }
-	  else if ( next && ! selloc ) { selloc = cp; next = 0; }
-	  else if ( next && ! selchan ) { selchan = cp; next = 0; }
-	  else if ( next && ! selqual ) { selqual = cp; next = 0; }
-	  else if ( next && ! selstart ) { selstart = cp; next = 0; }
-	  else if ( next && ! selend ) { selend = cp; next = 0; }
-	  else if ( next ) { *cp = '\0'; break; }
-	  cp++;
-	}
-      
-      /* Skip line if network, station, location and channel are not defined */
-      if ( ! selnet || ! selsta || ! selloc || ! selchan )
-	{
-	  ms_log (2, "[%s] Skipping data selection line number %d\n", selectfile, linecount);
-	  continue;
-	}
-      
-      /* Test for special case blank location ID */
-      if ( selloc[0] == '-' && selloc[1] == '-' )
-	selloc[0] = '\0';
-      
-      /* Substitute single character wildcard if quality not specified */
-      if ( ! selqual )
-	selqual = "?";
-      
-      /* Create the srcname globbing match for this entry */
-      snprintf (srcname, sizeof(srcname), "%s_%s_%s_%s_%s",
-		selnet, selsta, selloc, selchan, selqual);
-      
-      /* Allocate new Selecttime and populate */
-      if ( ! (newst = (Selecttime *) calloc (1, sizeof(Selecttime))) )
-	{
-	  ms_log (2, "Cannot allocate memory\n");
-	  return -1;
-	}
-      
-      if ( selstart )
-	{
-	  newst->starttime = ms_seedtimestr2hptime (selstart);
-	  if ( newst->starttime == HPTERROR )
-	    {
-	      ms_log (2, "Cannot convert data selection start time (line %d): %s\n", linecount, selstart);
-	      return -1;
-	    }
-	}
-      else
-	{
-	  newst->starttime = HPTERROR;
-	}
-      
-      if ( selend )
-	{
-	  newst->endtime = ms_seedtimestr2hptime (selend);
-	  if ( newst->endtime == HPTERROR )
-	    {
-	      ms_log (2, "Cannot convert data selection end time (line %d): %s\n",  linecount, selend);
-	      return -1;
-	    }
-	}
-      else
-	{
-	  newst->endtime = HPTERROR;
-	}
-      
-      /* Add new Selectlink to begining of global list */
-      if ( ! selections ) 
-	{
-	  /* Allocate new Selectlink and populate */
-	  if ( ! (newsl = (Selectlink *) calloc (1, sizeof(Selectlink))) )
-	    {
-	      ms_log (2, "Cannot allocate memory\n");
-	      return -1;
-	    }
-	  
-	  strncpy (newsl->srcname, srcname, sizeof(newsl->srcname));
-	  
-	  /* Add new Selectlink as first in global list */
-	  selections = newsl;
-	  newsl->timewindows = newst;
-	}
-      else
-	{
-	  Selectlink *findsl = selections;
-	  Selectlink *matchsl = 0;
-	  
-	  /* Search for matching Selectlink entry */
-	  while ( findsl )
-	    {
-	      if ( ! strcmp (findsl->srcname, srcname) )
-		{
-		  matchsl = findsl;
-		  break;
-		}
-	      
-	      findsl = findsl->next;
-	    }
-	  
-	  if ( matchsl )
-	    {
-	      /* Add time window selection to beginning of window list */
-	      newst->next = matchsl->timewindows;
-	      matchsl->timewindows = newst;
-	    }
-	  else
-	    {
-	      /* Allocate new Selectlink and populate */
-	      if ( ! (newsl = (Selectlink *) calloc (1, sizeof(Selectlink))) )
-		{
-		  ms_log (2, "Cannot allocate memory\n");
-		  return -1;
-		}
-	      
-	      strncpy (newsl->srcname, srcname, sizeof(newsl->srcname));
-	      
-	      /* Add new Selectlink to beginning of global list */
-	      newsl->next = selections;
-	      selections = newsl;
-	      newsl->timewindows = newst;
-	    }
-	}
-      
-      selectcount++;
-    }
-  
-  fclose (fp);
-  
-  return selectcount;
-}  /* End of readselectfile() */
 
 
 /***************************************************************************

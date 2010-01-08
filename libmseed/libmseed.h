@@ -30,8 +30,8 @@ extern "C" {
 
 #include "lmplatform.h"
 
-#define LIBMSEED_VERSION "2.4dev"
-#define LIBMSEED_RELEASE "2010.006"
+#define LIBMSEED_VERSION "2.4dev2"
+#define LIBMSEED_RELEASE "2010.007"
 
 #define MINRECLEN   256      /* Minimum Mini-SEED record length, 2^8 bytes */
 #define MAXRECLEN   1048576  /* Maximum Mini-SEED record length, 2^20 bytes */
@@ -662,8 +662,8 @@ extern void     ms_freeselections (Selections *selections);
 extern int      ms_addselect (Selections **ppselections, char *net, char* sta, char *loc,
 			      char *chan, char *qual, hptime_t starttime, hptime_t endtime);
 extern Selections *ms_matchselect (Selections *selections, char *srcname,
-				  hptime_t starttime, hptime_t endtime);
-extern Selections *msr_matchselect (Selections *selections, MSRecord *msr);
+				  hptime_t starttime, hptime_t endtime, SelectTime **ppselecttime);
+extern Selections *msr_matchselect (Selections *selections, MSRecord *msr, SelectTime **ppselecttime);
 extern int      ms_readselectionsfile (Selections **ppselections, char *filename);
 extern void     ms_freeselections (Selections *selections);
 

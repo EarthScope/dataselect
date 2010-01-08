@@ -6,7 +6,7 @@
  * Written by Chad Trabant unless otherwise noted
  *   IRIS Data Management Center
  *
- * modified: 2010.004
+ * modified: 2010.007
  ***************************************************************************/
 
 #include <stdio.h>
@@ -224,7 +224,7 @@ ms_addselect (Selections **ppselections, char *net, char* sta, char *loc,
  ***************************************************************************/
 Selections *
 ms_matchselect (Selections *selections, char *srcname, hptime_t starttime,
-		hptime_t endtime)
+		hptime_t endtime, SelectTime **ppselecttime)
 {
   Selections *findsl = NULL;
   SelectTime *findst = NULL;
@@ -259,6 +259,9 @@ ms_matchselect (Selections *selections, char *srcname, hptime_t starttime,
 	}
     }
   
+  if ( ppselecttime )
+    *ppselecttime = matchst;
+  
   return ( matchst ) ? findsl : NULL;
 } /* End of ms_matchselect() */
 
@@ -273,7 +276,7 @@ ms_matchselect (Selections *selections, char *srcname, hptime_t starttime,
  * NULL for no match or error.
  ***************************************************************************/
 Selections *
-msr_matchselect (Selections *selections, MSRecord *msr)
+msr_matchselect (Selections *selections, MSRecord *msr, SelectTime **ppselecttime)
 {
   char srcname[50];
   hptime_t endtime;
@@ -284,7 +287,8 @@ msr_matchselect (Selections *selections, MSRecord *msr)
   msr_srcname (msr, srcname, 1);
   endtime = msr_endtime (msr);
   
-  return ms_matchselect (selections, srcname, msr->starttime, endtime);
+  return ms_matchselect (selections, srcname, msr->starttime, endtime,
+			 ppselecttime);
 } /* End of msr_matchselect() */
 
 
@@ -492,6 +496,9 @@ ms_printselections ( Selections *selections )
  *	a[-a-z]c	a-c aac abc ...
  *
  * $Log: not supported by cvs2svn $
+ * Revision 1.5  2010/01/07 23:55:18  chad
+ * *** empty log message ***
+ *
  * Revision 1.4  2010/01/07 06:01:30  chad
  * *** empty log message ***
  *

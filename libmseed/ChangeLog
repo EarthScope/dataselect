@@ -1,3 +1,8 @@
+2010.007:
+	- Add SelectTime **ppselecttime argument to ms_matchselect()
+	and msr_matchselect() routines so that the matching time range
+	can optionally be returned to the caller.
+
 2010.006:
 	- Add a check for ATTRIBUTE_PACKED define (lmplatform.h) and
 	if set add an __attribute__((packed)) qualifier to all structs

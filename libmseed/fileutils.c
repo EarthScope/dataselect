@@ -6,7 +6,7 @@
  *   ORFEUS/EC-Project MEREDIAN
  *   IRIS Data Management Center
  *
- * modified: 2010.005
+ * modified: 2010.007
  ***************************************************************************/
 
 #include <stdio.h>
@@ -510,7 +510,7 @@ ms_readmsr_main (MSFileParam **ppmsfp, MSRecord **ppmsr, char *msfile,
 	      /* Minium read length (MINRECLEN) should always have the fixed section */
 	      ms_recsrcname (msfp->rawrec, srcname, 1);
 	      
-	      if ( ! ms_matchselect (selections, srcname, HPTERROR, HPTERROR) )
+	      if ( ! ms_matchselect (selections, srcname, HPTERROR, HPTERROR, NULL) )
 		{
 		  if ( verbose > 1 )
 		    {

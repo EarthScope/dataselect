@@ -1,4 +1,4 @@
-.TH MS_SELECTION 3 2010/01/06 "Libmseed API"
+.TH MS_SELECTION 3 2010/01/07 "Libmseed API"
 .SH DESCRIPTION
 Routines to manage and use data selection lists.
 
@@ -7,9 +7,11 @@ Routines to manage and use data selection lists.
 .B #include <libmseed.h>
 
 .BI "Selections *\fBms_matchselect\fP ( Selections *" selections ", char *" srcname ","
-.BI "                             hptime_t " starttime ", hptime_t " endtime " );"
+.BI "                             hptime_t " starttime ", hptime_t " endtime ","
+.BI "                             SelectTime **" ppselecttime " );"
 
-.BI "Selections *\fBmsr_matchselect\fP ( Selections *" selections ", MSRecord *" msr " );"
+.BI "Selections *\fBmsr_matchselect\fP ( Selections *" selections ", MSRecord *" msr ","
+.BI "                              SelectTime **" ppselecttime " );"
 
 .BI "int  \fBms_addselect\fP ( Selections **" ppselections ", char *" net ", char *" sta ","
 .BI "                    char *" loc ", char *" chan ", char *" qual ","
@@ -36,7 +38,8 @@ with \fBmsr_srcname(3)\fP and \fBmst_srcname(3)\fP.
 that matches the supplied \fIsrcname\fP and optionally \fIstarttime\fP
 and \fIendtime\fP.  The start and/or end times can be set to HTPERROR
 to mean "any" time.  A selection will match the specified time range
-if there is any overlap in time coverage.
+if there is any overlap in time coverage.  If the \fIppselecttime\fP
+pointer is not NULL it will be set to the matching SelectTime entry.
 
 \fBmsr_matchselect\fP is a simple wrapper to call \fBms_matchselect\fP
 using the details from a specified MSRecord.
@@ -65,8 +68,15 @@ created.  For more details see the \fBSELECTION FILE\fR section below.
 \fIselections\fP list using the ms_log() facility.
 
 .SH RETURN VALUES
-The routines return a pointer to the resulting string or NULL on
-error.
+The \fBms_matchselect\fP and \fBmsr_matchselect\fP routines return a
+pointer to the matching Selections entry on success and NULL when no
+match was found.  These routines will also set the \fIppselecttime\fP
+pointer to the matching SelectTime entry if supplied.
+
+\fBms_addselect\fP returns 0 on success and -1 on error.
+
+\fBms_readselectionsfile\fP returns the number of selections added to
+the list or -1 on error.
 
 .SH "SELECTION FILE"
 A selection file is used to match input data records based on network,
@@ -138,7 +148,7 @@ main() {
   while ( (retcode = ms_readmsr (&msr, filename, 0, NULL, NULL, 1, 0, verbose)) == MS_NOERROR )
     {
        /* Print details if data record matches selection criteria */
-       if ( msr_matchselect (selections, msr) )
+       if ( msr_matchselect (selections, msr, NULL) )
          {
            msr_print (msr, verbose);
          }
