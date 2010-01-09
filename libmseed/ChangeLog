@@ -1,3 +1,6 @@
+2010.008:
+	- Fix special case of "--" location ID in ms_addselect().
+	
 2010.007:
 	- Add SelectTime **ppselecttime argument to ms_matchselect()
 	and msr_matchselect() routines so that the matching time range

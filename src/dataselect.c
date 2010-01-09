@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "2.2rc"
+#define VERSION "2.2rc2"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */

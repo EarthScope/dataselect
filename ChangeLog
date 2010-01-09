@@ -1,5 +1,5 @@
 2010.007: 2.2rc
-	- Update to libmseed 2.4dev2.
+	- Update to libmseed 2.4dev3.
 	- Use ms_readmsr_main() and pass the selections list pointer
 	which will be used to skip sections in packed files (DMC use).
 	- Use the new Selections facility in libmseed and remove the
