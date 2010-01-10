@@ -1,3 +1,6 @@
+2010.010: 2.2rc3
+	- Fix cleanup call to use ms_readmsr_main().
+
 2010.007: 2.2rc
 	- Update to libmseed 2.4dev3.
 	- Use ms_readmsr_main() and pass the selections list pointer
