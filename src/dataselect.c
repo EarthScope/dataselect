@@ -1282,8 +1282,7 @@ qcompare (const char quality1, const char quality2)
 static int
 readfiles (MSTraceList **ppmstl)
 {
-  MSFileParam myMSFileParam = {NULL, NULL, "", 1, MINRECLEN, 0, 0, 0, 0};
-  MSFileParam *msfp = &myMSFileParam;
+  MSFileParam *msfp = NULL;
   Filelink *flp;
   MSRecord *msr = 0;
   MSTraceSeg *seg = 0;
@@ -1636,12 +1635,12 @@ readfiles (MSTraceList **ppmstl)
       if ( retcode != MS_ENDOFFILE )
 	{
 	  ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr(retcode));
-	  ms_readmsr_main (NULL, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
+	  ms_readmsr_main (&msfp, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
 	  return -1;
 	}
       
       /* Make sure everything is cleaned up */
-      ms_readmsr_main (NULL, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
+      ms_readmsr_main (&msfp, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
       
       totalfiles++;
       flp = flp->next;
