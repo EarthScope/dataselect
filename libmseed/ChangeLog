@@ -1,7 +1,3 @@
-2010.010:
-	- Correctly handle optional MSFileParams pointer during cleanup
-	in ms_readmsr_main().
-
 2010.008:
 	- Fix special case of "--" location ID in ms_addselect().
 	
