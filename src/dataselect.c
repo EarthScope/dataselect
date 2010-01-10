@@ -1636,12 +1636,12 @@ readfiles (MSTraceList **ppmstl)
       if ( retcode != MS_ENDOFFILE )
 	{
 	  ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr(retcode));
-	  ms_readmsr_main (&msfp, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
+	  ms_readmsr_main (NULL, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
 	  return -1;
 	}
       
       /* Make sure everything is cleaned up */
-      ms_readmsr_main (&msfp, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
+      ms_readmsr_main (NULL, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
       
       totalfiles++;
       flp = flp->next;

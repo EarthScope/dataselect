@@ -199,13 +199,13 @@ ms_readmsr_main (MSFileParam **ppmsfp, MSRecord **ppmsr, char *msfile,
   if ( ! ppmsr )
     return MS_GENERROR;
   
-  if ( ! ppmsfp )
+  if ( ! ppmsfp && msfile )
     return MS_GENERROR;
   
-  msfp = *ppmsfp;
+  msfp = (ppmsfp) ? *ppmsfp : NULL;
   
-  /* Initialize the file read parameters if needed */
-  if ( ! msfp )
+  /* Initialize the file read parameters if needed and not cleaning up */
+  if ( ! msfp && msfile )
     {
       msfp = (MSFileParam *) malloc (sizeof (MSFileParam));
       
@@ -241,7 +241,7 @@ ms_readmsr_main (MSFileParam **ppmsfp, MSRecord **ppmsr, char *msfile,
 	free (msfp->rawrec);
       
       /* If the file parameters are the global parameters reset them */
-      if ( *ppmsfp == &gMSFileParam )
+      if ( ppmsfp && *ppmsfp == &gMSFileParam )
 	{
 	  gMSFileParam.fp = NULL;
 	  gMSFileParam.rawrec = NULL;
@@ -254,9 +254,10 @@ ms_readmsr_main (MSFileParam **ppmsfp, MSRecord **ppmsr, char *msfile,
 	  gMSFileParam.recordcount = 0;
 	}
       /* Otherwise free the MSFileParam */
-      else
+      else if ( ppmsfp )
 	{
-	  free (*ppmsfp);
+          if ( *ppmsfp )
+	    free (*ppmsfp);
 	  *ppmsfp = NULL;
 	}
       
