@@ -1,16 +1,18 @@
 2010.010: 2.2rc3
+	- readtracees(): do not recalculate record starttime and only generate
+	ASCII time string when needed for printing.
 	- Fix cleanup call to use ms_readmsr_main().
 
 2010.007: 2.2rc
 	- Update to libmseed 2.4dev3.
-	- Use ms_readmsr_main() and pass the selections list pointer
-	which will be used to skip sections in packed files (DMC use).
-	- Use the new Selections facility in libmseed and remove the
-	selection file routines, functionality should be identical.
+	- Use ms_readmsr_main() and pass the selections list pointer which
+        will be used to skip sections in packed files (DMC use).
+	- Use the new Selections facility in libmseed and remove the selection
+        file routines, functionality should be identical.
 
 2009.201: 2.1
-	- Update libmseed to version 2.3, fixes bug with corner case
-	trace list sorting.
+	- Update libmseed to version 2.3, fixes bug with corner case trace
+        list sorting.
 
 2009.114: 2.0
 	- Update libmseed to version 2.2.

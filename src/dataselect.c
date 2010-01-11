@@ -1364,20 +1364,20 @@ readfiles (MSTraceList **ppmstl)
       while ( (retcode = ms_readmsr_main (&msfp, &msr, flp->infilename, reclen, &fpos, NULL, 1, 0, selections, verbose-2))
 	      == MS_NOERROR )
 	{
-	  recstarttime = msr_starttime (msr);
+	  recstarttime = msr->starttime;
 	  recendtime = msr_endtime (msr);
 	  
 	  /* Generate the srcname with the quality code */
 	  msr_srcname (msr, srcname, 1);
 	  
-	  /* Generate an ASCII start time string */
-	  ms_hptime2seedtimestr (recstarttime, stime, 1);
-	  
 	  /* Check if record matches start time criteria: starts after or contains starttime */
 	  if ( (starttime != HPTERROR) && (recstarttime < starttime && ! (recstarttime <= starttime && recendtime >= starttime)) )
 	    {
 	      if ( verbose >= 3 )
-		ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
+		{
+		  ms_hptime2seedtimestr (recstarttime, stime, 1);
+		  ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
+		}
 	      continue;
 	    }
 	  
@@ -1385,7 +1385,10 @@ readfiles (MSTraceList **ppmstl)
 	  if ( (endtime != HPTERROR) && (recendtime > endtime && ! (recstarttime <= endtime && recendtime >= endtime)) )
 	    {
 	      if ( verbose >= 3 )
-		ms_log (1, "Skipping (endtime) %s, %s\n", srcname, stime);
+		{
+		  ms_hptime2seedtimestr (recstarttime, stime, 1);
+		  ms_log (1, "Skipping (endtime) %s, %s\n", srcname, stime);
+		}
 	      continue;
 	    }
 	  
@@ -1395,7 +1398,10 @@ readfiles (MSTraceList **ppmstl)
 	      if ( regexec ( match, srcname, 0, 0, 0) != 0 )
 		{
 		  if ( verbose >= 3 )
-		    ms_log (1, "Skipping (match) %s, %s\n", srcname, stime);
+		    {
+		      ms_hptime2seedtimestr (recstarttime, stime, 1);
+		      ms_log (1, "Skipping (match) %s, %s\n", srcname, stime);
+		    }
 		  continue;
 		}
 	    }
@@ -1406,7 +1412,10 @@ readfiles (MSTraceList **ppmstl)
 	      if ( regexec ( reject, srcname, 0, 0, 0) == 0 )
 		{
 		  if ( verbose >= 3 )
-		    ms_log (1, "Skipping (reject) %s, %s\n", srcname, stime);
+		    {
+		      ms_hptime2seedtimestr (recstarttime, stime, 1);
+		      ms_log (1, "Skipping (reject) %s, %s\n", srcname, stime);
+		    }
 		  continue;
 		}
 	    }
@@ -1417,7 +1426,10 @@ readfiles (MSTraceList **ppmstl)
 	      if ( ! ms_matchselect (selections, srcname, recstarttime, recendtime, &matchstp) )
 		{
 		  if ( verbose >= 3 )
-		    ms_log (1, "Skipping (selection) %s, %s\n", srcname, stime);
+		    {
+		      ms_hptime2seedtimestr (recstarttime, stime, 1);
+		      ms_log (1, "Skipping (selection) %s, %s\n", srcname, stime);
+		    }
 		  continue;
 		}
 	    }
@@ -1428,6 +1440,7 @@ readfiles (MSTraceList **ppmstl)
 	  /* Add record to the MSTraceList */
 	  if ( ! (seg = mstl_addmsr (*ppmstl, msr, bestquality, 0, timetol, sampratetol)) )
 	    {
+	      ms_hptime2seedtimestr (recstarttime, stime, 1);
 	      ms_log (2, "Cannot add record to trace list, %s, %s\n", srcname, stime);
 	      continue;
 	    }
