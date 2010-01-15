@@ -1,4 +1,4 @@
-.TH DATASELECT 2009/04/04
+.TH DATASELECT 2010/01/15
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -105,6 +105,11 @@ name: 'NET_STA_LOC_CHAN_QUAL'.  If the reject expression begins with
 an '@' character it is assumed to indicate a file containing a list of
 expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fR
 section below.
+
+.IP "-m \fImatch\fP"
+This is effectively the same as \fB-M\fP except that \fImatch\fP is
+evaluated as a globbing expression instead of regular expression.
+Otherwise undocumented as it is primarily useful at the IRIS DMC.
 
 .IP "-rep"
 Replace input files.  By default this will rename the original files
