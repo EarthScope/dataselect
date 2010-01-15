@@ -661,10 +661,10 @@ extern MSLogParam *ms_loginit_l (MSLogParam *logp,
 extern Selections *ms_matchselect (Selections *selections, char *srcname,
 				   hptime_t starttime, hptime_t endtime, SelectTime **ppselecttime);
 extern Selections *msr_matchselect (Selections *selections, MSRecord *msr, SelectTime **ppselecttime);
-extern int      ms_addselectsrcname (Selections **ppselections, char *srcname,
-				     hptime_t starttime, hptime_t endtime);
-extern int      ms_addselect (Selections **ppselections, char *net, char* sta, char *loc,
-			      char *chan, char *qual, hptime_t starttime, hptime_t endtime);
+extern int      ms_addselect (Selections **ppselections, char *srcname,
+			      hptime_t starttime, hptime_t endtime);
+extern int      ms_addselect_comp (Selections **ppselections, char *net, char* sta, char *loc,
+				   char *chan, char *qual, hptime_t starttime, hptime_t endtime);
 extern int      ms_readselectionsfile (Selections **ppselections, char *filename);
 extern void     ms_freeselections (Selections *selections);
 extern void     ms_printselections (Selections *selections);

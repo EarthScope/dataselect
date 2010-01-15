@@ -1,3 +1,8 @@
+2010.015: 2.2
+	- Update libmseed to 2.4.
+	- Add -m option to add a srcname to the selection list, this option 
+	is effectively a globbing version of -M (which does regex matching).
+
 2010.010: 2.2rc3
 	- readtraces(): do not recalculate record starttime and only generate
 	ASCII time string when needed for printing as small optimizations.

@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.010
+ * modified 2010.015
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "2.2rc3"
+#define VERSION "2.2"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -1882,6 +1882,16 @@ processparam (int argcount, char **argvec)
       else if (strcmp (argvec[optind], "-R") == 0)
 	{
 	  rejectpattern = getoptval(argcount, argvec, optind++);
+	}
+      else if (strcmp (argvec[optind], "-m") == 0)
+	{
+          tptr = getoptval(argcount, argvec, optind++);
+	  
+	  if ( ms_addselect (&selections, tptr, HPTERROR, HPTERROR) < 0 )
+	    {
+	      ms_log (2, "Unable to add selection: '%s'\n", tptr);
+	      return -1;
+	    }
 	}
       else if (strcmp (argvec[optind], "-rep") == 0)
         {

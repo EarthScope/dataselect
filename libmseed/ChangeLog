@@ -1,6 +1,7 @@
 2010.015: 2.4
-	- Add ms_addselectsrcname() to selections.c and make 
-	ms_addselect() a wrapper for this new function.
+	- Change ms_addselect() to take a srcname argument and create
+	ms_addselect_comp() as a wrapper that creates a srcname from
+	individual source name components.
 
 2010.012:
 	- Fix unpacking of 16-bit integer encoded data, thanks to

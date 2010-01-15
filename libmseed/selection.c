@@ -101,7 +101,7 @@ msr_matchselect (Selections *selections, MSRecord *msr, SelectTime **ppselecttim
 
 
 /***************************************************************************
- * ms_addselectsrcname:
+ * ms_addselect:
  *
  * Add select parameters to a specified selection list.  The srcname
  * argument may contain globbing parameters.  The NULL value (matching
@@ -110,8 +110,8 @@ msr_matchselect (Selections *selections, MSRecord *msr, SelectTime **ppselecttim
  * Return 0 on success and -1 on error.
  ***************************************************************************/
 int
-ms_addselectsrcname (Selections **ppselections, char *srcname,
-		     hptime_t starttime, hptime_t endtime)
+ms_addselect (Selections **ppselections, char *srcname,
+	      hptime_t starttime, hptime_t endtime)
 {
   Selections *newsl = NULL;
   SelectTime *newst = NULL;
@@ -187,16 +187,16 @@ ms_addselectsrcname (Selections **ppselections, char *srcname,
     }
   
   return 0;
-} /* End of ms_addselectsrcname() */
+} /* End of ms_addselect() */
 
 
 /***************************************************************************
- * ms_addselect:
+ * ms_addselect_comp:
  *
- * Add select parameters to a specified selection list.  The network,
- * station, location, channel and quality parameters may contain
- * globbing parameters.  The NULL value (matching any value) for the
- * start and end times is HPTERROR.
+ * Add select parameters to a specified selection list based on
+ * separate name components.  The network, station, location, channel
+ * and quality arguments may contain globbing parameters.  The NULL
+ * value (matching any value) for the start and end times is HPTERROR.
  *
  * If any of the naming parameters are not supplied (pointer is NULL)
  * a wildcard for all matches is substituted.  As a special case, if
@@ -207,8 +207,8 @@ ms_addselectsrcname (Selections **ppselections, char *srcname,
  * Return 0 on success and -1 on error.
  ***************************************************************************/
 int
-ms_addselect (Selections **ppselections, char *net, char* sta, char *loc,
-	      char *chan, char *qual, hptime_t starttime, hptime_t endtime)
+ms_addselect_comp (Selections **ppselections, char *net, char* sta, char *loc,
+		   char *chan, char *qual, hptime_t starttime, hptime_t endtime)
 {
   char srcname[100];
   char selnet[20];
@@ -271,11 +271,11 @@ ms_addselect (Selections **ppselections, char *net, char* sta, char *loc,
 	    selnet, selsta, selloc, selchan, selqual);
   
   /* Add selection to list */
-  if ( ms_addselectsrcname (ppselections, srcname, starttime, endtime) )
+  if ( ms_addselect (ppselections, srcname, starttime, endtime) )
     return -1;
   
   return 0;
-} /* End of ms_addselect() */
+} /* End of ms_addselect_comp() */
 
 
 /***************************************************************************
@@ -397,7 +397,7 @@ ms_readselectionsfile (Selections **ppselections, char *filename)
 	}
       
       /* Add selection to list */
-      if ( ms_addselect (ppselections, selnet, selsta, selloc, selchan, selqual, starttime, endtime) )
+      if ( ms_addselect_comp (ppselections, selnet, selsta, selloc, selchan, selqual, starttime, endtime) )
 	{
 	  ms_log (2, "[%s] Error adding selection on line %d\n", filename, linecount);
 	  return -1;
@@ -523,6 +523,12 @@ ms_printselections ( Selections *selections )
  *	a[-a-z]c	a-c aac abc ...
  *
  * $Log: not supported by cvs2svn $
+ * Revision 1.10  2010/01/15 18:15:49  chad
+ * *** empty log message ***
+ *
+ * Revision 1.9  2010/01/15 18:12:35  chad
+ * *** empty log message ***
+ *
  * Revision 1.8  2010/01/15 17:44:10  chad
  * *** empty log message ***
  *

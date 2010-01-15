@@ -76,8 +76,8 @@ EXPORTS
    ms_loginit_l
    ms_matchselect
    msr_matchselect
-   ms_addselectsrcname
    ms_addselect
+   ms_addselect_comp
    ms_readselectionsfile
    ms_freeselections
    ms_printselections
