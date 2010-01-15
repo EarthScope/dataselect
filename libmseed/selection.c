@@ -6,7 +6,7 @@
  * Written by Chad Trabant unless otherwise noted
  *   IRIS Data Management Center
  *
- * modified: 2010.008
+ * modified: 2010.015
  ***************************************************************************/
 
 #include <stdio.h>
@@ -101,86 +101,23 @@ msr_matchselect (Selections *selections, MSRecord *msr, SelectTime **ppselecttim
 
 
 /***************************************************************************
- * ms_addselect:
+ * ms_addselectsrcname:
  *
- * Add select parameters to a specified selection list.  The network,
- * station, location, channel and quality parameters may contain
- * globbing parameters.  The NULL value (matching any value) for the
- * start and end times is HPTERROR.
- *
- * If any of the naming parameters are not supplied (pointer is NULL)
- * a wildcard for all matches is substituted.  As a special case, if
- * the location ID (loc) is set to "--" to match a space-space/blank
- * ID it will be translated to an empty string to match libmseed's
- * notation.
+ * Add select parameters to a specified selection list.  The srcname
+ * argument may contain globbing parameters.  The NULL value (matching
+ * any value) for the start and end times is HPTERROR.
  *
  * Return 0 on success and -1 on error.
  ***************************************************************************/
 int
-ms_addselect (Selections **ppselections, char *net, char* sta, char *loc,
-	      char *chan, char *qual, hptime_t starttime, hptime_t endtime)
+ms_addselectsrcname (Selections **ppselections, char *srcname,
+		     hptime_t starttime, hptime_t endtime)
 {
   Selections *newsl = NULL;
   SelectTime *newst = NULL;
-  char srcname[100];
-  char selnet[20];
-  char selsta[20];
-  char selloc[20];
-  char selchan[20];
-  char selqual[20];
   
-  if ( ! ppselections )
+  if ( ! ppselections || ! srcname )
     return -1;
-  
-  if ( net )
-    {
-      strncpy (selnet, net, sizeof(selnet));
-      selnet[sizeof(selnet)-1] = '\0';
-    }
-  else
-    strcpy (selnet, "*");
-  
-  if ( sta )
-    {
-      strncpy (selsta, sta, sizeof(selsta));
-      selsta[sizeof(selsta)-1] = '\0';
-    }
-  else
-    strcpy (selsta, "*");
-  
-  if ( loc )
-    {
-      /* Test for special case blank location ID */
-      if ( ! strcmp (loc, "--") )
-	selloc[0] = '\0';
-      else
-	{
-	  strncpy (selloc, loc, sizeof(selloc));
-	  selloc[sizeof(selloc)-1] = '\0';
-	}
-    }
-  else
-    strcpy (selloc, "*");
-  
-  if ( chan )
-    {
-      strncpy (selchan, chan, sizeof(selchan));
-      selchan[sizeof(selchan)-1] = '\0';
-    }
-  else
-    strcpy (selchan, "*");
-  
-  if ( qual )
-    {
-      strncpy (selqual, qual, sizeof(selqual));
-      selqual[sizeof(selqual)-1] = '\0';
-    }
-  else
-    strcpy (selqual, "?");
-  
-  /* Create the srcname globbing match for this entry */
-  snprintf (srcname, sizeof(srcname), "%s_%s_%s_%s_%s",
-	    selnet, selsta, selloc, selchan, selqual);
   
   /* Allocate new SelectTime and populate */
   if ( ! (newst = (SelectTime *) calloc (1, sizeof(SelectTime))) )
@@ -248,6 +185,94 @@ ms_addselect (Selections **ppselections, char *net, char* sta, char *loc,
 	  newsl->timewindows = newst;
 	}
     }
+  
+  return 0;
+} /* End of ms_addselectsrcname() */
+
+
+/***************************************************************************
+ * ms_addselect:
+ *
+ * Add select parameters to a specified selection list.  The network,
+ * station, location, channel and quality parameters may contain
+ * globbing parameters.  The NULL value (matching any value) for the
+ * start and end times is HPTERROR.
+ *
+ * If any of the naming parameters are not supplied (pointer is NULL)
+ * a wildcard for all matches is substituted.  As a special case, if
+ * the location ID (loc) is set to "--" to match a space-space/blank
+ * ID it will be translated to an empty string to match libmseed's
+ * notation.
+ *
+ * Return 0 on success and -1 on error.
+ ***************************************************************************/
+int
+ms_addselect (Selections **ppselections, char *net, char* sta, char *loc,
+	      char *chan, char *qual, hptime_t starttime, hptime_t endtime)
+{
+  char srcname[100];
+  char selnet[20];
+  char selsta[20];
+  char selloc[20];
+  char selchan[20];
+  char selqual[20];
+  
+  if ( ! ppselections )
+    return -1;
+  
+  if ( net )
+    {
+      strncpy (selnet, net, sizeof(selnet));
+      selnet[sizeof(selnet)-1] = '\0';
+    }
+  else
+    strcpy (selnet, "*");
+  
+  if ( sta )
+    {
+      strncpy (selsta, sta, sizeof(selsta));
+      selsta[sizeof(selsta)-1] = '\0';
+    }
+  else
+    strcpy (selsta, "*");
+  
+  if ( loc )
+    {
+      /* Test for special case blank location ID */
+      if ( ! strcmp (loc, "--") )
+	selloc[0] = '\0';
+      else
+	{
+	  strncpy (selloc, loc, sizeof(selloc));
+	  selloc[sizeof(selloc)-1] = '\0';
+	}
+    }
+  else
+    strcpy (selloc, "*");
+  
+  if ( chan )
+    {
+      strncpy (selchan, chan, sizeof(selchan));
+      selchan[sizeof(selchan)-1] = '\0';
+    }
+  else
+    strcpy (selchan, "*");
+  
+  if ( qual )
+    {
+      strncpy (selqual, qual, sizeof(selqual));
+      selqual[sizeof(selqual)-1] = '\0';
+    }
+  else
+    strcpy (selqual, "?");
+  
+  /* Create the srcname globbing match for this entry */
+  snprintf (srcname, sizeof(srcname), "%s_%s_%s_%s_%s",
+	    selnet, selsta, selloc, selchan, selqual);
+  
+  /* Add selection to list */
+  if ( ms_addselectsrcname (ppselections, srcname, starttime, endtime) )
+    return -1;
   
   return 0;
 } /* End of ms_addselect() */
@@ -498,6 +523,12 @@ ms_printselections ( Selections *selections )
  *	a[-a-z]c	a-c aac abc ...
  *
  * $Log: not supported by cvs2svn $
+ * Revision 1.8  2010/01/15 17:44:10  chad
+ * *** empty log message ***
+ *
+ * Revision 1.7  2010/01/15 17:42:54  chad
+ * *** empty log message ***
+ *
  * Revision 1.6  2010/01/09 00:37:53  chad
  * *** empty log message ***
  *
