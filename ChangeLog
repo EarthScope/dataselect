@@ -1,5 +1,7 @@
 2010.025
-	- Fix handling of overlapping selection entries.
+	- Fix handling of overlapping selection entries by finding all
+	matching selection entries and calculating maximum extents.
+	- Make msr_unpack() errors for archive writing fatal errors.
 
 2010.015: 
 	- Update libmseed to 2.4.

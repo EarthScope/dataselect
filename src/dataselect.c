@@ -494,6 +494,8 @@ writetraces (MSTraceList *mstl)
 		  if ( msr_unpack (recordbuf, rec->reclen, &msr, 0, verbose) != MS_NOERROR )
 		    {
 		      ms_log (2, "Cannot unpack Mini-SEED, cannot write to archive\n");
+		      errflag = 1;
+		      break;
 		    }
 		  else
 		    {
