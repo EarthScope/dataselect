@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.015
+ * modified 2010.025
  ***************************************************************************/
 
 /***************************************************************************
@@ -143,12 +143,13 @@ typedef struct Archive_s {
 /* Mini-SEED record information structures */
 typedef struct Record_s {
   struct Filelink_s *flp;
-  struct SelectTime_s *stp;
   off_t     offset;
   int       reclen;
   hptime_t  starttime;
   hptime_t  endtime;
   char      quality;
+  hptime_t  selectstart;
+  hptime_t  selectend;
   hptime_t  newstart;
   hptime_t  newend;
   struct Record_s *prev;
@@ -181,6 +182,9 @@ static int readfiles (MSTraceList **ppmstl);
 static void printmodsummary (flag nomods);
 static void printtracemap (MSTraceList *mstl);
 static void printrecordmap (RecordMap *recmap, flag details);
+
+static int findselectlimits (Selections *select, char *srcname,
+			     hptime_t starttime, hptime_t endtime, Record *rec);
 
 static int  processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
@@ -1291,6 +1295,7 @@ readfiles (MSTraceList **ppmstl)
   int totalsamps = 0;
   int totalfiles = 0;
   
+  Selections *matchsp = 0;
   SelectTime *matchstp = 0;
   
   RecordMap *recmap = 0;
@@ -1423,7 +1428,7 @@ readfiles (MSTraceList **ppmstl)
 	  /* Check if record is matched by selection */
 	  if ( selections )
 	    {
-	      if ( ! ms_matchselect (selections, srcname, recstarttime, recendtime, &matchstp) )
+	      if ( ! (matchsp = ms_matchselect (selections, srcname, recstarttime, recendtime, &matchstp)) )
 		{
 		  if ( verbose >= 3 )
 		    {
@@ -1477,12 +1482,13 @@ readfiles (MSTraceList **ppmstl)
 	  /* Create and populate new Record structure */
 	  rec = (Record *) malloc (sizeof(Record));
 	  rec->flp = flp;
-	  rec->stp = matchstp;
 	  rec->offset = fpos;
 	  rec->reclen = msr->reclen;
 	  rec->starttime = recstarttime;
 	  rec->endtime = recendtime;
 	  rec->quality = msr->dataquality;
+	  rec->selectstart = HPTERROR;
+	  rec->selectend = HPTERROR;
 	  rec->newstart = 0;
 	  rec->newend = 0;
 	  rec->prev = 0;
@@ -1498,11 +1504,20 @@ readfiles (MSTraceList **ppmstl)
 	    {
 	      hptime_t seltime;
 	      
-	      /* Determine strictest start time */
-	      if ( starttime != HPTERROR && rec->stp && rec->stp->starttime != HPTERROR )
-		seltime = ( starttime > rec->stp->starttime ) ? starttime : rec->stp->starttime;
-	      else if ( rec->stp && rec->stp->starttime != HPTERROR )
-		seltime = rec->stp->starttime;
+	      /* If record is not completely selected search for joint selection limits */
+	      if ( matchstp && ! (matchstp->starttime <= recstarttime && matchstp->endtime >= recendtime) )
+		{
+		  if ( findselectlimits (matchsp, srcname, recstarttime, recendtime, rec) )
+		    {
+		      ms_log (2, "Problem in findselectlimits(), please report\n");
+		    }
+		}
+	      
+	      /* Determine strictest start time (selection time or global start time) */
+	      if ( starttime != HPTERROR && rec->selectstart != HPTERROR )
+		seltime = ( starttime > rec->selectstart ) ? starttime : rec->selectstart;
+	      else if ( rec->selectstart != HPTERROR )
+		seltime = rec->selectstart;
 	      else
 		seltime = starttime;
 	      
@@ -1512,11 +1527,11 @@ readfiles (MSTraceList **ppmstl)
 		  rec->newstart = seltime;
 		}
 	      
-	      /* Determine strictest end time */
-	      if ( endtime != HPTERROR && rec->stp && rec->stp->endtime != HPTERROR )
-		seltime = ( endtime > rec->stp->endtime ) ? endtime : rec->stp->endtime;
-	      else if ( rec->stp && rec->stp->endtime != HPTERROR )
-		seltime = rec->stp->endtime;
+	      /* Determine strictest end time (selection time or global end time) */
+	      if ( endtime != HPTERROR && rec->selectend != HPTERROR )
+		seltime = ( endtime > rec->selectend ) ? endtime : rec->selectend;
+	      else if ( rec->selectend != HPTERROR )
+		seltime = rec->selectend;
 	      else
 		seltime = endtime;
 	      
@@ -1808,6 +1823,52 @@ printrecordmap (RecordMap *recmap, flag details)
       rec = rec->next;
     }
 }  /* End of printrecordmap() */
+
+
+/***************************************************************************
+ * findselectlimits():
+ *
+ * Determine selection limits for the given record based on all
+ * matching selection entries.
+ *
+ * Return 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+findselectlimits (Selections *select, char *srcname, hptime_t starttime,
+		  hptime_t endtime, Record *rec)
+{
+  SelectTime *selecttime;
+  
+  if ( ! rec || ! srcname || ! select )
+    return -1;
+  
+  while ( (select = ms_matchselect(select, srcname, starttime, endtime, &selecttime)) )
+    {
+      while ( selecttime )
+	{
+	  if ( (starttime < selecttime->starttime && ! (starttime <= selecttime->starttime && endtime >= selecttime->starttime)) )
+	    { selecttime = selecttime->next; continue; }
+	  else if ( (endtime > selecttime->endtime && ! (starttime <= selecttime->endtime && endtime >= selecttime->endtime)) )
+	    { selecttime = selecttime->next; continue; }
+	  
+	  if ( rec->selectstart == HPTERROR || rec->selectstart > selecttime->starttime )
+	    rec->selectstart = selecttime->starttime;
+	  
+	  if ( rec->selectend == HPTERROR || rec->selectend < selecttime->endtime )
+	    rec->selectend = selecttime->endtime;
+	  
+	  /* Shortcut if the entire record is already selected */
+	  if ( rec->starttime >= rec->selectstart && rec->endtime <= rec->selectend )
+	    return 0;
+	  
+	  selecttime = selecttime->next;
+	}
+      
+      select = select->next;
+    }
+  
+  return 0;
+}  /* End of findselectlimits() */
 
 
 /***************************************************************************

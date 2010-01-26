@@ -1,3 +1,6 @@
+2010.025
+	- Fix handling of overlapping selection entries.
+
 2010.015: 
 	- Update libmseed to 2.4.
 	- Add -m option to add a srcname to the selection list, this option 
@@ -11,13 +14,13 @@
 2010.007: 2.2rc
 	- Update to libmseed 2.4dev3.
 	- Use ms_readmsr_main() and pass the selections list pointer which
-        will be used to skip sections in packed files (DMC use).
+	will be used to skip sections in packed files (DMC use).
 	- Use the new Selections facility in libmseed and remove the selection
-        file routines, functionality should be identical.
+	file routines, functionality should be identical.
 
 2009.201: 2.1
 	- Update libmseed to version 2.3, fixes bug with corner case trace
-        list sorting.
+	list sorting.
 
 2009.114: 2.0
 	- Update libmseed to version 2.2.
