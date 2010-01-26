@@ -1,9 +1,11 @@
-2010.025
-	- Fix handling of overlapping selection entries by finding all
-	matching selection entries and calculating maximum extents.
+2010.025: 2.2rc5
+	- Fix handling of overlapping selection entries by finding all matching
+	selection entries and calculating maximum extents.
 	- Make msr_unpack() errors for archive writing fatal errors.
+	- Continue after unpacking errors during trimrecord(), include
+	untrimable record in output.
 
-2010.015: 
+2010.015: 2.2rc4
 	- Update libmseed to 2.4.
 	- Add -m option to add a srcname to the selection list, this option 
 	is effectively a globbing version of -M (which does regex matching).

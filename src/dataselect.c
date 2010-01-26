@@ -459,7 +459,7 @@ writetraces (MSTraceList *mstl)
 	      /* Trim data from the record if new start or end times are specifed */
 	      if ( rec->newstart || rec->newend )
 		{
-		  if ( trimrecord (rec, recordbuf) )
+		  if ( trimrecord (rec, recordbuf) == -1 )
 		    {
 		      rec = rec->next;
 		      continue;
@@ -619,7 +619,7 @@ writetraces (MSTraceList *mstl)
  * times, this routine calculates which samples fit within the new
  * boundaries.
  *
- * Return 0 on success and -1 on failure.
+ * Return 0 on success, -1 on failure and -2 on unpacking errors.
  ***************************************************************************/
 static int
 trimrecord (Record *rec, char *recordbuf)
@@ -669,7 +669,7 @@ trimrecord (Record *rec, char *recordbuf)
   if ( (retcode = msr_unpack(recordbuf, rec->reclen, &msr, 1, verbose-1)) != MS_NOERROR )
     {
       ms_log (2, "Cannot unpack Mini-SEED record: %s\n", ms_errorstr(retcode));
-      return -1;
+      return -2;
     }
   
   if ( verbose > 1 )
