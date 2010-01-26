@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.025
+ * modified 2010.026
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "2.2rc5"
+#define VERSION "2.2rc6"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -357,6 +357,7 @@ writetraces (MSTraceList *mstl)
   char *ab = "ab";
   char *mode;
   char errflag = 0;
+  int rv;
   
   hptime_t hpdelta;
   
@@ -397,9 +398,13 @@ writetraces (MSTraceList *mstl)
   id = mstl->traces;
   
   /* Loop through each MSTraceSeg in the MSTraceList */
-  while ( id && ! errflag )
+  while ( id && ! errflag != 1 )
     {
       seg = id->first;
+      
+      /* Reset error flag for continuation errors */
+      if ( errflag == 2 )
+	errflag = 0;
       
       while ( seg && ! errflag )
 	{
@@ -459,10 +464,20 @@ writetraces (MSTraceList *mstl)
 	      /* Trim data from the record if new start or end times are specifed */
 	      if ( rec->newstart || rec->newend )
 		{
-		  if ( trimrecord (rec, recordbuf) == -1 )
+		  rv = trimrecord (rec, recordbuf);
+		  
+		  if ( rv == -1 )
 		    {
 		      rec = rec->next;
 		      continue;
+		    }
+		  if ( rv == -2 )
+		    {
+		      ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s\n",
+			      rec->offset, rec->flp->infilename);
+		      ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->srcname);
+		      errflag = 2;
+		      break;
 		    }
 		}
 	      
@@ -493,8 +508,10 @@ writetraces (MSTraceList *mstl)
 		  
 		  if ( msr_unpack (recordbuf, rec->reclen, &msr, 0, verbose) != MS_NOERROR )
 		    {
-		      ms_log (2, "Cannot unpack Mini-SEED, cannot write to archive\n");
-		      errflag = 1;
+		      ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s, file changed?\n",
+			      rec->offset, rec->flp->infilename);
+		      ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->srcname);
+		      errflag = 2;
 		      break;
 		    }
 		  else
@@ -605,7 +622,7 @@ writetraces (MSTraceList *mstl)
 	      totalbytesout, totalrecsout);
     }
   
-  return errflag;
+  return (errflag) ? 1 : 0;
 }  /* End of writetraces() */
 
 

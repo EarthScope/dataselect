@@ -1,21 +1,26 @@
-2010.025: 2.2rc5
+2010.026:
+	- When unpacking errors occur during writing to the output files skip
+	to the next channel and emit an ERROR message to help identify the 
+	channel.
+
+2010.025:
 	- Fix handling of overlapping selection entries by finding all matching
 	selection entries and calculating maximum extents.
 	- Make msr_unpack() errors for archive writing fatal errors.
 	- Continue after unpacking errors during trimrecord(), include
 	untrimable record in output.
 
-2010.015: 2.2rc4
+2010.015:
 	- Update libmseed to 2.4.
 	- Add -m option to add a srcname to the selection list, this option 
 	is effectively a globbing version of -M (which does regex matching).
 
-2010.010: 2.2rc3
+2010.010:
 	- readtraces(): do not recalculate record starttime and only generate
 	ASCII time string when needed for printing as small optimizations.
 	- Fix cleanup calls to use ms_readmsr_main().
 
-2010.007: 2.2rc
+2010.007:
 	- Update to libmseed 2.4dev3.
 	- Use ms_readmsr_main() and pass the selections list pointer which
 	will be used to skip sections in packed files (DMC use).
