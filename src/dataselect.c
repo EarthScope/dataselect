@@ -398,7 +398,7 @@ writetraces (MSTraceList *mstl)
   id = mstl->traces;
   
   /* Loop through each MSTraceSeg in the MSTraceList */
-  while ( id && ! errflag != 1 )
+  while ( id && errflag != 1 )
     {
       seg = id->first;
       
