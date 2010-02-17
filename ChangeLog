@@ -1,6 +1,6 @@
 2010.047:
 	- Update libmseed to 2.5 with a fix for sorting out of time order
-	records.
+	MSTraceSeg entries (triggered by out of order records).
 
 2010.026:
 	- When unpacking errors occur during writing to the output files skip
