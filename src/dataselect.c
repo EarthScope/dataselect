@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.026
+ * modified 2010.052
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "2.2rc7"
+#define VERSION "2.2rc8"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -1365,7 +1365,13 @@ readfiles (MSTraceList **ppmstl)
 	  flp->outfilename = flp->infilename;
 	  
 	  infilenamelen = strlen(flp->outfilename) + 6;
-	  flp->infilename = (char *) malloc (infilenamelen);
+	  
+	  if ( ! (flp->infilename = (char *) malloc (infilenamelen)) )
+	    {
+	      ms_log (2, "Cannot allocate memory for input file name\n");
+	      return -1;
+	    }
+	  
 	  snprintf (flp->infilename, infilenamelen, "%s.orig", flp->outfilename);
 	  
 	  if ( rename (flp->outfilename, flp->infilename) )
@@ -1499,7 +1505,12 @@ readfiles (MSTraceList **ppmstl)
 	    }
 	  
 	  /* Create and populate new Record structure */
-	  rec = (Record *) malloc (sizeof(Record));
+	  if ( ! (rec = (Record *) malloc (sizeof(Record))) )
+	    {
+	      ms_log (2, "Cannot allocate memory for Record entry\n");
+	      return -1;
+	    }
+	  
 	  rec->flp = flp;
 	  rec->offset = fpos;
 	  rec->reclen = msr->reclen;
@@ -1601,7 +1612,12 @@ readfiles (MSTraceList **ppmstl)
 		  /* If end time is beyond the boundary create a new Record */
 		  if ( rec->endtime > boundary )
 		    {
-		      newrec = (Record *) malloc (sizeof(Record));
+		      if ( ! (newrec = (Record *) malloc (sizeof(Record))) )
+			{
+			  ms_log (2, "Cannot allocate memory for Record entry");
+			  return -1;
+			}
+		      
 		      memcpy (newrec, rec, sizeof(Record));
 		      
 		      /* Set current Record and next Record new boundary times */
@@ -2158,7 +2174,11 @@ processparam (int argcount, char **argvec)
   /* Compile match and reject patterns */
   if ( matchpattern )
     {
-      match = (regex_t *) malloc (sizeof(regex_t));
+      if ( ! (match = (regex_t *) malloc (sizeof(regex_t))) )
+	{
+	  ms_log (2, "Cannot allocate memory for match expression\n");	  
+	  exit (1);
+	}
       
       if ( regcomp (match, matchpattern, REG_EXTENDED) != 0)
 	{
@@ -2168,7 +2188,11 @@ processparam (int argcount, char **argvec)
   
   if ( rejectpattern )
     {
-      reject = (regex_t *) malloc (sizeof(regex_t));
+      if ( ! (reject = (regex_t *) malloc (sizeof(regex_t))) )
+	{
+	  ms_log (2, "Cannot allocate memory for reject expression\n");
+	  exit (1);
+	}
       
       if ( regcomp (reject, rejectpattern, REG_EXTENDED) != 0)
 	{
@@ -2237,17 +2261,13 @@ addfile (char *filename)
       return -1;
     }
   
-  newlp = (Filelink *) calloc (1, sizeof (Filelink));
-  
-  if ( ! newlp )
+  if ( ! (newlp = (Filelink *) calloc (1, sizeof (Filelink))) )
     {
       ms_log (2, "addfile(): Cannot allocate memory\n");
       return -1;
     }
   
-  newlp->infilename = strdup(filename);
-  
-  if ( ! newlp->infilename )
+  if ( ! (newlp->infilename = strdup(filename)) )
     {
       ms_log (2, "addfile(): Cannot duplicate string\n");
       return -1;
@@ -2341,10 +2361,8 @@ addarchive ( const char *path, const char *layout )
       ms_log (2, "addarchive(): cannot add archive with empty path\n");
       return -1;
     }
-
-  newarch = (Archive *) malloc (sizeof (Archive));
   
-  if ( newarch == NULL )
+  if ( ! (newarch = (Archive *) malloc (sizeof (Archive))) )
     {
       ms_log (2, "addarchive(): cannot allocate memory for new archive definition\n");
       return -1;
@@ -2355,7 +2373,13 @@ addarchive ( const char *path, const char *layout )
   if ( layout )
     pathlayout += strlen (layout);
   
-  newarch->datastream.path = (char *) malloc (pathlayout);
+  if ( ! (newarch->datastream.path = (char *) malloc (pathlayout)) )
+    {
+      ms_log (2, "addarchive(): cannot allocate memory for new archive path\n");
+      if ( newarch )
+        free (newarch);
+      return -1;
+    }
   
   if ( layout )
     snprintf (newarch->datastream.path, pathlayout, "%s/%s", path, layout);
@@ -2364,14 +2388,6 @@ addarchive ( const char *path, const char *layout )
   
   newarch->datastream.idletimeout = 60;
   newarch->datastream.grouproot = NULL;
-  
-  if ( newarch->datastream.path == NULL )
-    {
-      ms_log (2, "addarchive(): cannot allocate memory for new archive path\n");
-      if ( newarch )
-        free (newarch);
-      return -1;
-    }
   
   newarch->next = archiveroot;
   archiveroot = newarch;
@@ -2429,13 +2445,21 @@ readregexfile (char *regexfile, char **pppattern)
       if ( *pppattern )
 	{
 	  newpatternsize = strlen(*pppattern) + strlen(linepattern) + 4;
-	  *pppattern = realloc (*pppattern, newpatternsize);	  
+	  if ( ! (*pppattern = realloc (*pppattern, newpatternsize)) )
+	    {
+	      ms_log (2, "Cannot reallocate memory for regex pattern\n");
+	      return -1;
+	    }
 	  snprintf (*pppattern, newpatternsize, "%s|(%s)", *pppattern, linepattern);
 	}
       else
 	{
 	  newpatternsize = strlen(linepattern) + 3;
-	  *pppattern = realloc (*pppattern, newpatternsize);
+	  if ( ! (*pppattern = realloc (*pppattern, newpatternsize)) )
+	    {
+	      ms_log (2, "Cannot allocate memory for regex pattern\n");
+	      return -1;
+	    }
 	  snprintf (*pppattern, newpatternsize, "(%s)", linepattern);
 	}
     }

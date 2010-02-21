@@ -12,7 +12,7 @@
  * file.  The definition of the groups is implied by the format of the
  * archive.
  *
- * modified: 2009.325
+ * modified: 2010.052
  ***************************************************************************/
 
 #include <stdio.h>
@@ -100,8 +100,13 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
   filename[0] = '\0';
   definition[0] = '\0';
   snprintf (pathformat, sizeof(pathformat), "%s", datastream->path);
-  strparse (pathformat, "/", &fnlist);
-
+  
+  if ( strparse (pathformat, "/", &fnlist) < 0 )
+    {
+      fprintf (stderr, "ds_streamproc(): error parsing path format: '%s'\n", pathformat);
+      return -1;
+    }
+  
   fnptr = fnlist;
 
   /* Special case of an absolute path (first entry is empty) */
@@ -401,6 +406,9 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
   DataStreamGroup *prevgroup   = NULL;
   time_t curtime;
   
+  if ( ! datastream )
+    return NULL;
+  
   searchgroup = datastream->grouproot;
   curtime = time (NULL);
   
@@ -421,22 +429,26 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
 	    {
 	      foundgroup->modtime *= -1;
 	    }
-
+	  
 	  break;
 	}
       
       prevgroup = searchgroup;
       searchgroup = nextgroup;
     }
-
+  
   /* If not found, create a stream entry */
   if ( foundgroup == NULL )
     {
       if ( dsverbose >= 2 )
 	fprintf (stderr, "Creating data stream entry for key %s\n", defkey);
-
-      foundgroup = (DataStreamGroup *) malloc (sizeof (DataStreamGroup));
-
+      
+      if ( ! (foundgroup = (DataStreamGroup *) malloc (sizeof (DataStreamGroup))) )
+	{
+	  fprintf (stderr, "ERROR: Cannot allocate memory for DataStreamGroup\n");
+	  return NULL;
+	}
+      
       foundgroup->defkey = strdup (defkey);
       foundgroup->filed = 0;
       foundgroup->modtime = curtime;
@@ -681,8 +693,8 @@ ds_shutdown (DataStream *datastream)
  * traversed and the memory used is free'd and the list pointer is
  * set to NULL.
  *
- * Returns the number of elements added to the list, or 0 when freeing
- * the linked list.
+ * Returns the number of elements added to the list, 0 when freeing
+ * the linked list and -1 on error.
  ***************************************************************************/
 static int
 strparse (const char *string, const char *delim, strlist **list)
@@ -712,11 +724,21 @@ strparse (const char *string, const char *delim, strlist **list)
 	      del = string + strlen (string);
 	      stop = 1;
 	    }
-
-	  tmplist = (strlist *) malloc (sizeof (strlist));
+	  
+	  if ( ! (tmplist = (strlist *) malloc (sizeof (strlist))) )
+	    {
+	      fprintf (stderr, "ERROR: Cannot allocate memory for string parsing\n");
+	      return -1;
+	    }
+	  
 	  tmplist->next = 0;
-
-	  tmplist->element = (char *) malloc (del - beg + 1);
+	  
+	  if ( ! (tmplist->element = (char *) malloc (del - beg + 1)) )
+	    {
+	      fprintf (stderr, "ERROR: Cannot allocate memory for string parsing\n");
+	      return -1;
+	    }
+	  
 	  strncpy (tmplist->element, beg, (del - beg));
 	  tmplist->element[(del - beg)] = '\0';
 
