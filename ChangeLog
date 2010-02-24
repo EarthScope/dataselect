@@ -1,3 +1,10 @@
+2010.055:
+	- Fix determination of strictest end time when pruning at sample level.
+	- Prune full records when the selected data is duplicated when pruning
+	at the record level.
+	- Use HPTERROR as NULL value for newstart and newend to avoid problems
+	with start/end times at 1970,1,0:0:0 (i.e. hptime == 0).
+
 2010.052:
 	- Add memory allocation tests to better handle out of memory errors.
 

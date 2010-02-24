@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.052
+ * modified 2010.055
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "2.2rc8"
+#define VERSION "2.2rc9"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -462,7 +462,7 @@ writetraces (MSTraceList *mstl)
 		}
 	      
 	      /* Trim data from the record if new start or end times are specifed */
-	      if ( rec->newstart || rec->newend )
+	      if ( rec->newstart != HPTERROR || rec->newend != HPTERROR )
 		{
 		  rv = trimrecord (rec, recordbuf);
 		  
@@ -662,9 +662,9 @@ trimrecord (Record *rec, char *recordbuf)
   etime[0] = '\0';
   
   /* Sanity check for new start/end times */
-  if ( (rec->newstart && rec->newend && rec->newstart >= rec->newend) ||
-       (rec->newstart && (rec->newstart < rec->starttime || rec->newstart >= rec->endtime)) ||
-       (rec->newend && (rec->newend > rec->endtime || rec->newend <= rec->starttime)) )
+  if ( (rec->newstart != HPTERROR && rec->newend != HPTERROR && rec->newstart >= rec->newend) ||
+       (rec->newstart != HPTERROR && (rec->newstart < rec->starttime || rec->newstart >= rec->endtime)) ||
+       (rec->newend != HPTERROR && (rec->newend > rec->endtime || rec->newend <= rec->starttime)) )
     {
       ms_log (2, "Problem with new start/end record bound times.\n");
       ms_recsrcname (recordbuf, srcname, 1);
@@ -673,9 +673,9 @@ trimrecord (Record *rec, char *recordbuf)
       ms_hptime2seedtimestr (rec->starttime, stime, 1);
       ms_hptime2seedtimestr (rec->endtime, etime, 1);
       ms_log (2, "       Start: %s       End: %s\n", stime, etime);
-      if ( rec->newstart == 0 ) strcpy (stime, "NONE");
+      if ( rec->newstart == HPTERROR ) strcpy (stime, "NONE");
       else ms_hptime2seedtimestr (rec->newstart, stime, 1);
-      if ( rec->newend == 0 ) strcpy (etime, "NONE");
+      if ( rec->newend == HPTERROR ) strcpy (etime, "NONE");
       else ms_hptime2seedtimestr (rec->newend, etime, 1);
       ms_log (2, " Start bound: %-24s End bound: %-24s\n", stime, etime);
       
@@ -696,9 +696,9 @@ trimrecord (Record *rec, char *recordbuf)
       ms_hptime2seedtimestr (rec->starttime, stime, 1);
       ms_hptime2seedtimestr (rec->endtime, etime, 1);
       ms_log (1, "       Start: %s        End: %s\n", stime, etime);
-      if ( rec->newstart == 0 ) strcpy (stime, "NONE");
+      if ( rec->newstart == HPTERROR ) strcpy (stime, "NONE");
       else ms_hptime2seedtimestr (rec->newstart, stime, 1);
-      if ( rec->newend == 0 ) strcpy (etime, "NONE");
+      if ( rec->newend == HPTERROR ) strcpy (etime, "NONE");
       else ms_hptime2seedtimestr (rec->newend, etime, 1);
       ms_log (1, " Start bound: %-24s  End bound: %-24s\n", stime, etime);
     }
@@ -707,7 +707,7 @@ trimrecord (Record *rec, char *recordbuf)
   hpdelta = ( msr->samprate ) ? (hptime_t) (HPTMODULUS / msr->samprate) : 0;
   
   /* Remove samples from the beginning of the record */
-  if ( rec->newstart && hpdelta )
+  if ( rec->newstart != HPTERROR && hpdelta )
     {
       hptime_t newstarttime;
       
@@ -743,7 +743,7 @@ trimrecord (Record *rec, char *recordbuf)
     }
   
   /* Remove samples from the end of the record */
-  if ( rec->newend && hpdelta )
+  if ( rec->newend != HPTERROR && hpdelta )
     {
       hptime_t newendtime;
       
@@ -995,8 +995,8 @@ findcoverage (MSTraceList *mstl, MSTraceID *targetid, MSTraceSeg *targetseg,
 			}
 		      
 		      /* Determine effective record start and end times */
-		      effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
-		      effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
+		      effstarttime = ( rec->newstart != HPTERROR ) ? rec->newstart : rec->starttime;
+		      effendtime = ( rec->newend != HPTERROR ) ? rec->newend : rec->endtime;
 		      
 		      /* Create a new segment if a break in the time-series is detected */
 		      if ( cmst )
@@ -1091,8 +1091,17 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
       while ( cmst )
 	{
 	  /* Determine effective record start and end times for comparison */
-	  effstarttime = ( rec->newstart ) ? rec->newstart : rec->starttime;
-	  effendtime = ( rec->newend ) ? rec->newend : rec->endtime;
+	  effstarttime = ( rec->newstart != HPTERROR ) ? rec->newstart : rec->starttime;
+	  effendtime = ( rec->newend != HPTERROR ) ? rec->newend : rec->endtime;
+	  
+	  /* For non-sample pruning use selection start and end for pruning if they are stricter */
+	  if ( prunedata != 's' )
+	    {
+	      if ( rec->selectstart != HPTERROR && rec->selectstart > effstarttime )
+		effstarttime = rec->selectstart;
+	      if ( rec->selectend != HPTERROR && rec->selectend < effendtime )
+		effendtime = rec->selectend;
+	    }
 	  
 	  /* Mark Record if it is completely overlaped by the coverage including tolerance */
 	  if ( effstarttime >= (cmst->starttime - hptimetol) &&
@@ -1155,7 +1164,7 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 		  rec->reclen = 0;
 		  modcount++;
 		}
-	    }
+	    } /* Done pruning at sample level */
 	  
 	  cmst = cmst->next;
 	}
@@ -1234,7 +1243,7 @@ reconcile_tracetimes (MSTraceList *mstl)
 	  if ( first )
 	    {
 	      /* Use the new boundary start time if set and sane */
-	      if ( first->newstart && first->newstart > first->starttime )
+	      if ( first->newstart != HPTERROR && first->newstart > first->starttime )
 		seg->starttime = first->newstart;
 	      /* Otherwise use the record start time */
 	      else
@@ -1245,7 +1254,7 @@ reconcile_tracetimes (MSTraceList *mstl)
 	  if ( last )
 	    {
 	      /* Use the new boundary end time if set and sane */
-	      if ( last->newend && last->newend < last->endtime )
+	      if ( last->newend != HPTERROR && last->newend < last->endtime )
 		seg->endtime = last->newend;
 	      /* Otherwise use the record end time */
 	      else
@@ -1519,8 +1528,8 @@ readfiles (MSTraceList **ppmstl)
 	  rec->quality = msr->dataquality;
 	  rec->selectstart = HPTERROR;
 	  rec->selectend = HPTERROR;
-	  rec->newstart = 0;
-	  rec->newend = 0;
+	  rec->newstart = HPTERROR;
+	  rec->newend = HPTERROR;
 	  rec->prev = 0;
 	  rec->next = 0;
 	  
@@ -1529,20 +1538,20 @@ readfiles (MSTraceList **ppmstl)
 	  newrecmap.first = rec;
 	  newrecmap.last = rec;
 	  
+	  /* If record is not completely selected search for joint selection limits */
+	  if ( matchstp && ! (matchstp->starttime <= recstarttime && matchstp->endtime >= recendtime) )
+	    {
+	      if ( findselectlimits (matchsp, srcname, recstarttime, recendtime, rec) )
+		{
+		  ms_log (2, "Problem in findselectlimits(), please report\n");
+		}
+	    }
+	  
 	  /* If pruning at the sample level trim right at the start/end times */
 	  if ( prunedata == 's' )
 	    {
 	      hptime_t seltime;
-	      
-	      /* If record is not completely selected search for joint selection limits */
-	      if ( matchstp && ! (matchstp->starttime <= recstarttime && matchstp->endtime >= recendtime) )
-		{
-		  if ( findselectlimits (matchsp, srcname, recstarttime, recendtime, rec) )
-		    {
-		      ms_log (2, "Problem in findselectlimits(), please report\n");
-		    }
-		}
-	      
+	      	      
 	      /* Determine strictest start time (selection time or global start time) */
 	      if ( starttime != HPTERROR && rec->selectstart != HPTERROR )
 		seltime = ( starttime > rec->selectstart ) ? starttime : rec->selectstart;
@@ -1559,7 +1568,7 @@ readfiles (MSTraceList **ppmstl)
 	      
 	      /* Determine strictest end time (selection time or global end time) */
 	      if ( endtime != HPTERROR && rec->selectend != HPTERROR )
-		seltime = ( endtime > rec->selectend ) ? endtime : rec->selectend;
+		seltime = ( endtime < rec->selectend ) ? endtime : rec->selectend;
 	      else if ( rec->selectend != HPTERROR )
 		seltime = rec->selectend;
 	      else
@@ -1581,7 +1590,7 @@ readfiles (MSTraceList **ppmstl)
 	      
 	      for (;;)
 		{
-		  effstarttime = (rec->newstart) ? rec->newstart : rec->starttime;
+		  effstarttime = (rec->newstart != HPTERROR) ? rec->newstart : rec->starttime;
 		  ms_hptime2btime (effstarttime, &startbtime);
 		  
 		  /* Determine next split boundary */
@@ -1844,15 +1853,21 @@ printrecordmap (RecordMap *recmap, flag details)
       
       ms_hptime2seedtimestr (rec->starttime, stime, 1);
       ms_hptime2seedtimestr (rec->endtime, etime, 1);
-      ms_log (0, "       Start: %s       End: %s\n", stime, etime);
+      ms_log (0, "        Start: %s       End: %s\n", stime, etime);
 
       if ( details )
 	{
-	  if ( rec->newstart == 0 ) strcpy (stime, "NONE");
+	  if ( rec->newstart == HPTERROR ) strcpy (stime, "NONE");
 	  else ms_hptime2seedtimestr (rec->newstart, stime, 1);
-	  if ( rec->newend == 0 ) strcpy (etime, "NONE" );
+	  if ( rec->newend == HPTERROR ) strcpy (etime, "NONE" );
 	  else ms_hptime2seedtimestr (rec->newend, etime, 1);
-	  ms_log (0, " Start bound: %-24s End bound: %-24s\n", stime, etime);
+	  ms_log (0, "  Start bound: %-24s  End bound: %-24s\n", stime, etime);
+	  
+	  if ( rec->selectstart == HPTERROR ) strcpy (stime, "NONE");
+	  else ms_hptime2seedtimestr (rec->selectstart, stime, 1);
+	  if ( rec->selectend == HPTERROR ) strcpy (etime, "NONE" );
+	  else ms_hptime2seedtimestr (rec->selectend, etime, 1);
+	  ms_log (0, " Select start: %-24s Select end: %-24s\n", stime, etime);
 	}
       
       rec = rec->next;
