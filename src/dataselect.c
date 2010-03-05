@@ -362,10 +362,13 @@ writetraces (MSTraceList *mstl)
   hptime_t hpdelta;
   
   MSTraceID *id;
+  MSTraceID *groupid;
   MSTraceSeg *seg;
   
+  RecordMap *groupmap;
   RecordMap *recmap;
   Record *rec;
+  Record *recnext;
   Filelink *flp;
   Archive *arch;
   
@@ -395,180 +398,262 @@ writetraces (MSTraceList *mstl)
         }
     }
   
+  /* Re-link records into write lists */
   id = mstl->traces;
+  groupid = id;
+  while ( id )
+    {
+      /* Determine if this is a new group */
+      if ( groupid != id )
+	{
+	  /* If data was pruned group by network, station, location or channel */
+	  if ( prunedata )
+	    {
+	      if ( strcmp (id->network, targetid->network) || strcmp (id->station, targetid->station) ||
+		   strcmp (id->location, targetid->location) || strcmp (id->channel, targetid->channel) )
+		{
+		  groupid = id;
+		}
+	    }
+	  else
+	    {
+	      groupid = id;
+	    }
+	}
+      
+      /* Allocate group ID RecordMap */
+      if ( ! groupid->prvtptr )
+	{
+	  if ( ! (id->prvtptr = calloc (1, sizeof(RecordMap))) )
+	    {
+	      ms_log (2, "writetraces(): Cannot allocate memory\n");
+	      return 1;
+	    }
+	  groupmap = (RecordMap *) id->prvtptr;
+	}
+      
+      seg = id->first;
+      while ( seg )
+	{
+	  recmap = (RecordMap *) seg->prvtptr;
+	  rec = recmap->first;
+	  while ( rec && ! errflag )
+	    {
+	      recnext = rec->next;
+	      
+	      /* Skip marked (pre-identified as non-contributing) records */
+	      if ( rec->reclen == 0 )
+		{
+		  rec = recnext;
+		  continue;
+		}
+	      
+	      /* Add record to group ID write list */
+	      if ( ! groupmap->first )
+		{
+		  groupmap->first = rec;
+		  groupmap->last = rec;
+		  rec->prev = 0;
+		  rec->next = 0;
+		  groupmap->recordcnt = 1;
+		}
+	      else
+		{
+		  groupmap->last->next = rec;
+		  rec->prev = groupmap->last;
+		  rec->next = 0;
+		  groupmap->recordcnt++;
+		}
+	      
+	      rec = recnext;
+	    } /* Done looping through Records in the RecordMap */
+	  
+	  /* Free segment RecordMap and cauterize */
+	  if ( seg->prvtptr )
+	    free (seg->prvtptr);
+	  seg->prvtptr = 0;
+	  
+	  seg = seg->next;
+	} /* Done looping through MSTraceSegs in the MSTraceID */
+      
+      id = id->next;
+    } /* Done looping through MSTraceIDs the MSTraceList */  
   
-  /* Loop through each MSTraceSeg in the MSTraceList */
+  /* Loop through MSTraceList and write records in write lists */
+  id = mstl->traces;
   while ( id && errflag != 1 )
     {
-      seg = id->first;
+      /* Skip when no write list is present */
+      if ( id->prvtptr == 0 )
+	{
+	  id = id->next;
+	  continue;
+	}
       
       /* Reset error flag for continuation errors */
       if ( errflag == 2 )
 	errflag = 0;
       
-      while ( seg && ! errflag )
+      recmap = (RecordMap *) id->prvtptr;
+      rec = recmap->first;
+      
+      /* Sort record list if data has been pruned and grouped */
+      if ( prunedata )
 	{
-	  recmap = (RecordMap *) seg->prvtptr;
-	  rec = recmap->first;
+          //CHAD, sort record list if prundata
 	  
-	  /* Loop through each Record in the MSTraceSeg's RecordMap.
-	   * After records are read from the input files, perform any
-	   * pre-identified pruning before writing data back out */
-	  while ( rec && ! errflag )
+	}
+      
+      /* Loop through each Record in the MSTraceSeg's RecordMap.
+       * After records are read from the input files, perform any
+       * pre-identified pruning before writing data back out */
+      while ( rec && ! errflag )
+	{
+	  /* Make sure the record buffer is large enough */
+	  if ( rec->reclen > sizeof(recordbuf) )
 	    {
-	      /* Skip marked (pre-identified as non-contributing) records */
-	      if ( rec->reclen == 0 )
+	      ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
+		      rec->reclen, (long long unsigned int) sizeof(recordbuf));
+	      errflag = 1;
+	      break;
+	    }
+	      
+	  /* Open file for reading if not already done */
+	  if ( ! rec->flp->infp )
+	    if ( ! (rec->flp->infp = fopen (rec->flp->infilename, "rb")) )
+	      {
+		ms_log (2, "Cannot open '%s' for reading: %s\n",
+			rec->flp->infilename, strerror(errno));
+		errflag = 1;
+		break;
+	      }
+	  
+	  /* Seek to record offset */
+	  if ( lmp_fseeko (rec->flp->infp, rec->offset, SEEK_SET) == -1 )
+	    {
+	      ms_log (2, "Cannot seek in '%s': %s\n",
+		      rec->flp->infilename, strerror(errno));
+	      errflag = 1;
+	      break;
+	    }
+	  
+	  /* Read record into buffer */
+	  if ( fread (recordbuf, rec->reclen, 1, rec->flp->infp) != 1 )
+	    {
+	      ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
+		      rec->reclen, (long long unsigned)rec->offset,
+		      rec->flp->infilename);
+	      errflag = 1;
+	      break;
+	    }
+	  
+	  /* Trim data from the record if new start or end times are specifed */
+	  if ( rec->newstart != HPTERROR || rec->newend != HPTERROR )
+	    {
+	      rv = trimrecord (rec, recordbuf);
+	      
+	      if ( rv == -1 )
 		{
 		  rec = rec->next;
 		  continue;
 		}
-	      
-	      /* Make sure the record buffer is large enough */
-	      if ( rec->reclen > sizeof(recordbuf) )
+	      if ( rv == -2 )
 		{
-		  ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
-			  rec->reclen, (long long unsigned int) sizeof(recordbuf));
+		  ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s\n",
+			  rec->offset, rec->flp->infilename);
+		  ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->srcname);
+		  errflag = 2;
+		  break;
+		}
+	    }
+	  
+	  /* Re-stamp quality indicator if specified */
+	  if ( restampqind )
+	    {
+	      if ( verbose > 1 )
+		ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
+	      
+	      *(recordbuf + 6) = restampqind;
+	    }
+	  
+	  /* Write to a single output file if specified */
+	  if ( ofp )
+	    {
+	      if ( fwrite (recordbuf, rec->reclen, 1, ofp) != 1 )
+		{
+		  ms_log (2, "Cannot write to '%s'\n", outputfile);
 		  errflag = 1;
 		  break;
 		}
+	    }
+	  
+	  /* Write to Archive(s) if specified */
+	  if ( archiveroot )
+	    {
+	      MSRecord *msr = 0;
 	      
-	      /* Open file for reading if not already done */
-	      if ( ! rec->flp->infp )
-		if ( ! (rec->flp->infp = fopen (rec->flp->infilename, "rb")) )
+	      if ( msr_unpack (recordbuf, rec->reclen, &msr, 0, verbose) != MS_NOERROR )
+		{
+		  ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s, file changed?\n",
+			  rec->offset, rec->flp->infilename);
+		  ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->srcname);
+		  errflag = 2;
+		  break;
+		}
+	      else
+		{
+		  arch = archiveroot;
+		  while ( arch )
+		    {
+		      ds_streamproc (&arch->datastream, msr, 0, verbose-1);
+		      arch = arch->next;
+		    }
+		}
+	      
+	      msr_free (&msr);
+	    }
+	  
+	  /* Open original file for output if replacing input and write */
+	  if ( replaceinput )
+	    {
+	      if ( ! rec->flp->outfp )
+		if ( ! (rec->flp->outfp = fopen (rec->flp->outfilename, "wb")) )
 		  {
-		    ms_log (2, "Cannot open '%s' for reading: %s\n",
-			    rec->flp->infilename, strerror(errno));
+		    ms_log (2, "Cannot open '%s' for writing: %s\n",
+			    rec->flp->outfilename, strerror(errno));
 		    errflag = 1;
 		    break;
 		  }
 	      
-	      /* Seek to record offset */
-	      if ( lmp_fseeko (rec->flp->infp, rec->offset, SEEK_SET) == -1 )
+	      if ( fwrite (recordbuf, rec->reclen, 1, rec->flp->outfp) != 1 )
 		{
-		  ms_log (2, "Cannot seek in '%s': %s\n",
-			  rec->flp->infilename, strerror(errno));
+		  ms_log (2, "Cannot write to '%s'\n", rec->flp->outfilename);
 		  errflag = 1;
 		  break;
 		}
-	      
-	      /* Read record into buffer */
-	      if ( fread (recordbuf, rec->reclen, 1, rec->flp->infp) != 1 )
-		{
-		  ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
-			  rec->reclen, (long long unsigned)rec->offset,
-			  rec->flp->infilename);
-		  errflag = 1;
-		  break;
-		}
-	      
-	      /* Trim data from the record if new start or end times are specifed */
-	      if ( rec->newstart != HPTERROR || rec->newend != HPTERROR )
-		{
-		  rv = trimrecord (rec, recordbuf);
-		  
-		  if ( rv == -1 )
-		    {
-		      rec = rec->next;
-		      continue;
-		    }
-		  if ( rv == -2 )
-		    {
-		      ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s\n",
-			      rec->offset, rec->flp->infilename);
-		      ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->srcname);
-		      errflag = 2;
-		      break;
-		    }
-		}
-	      
-	      /* Re-stamp quality indicator if specified */
-	      if ( restampqind )
-		{
-		  if ( verbose > 1 )
-		    ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
-		  
-		  *(recordbuf + 6) = restampqind;
-		}
-	      
-	      /* Write to a single output file if specified */
-	      if ( ofp )
-		{
-		  if ( fwrite (recordbuf, rec->reclen, 1, ofp) != 1 )
-		    {
-		      ms_log (2, "Cannot write to '%s'\n", outputfile);
-		      errflag = 1;
-		      break;
-		    }
-		}
-	      
-	      /* Write to Archive(s) if specified */
-	      if ( archiveroot )
-		{
-		  MSRecord *msr = 0;
-		  
-		  if ( msr_unpack (recordbuf, rec->reclen, &msr, 0, verbose) != MS_NOERROR )
-		    {
-		      ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s, file changed?\n",
-			      rec->offset, rec->flp->infilename);
-		      ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->srcname);
-		      errflag = 2;
-		      break;
-		    }
-		  else
-		    {
-		      arch = archiveroot;
-		      while ( arch )
-			{
-			  ds_streamproc (&arch->datastream, msr, 0, verbose-1);
-			  arch = arch->next;
-			}
-		    }
-		  
-		  msr_free (&msr);
-		}
-	      
-	      /* Open original file for output if replacing input and write */
-	      if ( replaceinput )
-		{
-		  if ( ! rec->flp->outfp )
-		    if ( ! (rec->flp->outfp = fopen (rec->flp->outfilename, "wb")) )
-		      {
-			ms_log (2, "Cannot open '%s' for writing: %s\n",
-				rec->flp->outfilename, strerror(errno));
-			errflag = 1;
-			break;
-		      }
-		  
-		  if ( fwrite (recordbuf, rec->reclen, 1, rec->flp->outfp) != 1 )
-		    {
-		      ms_log (2, "Cannot write to '%s'\n", rec->flp->outfilename);
-		      errflag = 1;
-		      break;
-		    }
-		}
-	      
-	      /* Update file entry time stamps and counts */
-	      if ( ! rec->flp->earliest || (rec->flp->earliest > rec->starttime) )
-		{
-		  rec->flp->earliest = rec->starttime;
-		}
-	      if ( ! rec->flp->latest || (rec->flp->latest < rec->endtime) )
-		{
-		  hpdelta = ( seg->samprate ) ? (hptime_t) (HPTMODULUS / seg->samprate) : 0;
-		  rec->flp->latest = rec->endtime + hpdelta;
-		}
-	      
-	      rec->flp->byteswritten += rec->reclen;
-	      
-	      totalrecsout++;
-	      totalbytesout += rec->reclen;
-	      
-	      rec = rec->next;
-	    } /* Done looping through Records in the RecordMap */
+	    }
 	  
-	  seg = seg->next;
-	} /* Done looping through MSTraceSegs in the MSTraceID */
+	  /* Update file entry time stamps and counts */
+	  if ( ! rec->flp->earliest || (rec->flp->earliest > rec->starttime) )
+	    {
+	      rec->flp->earliest = rec->starttime;
+	    }
+	  if ( ! rec->flp->latest || (rec->flp->latest < rec->endtime) )
+	    {
+	      CHAD, we don't have a seg here, is hpdelta needed?
 
+	      hpdelta = ( seg->samprate ) ? (hptime_t) (HPTMODULUS / seg->samprate) : 0;
+	      rec->flp->latest = rec->endtime + hpdelta;
+	    }
+	  
+	  rec->flp->byteswritten += rec->reclen;
+	  
+	  totalrecsout++;
+	  totalbytesout += rec->reclen;
+	  
+	  rec = rec->next;
+	} /* Done looping through Records in the RecordMap */
+      
       id = id->next;
     } /* Done looping through MSTraceIDs the MSTraceList */
   
