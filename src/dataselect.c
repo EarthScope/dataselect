@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.055
+ * modified 2010.063
  ***************************************************************************/
 
 /***************************************************************************
@@ -47,7 +47,7 @@
  * with (same channel and adjacent in time).  If the record is found
  * to fit with a specific MSTraceSeg its coverage will be added to the
  * MSTraceSeg information otherwise a new MSTraceSeg is created and
- * added to the MSTraceGroup.
+ * added to the MSTraceList.
  *
  * Each MSTraceSeg has an associated RecordMap which includes a list of
  * Records.  A Record structure is not the actual data record itself
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "2.2rc9"
+#define VERSION "2.2rc10"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -301,8 +301,8 @@ setofilelimit (int limit)
 /***************************************************************************
  * processtraces:
  *
- * Process all MSTrace entries in the global MSTraceGroups by first
- * pruning them and then writing out the remaining data.
+ * Process all data represented by the MSTraceList by first pruning
+ * them and then writing out the remaining data.
  *
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
@@ -324,7 +324,7 @@ processtraces (MSTraceList *mstl)
 	return -1;
     }
   
-  /* Write all MSTrace associated records to output file(s) */
+  /* Write all MSTraceSeg associated records to output file(s) */
   if ( writetraces (mstl) )
     return -1;
   
@@ -335,10 +335,10 @@ processtraces (MSTraceList *mstl)
 /***************************************************************************
  * writetraces():
  *
- * Write all MSTrace associated records to output file(s).  If an output
- * file is specified all records will be written to it, otherwise
- * records will be written to the original files and (optionally)
- * backups of the original files will remain.
+ * Write all MSTraceSeg associated records to output file(s).  If an
+ * output file is specified all records will be written to it,
+ * otherwise records will be written to the original files and
+ * (optionally) backups of the original files will remain.
  * 
  * This routine will also call trimrecord() to trim a record when data
  * suturing is requested.  Record trimming is triggered when
@@ -800,12 +800,12 @@ record_handler (char *record, int reclen, void *handlerdata)
  * prunetraces():
  *
  * Prune all redundant data from the RecordMap entries associated with
- * the specified MSTraces.
+ * the specified MSTraceSegs.
  *
- * For each MSTrace determine the coverage of the RecordMap associated
- * with each overlapping, higher-priority MSTrace using findcoverage().
+ * For each MSTraceSeg determine the coverage of the RecordMap associated
+ * with each overlapping, higher-priority MSTraceSeg using findcoverage().
  * If some higher-priority overlap was determined to exist modify the
- * RecordMap of the MSTrace in question to mark the overlapping data
+ * RecordMap of the MSTraceSeg in question to mark the overlapping data
  * using trimtrace().
  *
  * Return 0 on success and -1 on failure.
@@ -1181,10 +1181,10 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
  *
  * Reconcile the start and end times of the traces in a specified
  * trace group with the list of records in an associated record map.
- * In other words, set the start and end times of each MSTrace in the
- * MSTraceGroup according to the start time of the first and end time
- * of the last contributing records in the associated record map; this
- * should be preformed after the pruning process which could mark
+ * In other words, set the start and end times of each MSTraceSeg in
+ * the MSTraceList according to the start time of the first and end
+ * time of the last contributing records in the associated record map;
+ * this should be preformed after the pruning process which could mark
  * complete records as pruned (non-contributing).
  *
  * Returns 0 on success and -1 on error.
@@ -1239,7 +1239,7 @@ reconcile_tracetimes (MSTraceList *mstl)
 	      rec = rec->prev;
 	    }
 	  
-	  /* Set a new MSTrace start time */
+	  /* Set a new MSTraceSeg start time */
 	  if ( first )
 	    {
 	      /* Use the new boundary start time if set and sane */
@@ -1250,7 +1250,7 @@ reconcile_tracetimes (MSTraceList *mstl)
 		seg->starttime = first->starttime;
 	    }
 	  
-	  /* Set a new MSTrace end time */
+	  /* Set a new MSTraceSeg end time */
 	  if ( last )
 	    {
 	      /* Use the new boundary end time if set and sane */
@@ -1486,9 +1486,9 @@ readfiles (MSTraceList **ppmstl)
 	  
 	  /* Determine where the record fit with this MSTraceSeg
 	   * whence:
-	   * 0 = New MSTrace
-	   * 1 = End of MSTrace
-	   * 2 = Beginning of MSTrace
+	   *   0 = New MSTrace
+	   *   1 = End of MSTrace
+	   *   2 = Beginning of MSTrace
 	   */
 	  whence = 0;
 	  if ( seg->prvtptr )
@@ -1681,7 +1681,7 @@ readfiles (MSTraceList **ppmstl)
 	      /* Increment reordered count */
 	      flp->reordercount++;
 	    }
-	  /* First Record(s) for this MSTrace, allocate RecordMap */
+	  /* First Record(s) for this MSTraceSeg, allocate RecordMap */
 	  else
 	    {
 	      if ( seg->prvtptr )
@@ -1769,7 +1769,7 @@ printmodsummary (flag nomods)
 /***************************************************************************
  * printtracemap():
  *
- * Print record map for each MSTrace to stdout.
+ * Print record map for each MSTraceSeg to stdout.
  ***************************************************************************/
 static void
 printtracemap (MSTraceList *mstl)
@@ -1808,7 +1808,7 @@ printtracemap (MSTraceList *mstl)
 	  
 	  if ( ! seg->prvtptr )
 	    {
-	      ms_log (2, "No record map associated with this MSTrace.\n");
+	      ms_log (2, "No record map associated with this MSTraceSeg.\n");
 	    }
 	  else
 	    {
