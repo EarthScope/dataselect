@@ -829,7 +829,7 @@ trimrecord (Record *rec, char *recordbuf)
     {
       hptime_t newendtime;
       
-      /* Determine new start time and the number of samples to trim */
+      /* Determine new end time and the number of samples to trim */
       trimsamples = 0;
       newendtime = rec->endtime;
       
@@ -1176,14 +1176,11 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 	  effstarttime = ( rec->newstart != HPTERROR ) ? rec->newstart : rec->starttime;
 	  effendtime = ( rec->newend != HPTERROR ) ? rec->newend : rec->endtime;
 	  
-	  /* For non-sample pruning use selection start and end for pruning if they are stricter */
-	  if ( prunedata != 's' )
-	    {
-	      if ( rec->selectstart != HPTERROR && rec->selectstart > effstarttime )
-		effstarttime = rec->selectstart;
-	      if ( rec->selectend != HPTERROR && rec->selectend < effendtime )
-		effendtime = rec->selectend;
-	    }
+	  /* Use selection start and end for pruning if they are stricter */
+	  if ( rec->selectstart != HPTERROR && rec->selectstart > effstarttime )
+	    effstarttime = rec->selectstart;
+	  if ( rec->selectend != HPTERROR && rec->selectend < effendtime )
+	    effendtime = rec->selectend;
 	  
 	  /* Mark Record if it is completely overlaped by the coverage including tolerance */
 	  if ( effstarttime >= (cmst->starttime - hptimetol) &&

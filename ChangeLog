@@ -1,5 +1,7 @@
 2010.064:
-	- Sort output record list on time when data has been pruned.
+	- Time sort output record list when data has been pruned.
+	- Prune full records when the selected data is duplicated when pruning
+        at the samples level in addition to the record level.
 
 2010.055:
 	- Fix determination of strictest end time when pruning at sample level.
