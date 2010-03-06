@@ -186,6 +186,7 @@ static void printrecordmap (RecordMap *recmap, flag details);
 static int findselectlimits (Selections *select, char *srcname,
 			     hptime_t starttime, hptime_t endtime, Record *rec);
 static int sortrecmap (RecordMap *recmap);
+static int recordcmp (Record *rec1, Record *rec2);
 
 static int  processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
@@ -499,8 +500,7 @@ writetraces (MSTraceList *mstl)
       /* Sort record list if data has been pruned and grouped */
       if ( prunedata )
 	{
-          //CHAD, sort record list if prundata
-	  
+          sortrecmap (recmap);
 	}
       
       /* Loop through each Record in the write list RecordMap.
@@ -2017,20 +2017,14 @@ findselectlimits (Selections *select, char *srcname, hptime_t starttime,
 static int
 sortrecmap (RecordMap *recmap)
 {
-  CHAD, MSTrace needs to be Record
-  CHAD, need to set compare function to compare starttimes.
-
-  MSTrace *p, *q, *e, *top, *tail;
+  Record *p, *q, *e, *top, *tail;
   int nmerges;
   int insize, psize, qsize, i;
   
-  if ( ! mstg )
+  if ( ! recmap )
     return -1;
   
-  if ( ! mstg->traces )
-    return 0;
-  
-  top = mstg->traces;
+  top = recmap->first;
   insize = 1;
   
   for (;;)
@@ -2071,7 +2065,7 @@ sortrecmap (RecordMap *recmap)
                 {  /* q is empty; e must come from p. */
                   e = p; p = p->next; psize--;
                 }
-              else if ( mst_groupsort_cmp (p, q, quality) <= 0 )
+              else if ( recordcmp (p, q) <= 0 )
                 {  /* First element of p is lower (or same), e must come from p. */
                   e = p; p = p->next; psize--;
                 }
@@ -2098,8 +2092,9 @@ sortrecmap (RecordMap *recmap)
       /* If we have done only one merge, we're finished. */
       if ( nmerges <= 1 )   /* allow for nmerges==0, the empty list case */
         {
-          mstg->traces = top;
-          
+          recmap->first = top;
+          recmap->last = tail;
+	  
           return 0;
         }
       
@@ -2107,6 +2102,36 @@ sortrecmap (RecordMap *recmap)
       insize *= 2;
     }
 }  /* End of sortrecmap() */
+
+
+/***************************************************************************
+ * recordcmp():
+ *
+ * Compare the start times of each Record for the purposes of sorting
+ * a RecordMap.
+ *
+ * Return 1 if rec1 is "greater" than rec2, otherwise return 0.
+ ***************************************************************************/
+static int
+recordcmp (Record *rec1, Record *rec2)
+{
+  hptime_t *start1;
+  hptime_t *start2;
+  
+  if ( ! rec1 || ! rec2 )
+    return -1;
+  
+  /* Determine effective start times */
+  start1 = ( rec1->newstart != HPTERROR ) ? &(rec1->newstart) : &(rec1->starttime);
+  start2 = ( rec2->newstart != HPTERROR ) ? &(rec2->newstart) : &(rec2->starttime);
+  
+  if ( *start1 > *start2 )
+    {
+      return 1;
+    }
+  
+  return 0;
+}  /* End of recordcmp() */
 
 
 /***************************************************************************
