@@ -1,4 +1,4 @@
-.TH DATASELECT 2010/01/15
+.TH DATASELECT 2010/03/09
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -76,7 +76,9 @@ quality indicator: (highest) Q > D > R (lowest).
 Limit processing to Mini-SEED records that match a selection in the
 specified file.  The selection file contains parameters to match the
 network, station, location, channel, quality and time range for input
-records.  For more details see the \fBSELECTION FILE\fR section below.
+records.  As a special case, specifying "-" will result in selection
+lines being read from stdin.  For more details see the \fBSELECTION
+FILE\fR section below.
 
 .IP "-ts \fItime\fP"
 Limit processing to Mini-SEED records that start after or contain
