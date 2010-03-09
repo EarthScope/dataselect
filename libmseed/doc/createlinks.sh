@@ -125,3 +125,9 @@ LIST="mstl_printsynclist.3 mstl_printgaplist.3"
 for link in $LIST ; do
     ln -s $ORIG $link
 done
+
+ORIG=ms_selection.3
+LIST="ms_freeselections.3 ms_addselect.3 ms_addselect_comp.3 ms_matchselect.3 ms_readselectionsfile.3 ms_printselections.3"
+for link in $LIST ; do
+    ln -s $ORIG $link
+done

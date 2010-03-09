@@ -1,3 +1,7 @@
+2010.068: 2.5.1
+	- Allow file name for ms_readselectionfile() to be "-" and read
+	stdin as a special case.
+
 2010.047: 2.5
 	- Fix tracking of first and last MSTraceSeg entries in mstl_addmsr().
 	- Make the non-fatal Steim integrity failure and sample mismatch log

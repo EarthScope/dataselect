@@ -1,7 +1,11 @@
+2010.068: 3.0
+	- Update libmseed to 2.5.1.
+	- Allow selection file to be "-" to read selection lines from stdin.
+
 2010.064:
 	- Time sort output record list when data has been pruned.
 	- Prune full records when the selected data is duplicated when pruning
-        at the sample level in addition to the record level.
+	at the sample level in addition to the record level.
 
 2010.055:
 	- Fix determination of strictest end time when pruning at sample level.

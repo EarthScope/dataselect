@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.064
+ * modified 2010.068
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "2.2rc10"
+#define VERSION "3.0"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -2456,6 +2456,11 @@ getoptval (int argcount, char **argvec, int argopt)
   
   /* Special case of '-o -' usage */
   if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-o") == 0 )
+    if ( strcmp (argvec[argopt+1], "-") == 0 )
+      return argvec[argopt+1];
+  
+  /* Special case of '-s -' usage */
+  if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-s") == 0 )
     if ( strcmp (argvec[argopt+1], "-") == 0 )
       return argvec[argopt+1];
   
