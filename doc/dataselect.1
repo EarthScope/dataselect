@@ -1,4 +1,4 @@
-.TH DATASELECT 2010/03/09
+.TH DATASELECT 2010/03/12
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -162,6 +162,12 @@ span the split boundary (day, hour or minute) the record will be split
 by duplicating the record and trimming both records such they are
 continous across the boundaries.  Both of the records will have the
 same record number.
+
+.IP "-rls         "
+Split output files on record length changes by adding integer suffixes
+to the file names.  This option only works when writing output files
+using the \fI-A\fP argument (or a pre-defined layout).  Suffixes are
+in the form of ".#" where the # is an integer starting at 1.
 
 .IP "-Q DRQM      "
 Change the data quality indicator for all output records to the

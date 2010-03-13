@@ -2265,7 +2265,7 @@ processparam (int argcount, char **argvec)
 	{
 	  splitboundary = 'm';
 	}
-      else if (strcmp (argvec[optind], "-rl") == 0)
+      else if (strcmp (argvec[optind], "-rls") == 0)
 	{
 	  splitreclen = 1;
 	}
@@ -2754,7 +2754,7 @@ usage (int level)
 	   " -Pr          Prune data at the record level using 'best' quality priority\n"
 	   " -Ps          Prune data at the sample level using 'best' quality priority\n"
 	   " -S[dhm]      Split records on day, hour or minute boundaries\n"
-	   " -rl          Add suffixes to output files to split on record length changes\n"
+	   " -rls         Add suffixes to output files to split on record length changes\n"
 	   " -Q DRQM      Re-stamp output data records with quality code: D, R, Q or M\n"
            "\n"
 	   " ## Diagnostic output ##\n"
