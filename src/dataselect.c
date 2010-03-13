@@ -497,18 +497,16 @@ writetraces (MSTraceList *mstl)
       if ( errflag == 2 )
 	errflag = 0;
       
+      /* Set suffix if splitting on record length changes */
+      if ( splitreclen )
+	suffix = 1;
+      
       recmap = (RecordMap *) id->prvtptr;
       
       /* Sort record list if data has been pruned */
       if ( prunedata )
 	{
           sortrecmap (recmap);
-	}
-      
-      /* Set suffix if splitting on record length changes */
-      if ( splitreclen )
-	{
-	  suffix = 1;
 	}
       
       /* Loop through each Record in the write list RecordMap.
@@ -657,7 +655,7 @@ writetraces (MSTraceList *mstl)
 	  totalbytesout += rec->reclen;
 	  
 	  /* Increment suffix if splitting and record length changes */
-	  if ( splitreclen && rec->next && rec->reclen != rec->next->reclen )
+	  if ( splitreclen && rec->next && rec->next->reclen != rec->reclen )
 	    {
 	      suffix++;
 	    }
