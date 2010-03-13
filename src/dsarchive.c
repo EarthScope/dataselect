@@ -12,7 +12,7 @@
  * file.  The definition of the groups is implied by the format of the
  * archive.
  *
- * modified: 2010.052
+ * modified: 2010.071
  ***************************************************************************/
 
 #include <stdio.h>
@@ -59,7 +59,7 @@ static int dsverbose;
  * ds_shutdown() will be called to close all open files and free all
  * associated memory.
  *
- * This version has been modified from others to add the add the suffix
+ * This version has been modified from others to add the suffix
  * integer supplied with ds_streamproc() to the defkey and file name.
  *
  * Returns 0 on success, -1 on error.

@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.068
+ * modified 2010.071
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.0"
+#define VERSION "3.1rc"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -208,6 +208,7 @@ static flag     modsummary    = 0;    /* Print modification summary after all pr
 static hptime_t starttime     = HPTERROR;  /* Limit to records containing or after starttime */
 static hptime_t endtime       = HPTERROR;  /* Limit to records containing or before endtime */
 static char     splitboundary = 0;    /* Split records on day 'd', hour 'h' or minute 'm' boundaries */
+static char     splitreclen   = 0;    /* Split output files on record length changes */
 
 static regex_t *match         = 0;    /* Compiled match regex */
 static regex_t *reject        = 0;    /* Compiled reject regex */
@@ -359,6 +360,7 @@ writetraces (MSTraceList *mstl)
   char *ab = "ab";
   char *mode;
   char errflag = 0;
+  long suffix = 0;
   int rv;
   
   MSTraceID *id;
@@ -478,7 +480,7 @@ writetraces (MSTraceList *mstl)
 	} /* Done looping through MSTraceSegs in the MSTraceID */
       
       id = id->next;
-    } /* Done looping through MSTraceIDs the MSTraceList */  
+    } /* Done looping through MSTraceIDs in the MSTraceList */  
   
   /* Loop through MSTraceList and write records in write lists */
   id = mstl->traces;
@@ -497,10 +499,16 @@ writetraces (MSTraceList *mstl)
       
       recmap = (RecordMap *) id->prvtptr;
       
-      /* Sort record list if data has been pruned and grouped */
+      /* Sort record list if data has been pruned */
       if ( prunedata )
 	{
           sortrecmap (recmap);
+	}
+      
+      /* Set suffix if splitting on record length changes */
+      if ( splitreclen )
+	{
+	  suffix = 1;
 	}
       
       /* Loop through each Record in the write list RecordMap.
@@ -605,7 +613,7 @@ writetraces (MSTraceList *mstl)
 		  arch = archiveroot;
 		  while ( arch )
 		    {
-		      ds_streamproc (&arch->datastream, msr, 0, verbose-1);
+		      ds_streamproc (&arch->datastream, msr, suffix, verbose-1);
 		      arch = arch->next;
 		    }
 		}
@@ -647,6 +655,12 @@ writetraces (MSTraceList *mstl)
 	  
 	  totalrecsout++;
 	  totalbytesout += rec->reclen;
+	  
+	  /* Increment suffix if splitting and record length changes */
+	  if ( splitreclen && rec->next && rec->reclen != rec->next->reclen )
+	    {
+	      suffix++;
+	    }
 	  
 	  rec = rec->next;
 	} /* Done looping through Records in the RecordMap */
@@ -2251,6 +2265,10 @@ processparam (int argcount, char **argvec)
 	{
 	  splitboundary = 'm';
 	}
+      else if (strcmp (argvec[optind], "-rl") == 0)
+	{
+	  splitreclen = 1;
+	}
       else if (strcmp (argvec[optind], "-Q") == 0)
         {
           tptr = getoptval(argcount, argvec, optind++);
@@ -2736,6 +2754,7 @@ usage (int level)
 	   " -Pr          Prune data at the record level using 'best' quality priority\n"
 	   " -Ps          Prune data at the sample level using 'best' quality priority\n"
 	   " -S[dhm]      Split records on day, hour or minute boundaries\n"
+	   " -rl          Add suffixes to output files to split on record length changes\n"
 	   " -Q DRQM      Re-stamp output data records with quality code: D, R, Q or M\n"
            "\n"
 	   " ## Diagnostic output ##\n"
