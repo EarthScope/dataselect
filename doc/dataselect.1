@@ -1,4 +1,4 @@
-.TH DATASELECT 2010/03/12
+.TH DATASELECT 2010/04/15
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -167,7 +167,8 @@ same record number.
 Split output files on record length changes by adding integer suffixes
 to the file names.  This option only works when writing output files
 using the \fI-A\fP argument (or a pre-defined layout).  Suffixes are
-in the form of ".#" where the # is an integer starting at 1.
+in the form of ".######" where the # is an integer starting at 1 and
+are left padded with zeros up to 6 digits.
 
 .IP "-Q DRQM      "
 Change the data quality indicator for all output records to the
