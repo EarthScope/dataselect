@@ -12,7 +12,7 @@
  * file.  The definition of the groups is implied by the format of the
  * archive.
  *
- * modified: 2010.071
+ * modified: 2010.104
  ***************************************************************************/
 
 #include <stdio.h>
@@ -328,7 +328,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
   /* Add ".suffix" to filename and definition if suffix is not 0 */
   if ( suffix )
     {
-      snprintf (tstr, sizeof(tstr), ".%ld", suffix);
+      snprintf (tstr, sizeof(tstr), ".%06ld", suffix);
       strncat (filename, tstr, (sizeof(filename) - fnlen));
       strncat (definition, tstr, (sizeof(definition) - fnlen));
       fnlen = strlen (filename);

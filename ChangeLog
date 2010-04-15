@@ -1,3 +1,7 @@
+2010.104: 3.2
+	- Change integer suffixes added to file names with the -rls option
+	to do zero padding up to 6 digits to facilitate file name sorting.
+
 2010.071: 3.1
 	- Add -rls option to split output files on record length changes by
 	adding integer suffixes to the file names.
