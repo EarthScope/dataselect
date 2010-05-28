@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.071
+ * modified 2010.147
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.2"
+#define VERSION "3.3dev"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -212,6 +212,8 @@ static char     splitreclen   = 0;    /* Split output files on record length cha
 
 static regex_t *match         = 0;    /* Compiled match regex */
 static regex_t *reject        = 0;    /* Compiled reject regex */
+
+static flag     skipzerosamps = 0;    /* Controls skipping of records with zero samples */
 
 static flag     replaceinput  = 0;    /* Replace input files */
 static flag     nobackups     = 0;    /* Remove re-named original files when done with them */
@@ -781,6 +783,24 @@ trimrecord (Record *rec, char *recordbuf)
     {
       ms_log (2, "Cannot unpack Mini-SEED record: %s\n", ms_errorstr(retcode));
       return -2;
+    }
+  
+  /* Check for a supported data encoding, can only trim what can be packed */
+  if ( msr->encoding != DE_INT16 && msr->encoding != DE_INT32 &&
+       msr->encoding != DE_FLOAT32 && msr->encoding != DE_FLOAT64 &&
+       msr->encoding != DE_STEIM1 && msr->encoding != DE_STEIM2 &&
+       msr->encoding != DE_ASCII )
+    {
+      if ( verbose )
+	{
+	  msr_srcname (msr, srcname, 0);
+	  ms_hptime2seedtimestr (rec->starttime, stime, 1);
+	  ms_log (1, "Skipping trim of %s (%c), unsupported encoding (%d)\n",
+		  srcname, stime, msr->encoding);
+	}
+      
+      msr_free (&msr);
+      return 0;
     }
   
   if ( verbose > 1 )
@@ -1500,6 +1520,17 @@ readfiles (MSTraceList **ppmstl)
 	  /* Generate the srcname with the quality code */
 	  msr_srcname (msr, srcname, 1);
 	  
+	  /* Check if record should be skipped due to zero samples */
+	  if ( skipzerosamps && msr->samplecnt == 0 )
+	    {
+	      if ( verbose >= 3 )
+		{
+		  ms_hptime2seedtimestr (recstarttime, stime, 1);
+		  ms_log (1, "Skipping (zero samples) %s, %s\n", srcname, stime);
+		}
+	      continue;
+	    }
+	  
 	  /* Check if record matches start time criteria: starts after or contains starttime */
 	  if ( (starttime != HPTERROR) && (recstarttime < starttime && ! (recstarttime <= starttime && recendtime >= starttime)) )
 	    {
@@ -2216,6 +2247,10 @@ processparam (int argcount, char **argvec)
 	{
 	  rejectpattern = getoptval(argcount, argvec, optind++);
 	}
+      else if (strcmp (argvec[optind], "-szs") == 0)
+	{
+	  skipzerosamps = 1;
+	}
       else if (strcmp (argvec[optind], "-m") == 0)
 	{
           tptr = getoptval(argcount, argvec, optind++);
@@ -2743,6 +2778,7 @@ usage (int level)
 	   " -M match     Limit to records matching the specified regular expression\n"
 	   " -R reject    Limit to records not matching the specfied regular expression\n"
 	   "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
+	   " -szs         Skip input records that contain zero samples\n"
 	   "\n"
 	   " ## Output options ##\n"
 	   " -rep         Replace input files, creating backup (.orig) files\n"

@@ -1,4 +1,4 @@
-.TH DATASELECT 2010/04/15
+.TH DATASELECT 2010/05/27
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -108,6 +108,10 @@ an '@' character it is assumed to indicate a file containing a list of
 expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fR
 section below.
 
+.IP "-szs"
+Skip records that contain zero samples, generally these are detection
+records, etc.
+
 .IP "-m \fImatch\fP"
 This is effectively the same as \fB-M\fP except that \fImatch\fP is
 evaluated as a globbing expression instead of regular expression.
@@ -154,7 +158,9 @@ partial-record overlaps might remain in the data.
 Prune, remove overlap data, at the sample level.  This will result in
 removal of all the completely overlapped data samples.  When data
 records partially overlap the lowest priority record is unpacked,
-trimmed and repacked.
+trimmed and repacked.  Record trimming requires a supported data
+encoding, if unsupported (primarily older encodings) the record will
+be in the output untrimmed.
 
 .IP "-S[dhm]      "
 Split records on day, hour or minute boundaries.  When data records

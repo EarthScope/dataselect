@@ -1,3 +1,7 @@
+2010.147:
+	- Skip trimming of records when encoding/packing is not supported.
+	- Add -szs option to skip records containing zero sample count.
+
 2010.104: 3.2
 	- Change integer suffixes added to file names with the -rls option
 	to do zero padding up to 6 digits to facilitate file name sorting.
