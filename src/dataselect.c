@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.147
+ * modified 2010.149
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.3rc1"
+#define VERSION "3.3rc2"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -778,29 +778,42 @@ trimrecord (Record *rec, char *recordbuf)
       return -1;
     }
   
-  /* Unpack data record */
-  if ( (retcode = msr_unpack(recordbuf, rec->reclen, &msr, 1, verbose-1)) != MS_NOERROR )
+  /* Unpack data record header without data samples */
+  if ( (retcode = msr_unpack(recordbuf, rec->reclen, &msr, 0, 0)) != MS_NOERROR )
     {
       ms_log (2, "Cannot unpack Mini-SEED record: %s\n", ms_errorstr(retcode));
       return -2;
     }
   
-  /* Check for a supported data encoding, can only trim what can be packed */
-  if ( msr->encoding != DE_INT16 && msr->encoding != DE_INT32 &&
-       msr->encoding != DE_FLOAT32 && msr->encoding != DE_FLOAT64 &&
-       msr->encoding != DE_STEIM1 && msr->encoding != DE_STEIM2 &&
-       msr->encoding != DE_ASCII )
+  /* Check for missing B1000 or unsupported data encoding, can only trim what can be packed */
+  if ( ! msr->Blkt1000 || (msr->encoding != DE_INT16 && msr->encoding != DE_INT32 &&
+			   msr->encoding != DE_FLOAT32 && msr->encoding != DE_FLOAT64 &&
+			   msr->encoding != DE_STEIM1 && msr->encoding != DE_STEIM2 &&
+			   msr->encoding != DE_ASCII) )
     {
       if ( verbose )
 	{
 	  msr_srcname (msr, srcname, 0);
 	  ms_hptime2seedtimestr (rec->starttime, stime, 1);
-	  ms_log (1, "Skipping trim of %s (%c), unsupported encoding (%d)\n",
-		  srcname, stime, msr->encoding);
+	  if ( ! msr->Blkt1000 )
+	    ms_log (1, "Skipping trim of %s (%s), missing blockette 1000\n",
+		    srcname, stime, msr->encoding);
+	  else 
+	    ms_log (1, "Skipping trim of %s (%s), unsupported encoding (%d)\n",
+		    srcname, stime, msr->encoding);
 	}
       
       msr_free (&msr);
       return 0;
+    }
+  
+  msr_free (&msr);
+  
+  /* Unpack data record header including data samples */
+  if ( (retcode = msr_unpack(recordbuf, rec->reclen, &msr, 1, verbose-1)) != MS_NOERROR )
+    {
+      ms_log (2, "Cannot unpack Mini-SEED record: %s\n", ms_errorstr(retcode));
+      return -2;
     }
   
   if ( verbose > 1 )

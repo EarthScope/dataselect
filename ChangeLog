@@ -1,4 +1,4 @@
-2010.147:
+2010.149:
 	- Skip trimming of records when encoding/packing is not supported.
 	- Add -szs option to skip records containing zero sample count.
 
