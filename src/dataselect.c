@@ -2529,6 +2529,11 @@ getoptval (int argcount, char **argvec, int argopt)
   if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-o") == 0 )
     if ( strcmp (argvec[argopt+1], "-") == 0 )
       return argvec[argopt+1];
+
+  /* Special case of '+o -' usage */
+  if ( (argopt+1) < argcount && strcmp (argvec[argopt], "+o") == 0 )
+    if ( strcmp (argvec[argopt+1], "-") == 0 )
+      return argvec[argopt+1];
   
   /* Special case of '-s -' usage */
   if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-s") == 0 )
