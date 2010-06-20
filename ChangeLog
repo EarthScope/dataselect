@@ -1,3 +1,6 @@
+2010.170: 3.4
+	- Add +o option to append to output file instead of overwriting.
+
 2010.149: 3.3
 	- Skip trimming of records when encoding/packing is not supported.
 	- Add -szs option to skip records containing zero sample count.

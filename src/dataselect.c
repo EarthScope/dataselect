@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.149
+ * modified 2010.170
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.3"
+#define VERSION "3.4"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -218,6 +218,7 @@ static flag     skipzerosamps = 0;    /* Controls skipping of records with zero 
 static flag     replaceinput  = 0;    /* Replace input files */
 static flag     nobackups     = 0;    /* Remove re-named original files when done with them */
 static char    *outputfile    = 0;    /* Single output file */
+static flag     outputmode    = 0;    /* Mode for single output file: 0=overwrite, 1=append */
 static Archive *archiveroot   = 0;    /* Output file structures */
 
 static char     recordbuf[16384];     /* Global record buffer */
@@ -388,7 +389,7 @@ writetraces (MSTraceList *mstl)
   if ( outputfile )
     {
       /* Decide if we are appending or overwriting */
-      mode = ( totalbytesout ) ? ab : wb;
+      mode = ( totalbytesout || outputmode ) ? ab : wb;
       
       if ( strcmp (outputfile, "-") == 0 )
         {
@@ -2285,6 +2286,12 @@ processparam (int argcount, char **argvec)
       else if (strcmp (argvec[optind], "-o") == 0)
         {
           outputfile = getoptval(argcount, argvec, optind++);
+	  outputmode = 0;
+        }
+      else if (strcmp (argvec[optind], "+o") == 0)
+        {
+          outputfile = getoptval(argcount, argvec, optind++);
+	  outputmode = 1;
         }
       else if (strcmp (argvec[optind], "-A") == 0)
         {
@@ -2796,7 +2803,7 @@ usage (int level)
 	   " ## Output options ##\n"
 	   " -rep         Replace input files, creating backup (.orig) files\n"
 	   " -nb          Do not keep backups of original input files if replacing them\n"
-	   " -o file      Specify a single output file\n"
+	   " -o file      Specify a single output file, use +o file to append\n"
 	   " -A format    Write all records in a custom directory/file layout (try -H)\n"
 	   " -Pr          Prune data at the record level using 'best' quality priority\n"
 	   " -Ps          Prune data at the sample level using 'best' quality priority\n"

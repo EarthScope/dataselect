@@ -1,4 +1,4 @@
-.TH DATASELECT 2010/05/27
+.TH DATASELECT 2010/06/19
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -130,7 +130,8 @@ Write all output data to output \fIfile\fP instead of replacing the
 original files.  When this option is used no backups will be created
 and the original files will not be modified in any way.  If '-' is
 specified as the output file all output data will be written to
-standard out.
+standard out.  By default the output file will be overwritten,
+changing the option to \fI+o file\fP appends to the output file.
 
 .IP "-A \fIformat\fR"
 All output records will be written to a directory/file layout defined
