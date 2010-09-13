@@ -127,7 +127,7 @@ typedef struct Filelink_s {
   int      reordercount;   /* Number of records re-ordered */
   int      recsplitcount;  /* Number of records split */
   int      recrmcount;     /* Number of records removed */
-  int      rectrimcount;   /* Number of records trimed */
+  int      rectrimcount;   /* Number of records trimmed */
   hptime_t earliest;       /* Earliest data time in this file */
   hptime_t latest;         /* Latest data time in this file */
   int      byteswritten;   /* Number of bytes written out */
