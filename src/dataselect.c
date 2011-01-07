@@ -385,6 +385,9 @@ writetraces (MSTraceList *mstl)
   if ( ! mstl->traces )
     return 1;
   
+  if ( verbose )
+    ms_log (1, "Writing output data\n");
+
   /* Open the output file if specified */
   if ( outputfile )
     {
