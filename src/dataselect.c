@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2010.170
+ * modified 2011.007
  ***************************************************************************/
 
 /***************************************************************************
@@ -385,6 +385,9 @@ writetraces (MSTraceList *mstl)
   if ( ! mstl->traces )
     return 1;
   
+  if ( verbose )
+    ms_log (1, "Writing output data\n");
+
   /* Open the output file if specified */
   if ( outputfile )
     {
