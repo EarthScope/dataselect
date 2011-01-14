@@ -1,4 +1,4 @@
-.TH DATASELECT 2010/06/19
+.TH DATASELECT 2011/01/14
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -71,6 +71,12 @@ sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
 Consider all data qualities equal when determining priority for
 pruning.  By default priority is given the the data with the highest
 quality indicator: (highest) Q > D > R (lowest).
+
+.IP "-sb \fIsize\fP"
+Use an internal buffer of \fIsize\fP bytes (\fBK\fP, \fBM\fP and
+\fBG\fP suffixes recognized) to store records during the initial read
+and use them for output instead of re-reading the files.  Useful for
+speeding up reads from slow network storage, but not always faster.
 
 .IP "-s \fIselectfile\fP"
 Limit processing to Mini-SEED records that match a selection in the
