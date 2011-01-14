@@ -1,3 +1,7 @@
+2011.014:
+	- Add -sb option to specify the size of a staging buffer that will
+	be used to store records to avoid re-reading them for output.
+
 2011.007:
 	- Update libmseed to 2.6rc1.
 
