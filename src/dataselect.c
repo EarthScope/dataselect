@@ -2559,9 +2559,14 @@ processparam (int argcount, char **argvec)
       /* Parse buffer */
       if ( ! (stagebuffer = (char *) malloc (stagelength)) )
 	{
-	  ms_log (2, "Cannot allocate memory for staging buffer\n");
+	  ms_log (2, "Cannot allocate memory for staging buffer (%lld bytes requested)\n",
+		  (long long int) stagelength);
 	  exit (1);
 	}
+      
+      if ( verbose > 1 )
+	ms_log (1, "Allocated staging buffer (%lld bytes)\n",
+		(long long int) stagelength);
     }
   
   /* Report the program version */
