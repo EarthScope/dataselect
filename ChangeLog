@@ -1,4 +1,4 @@
-2011.014:
+2011.014: 3.5rc1
 	- Add -sb option to specify the size of a staging buffer that will
 	be used to store records to avoid re-reading them for output.
 

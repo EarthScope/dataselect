@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.5dev"
+#define VERSION "3.5rc1"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
