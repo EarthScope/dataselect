@@ -1,3 +1,7 @@
+2011.036: 2.6rc3
+	- Fix parsing of records without blockette 1000, use pack headers
+	and end-of-file to determine implied record lengths.
+
 2011.032: 2.6rc2
 	- Fix handling of truncated records, partial reads at EOF.
 	- Fix offset tracking when reading from stdin.
