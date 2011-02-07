@@ -1,4 +1,4 @@
-.TH DATASELECT 2011/01/14
+.TH DATASELECT 2011/02/06
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -117,6 +117,14 @@ section below.
 .IP "-szs"
 Skip records that contain zero samples, generally these are detection
 records, etc.
+
+.IP "-lso"
+Longest segement only.  Limit the output to the longest continuous
+segment for each channel.
+
+.IP "-msl \fIseconds\fP"
+Specify minimum segment length, no continuous segments shorter than
+\fIseconds\fP in duration will be written to the output.
 
 .IP "-m \fImatch\fP"
 This is effectively the same as \fB-M\fP except that \fImatch\fP is

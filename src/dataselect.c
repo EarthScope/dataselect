@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.014
+ * modified 2011.037
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.5rc2"
+#define VERSION "3.5rc3"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -179,6 +179,9 @@ static int trimtrace (MSTraceSeg *targetseg, char *targetsrcname,
 static int reconcile_tracetimes (MSTraceList *mstl);
 static int qcompare (const char quality1, const char quality2);
 
+static int minsegmentlength (MSTraceList *mstl, double minseconds);
+static int longestsegmentonly (MSTraceList *mstl);
+
 static int readfiles (MSTraceList **ppmstl);
 static void printmodsummary (flag nomods);
 static void printtracemap (MSTraceList *mstl);
@@ -217,6 +220,8 @@ static regex_t *match         = 0;    /* Compiled match regex */
 static regex_t *reject        = 0;    /* Compiled reject regex */
 
 static flag     skipzerosamps = 0;    /* Controls skipping of records with zero samples */
+static flag     longestonly   = 0;    /* Controls output of longest segment/channel only */
+static double   minseglength  = 0.0;  /* Minimum segment length in seconds */
 
 static flag     replaceinput  = 0;    /* Replace input files */
 static flag     nobackups     = 0;    /* Remove re-named original files when done with them */
@@ -334,6 +339,20 @@ processtraces (MSTraceList *mstl)
       
       /* Reconcile MSTraceID times with associated record maps */
       if ( reconcile_tracetimes (mstl) )
+	return -1;
+    }
+  
+  /* Enforce minimum segment length by removing shorter */
+  if ( minseglength )
+    {
+      if ( minsegmentlength (mstl, minseglength) )
+	return -1;
+    }
+  
+  /* Trim segment list to longest segment */
+  if ( longestonly )
+    {
+      if ( longestsegmentonly (mstl) )
 	return -1;
     }
   
@@ -1450,6 +1469,158 @@ qcompare (const char quality1, const char quality2)
 
 
 /***************************************************************************
+ * minsegmentlength:
+ *
+ * Enforce a minimum segment length by removing segments shorter than
+ * minseconds from the collection.
+ *
+ * Returns 0 on success and -1 otherwise.
+ ***************************************************************************/
+static int
+minsegmentlength (MSTraceList *mstl, double minseconds)
+{
+  MSTraceID *id = 0;
+  MSTraceSeg *seg = 0;
+  hptime_t hpminimum;
+  hptime_t segmentlength;
+  char timestr[50];
+  
+  if ( ! mstl )
+    return -1;
+  
+  hpminimum = minseconds * HPTMODULUS;
+  
+  /* Loop through trace list */
+  id = mstl->traces;  
+  while ( id )
+    {
+      /* Loop through segment list */
+      seg = id->first;
+      while ( seg )
+        {
+	  segmentlength = seg->endtime - seg->starttime;
+	  
+	  if ( segmentlength < hpminimum )
+	    {
+	      if ( verbose > 2 )
+		{
+		  ms_hptime2seedtimestr (seg->starttime, timestr, 1);
+		  ms_log (1, "Removing segment of %g seconds for %s starting at %s\n",
+			  (double)segmentlength / HPTMODULUS, id->srcname, timestr);
+		}
+	      
+	      /* Relink segment list to remove MSTraceSeg */
+	      if ( id->first == seg )
+		id->first = seg->next;
+	      
+	      if ( id->last == seg )
+		id->last = seg->prev;
+	      
+	      if ( seg->prev )
+		seg->prev->next = seg->next;
+	      
+	      if ( seg->next )
+		seg->next->prev = seg->prev;
+	      
+	      id->numsegments--;
+	      
+	      free (seg);
+	    }
+	  
+          seg = seg->next;
+	}
+      
+      id = id->next;
+    }
+  
+  return 0;
+} /* End of minsegmentlength() */
+
+
+/***************************************************************************
+ * longestsegmentonly:
+ *
+ * Determine the longest trace segment for each channel and remove all
+ * others.
+ *
+ * Returns 0 on success and -1 otherwise.
+ ***************************************************************************/
+static int
+longestsegmentonly (MSTraceList *mstl)
+{
+  MSTraceID *id = 0;
+  MSTraceSeg *seg = 0;
+  MSTraceSeg *longestseg = 0;
+  hptime_t longestsegment;
+  hptime_t segmentlength;
+  char timestr[50];
+  
+  if ( ! mstl )
+    return -1;
+  
+  /* Loop through trace list */
+  id = mstl->traces;
+  while ( id )
+    {
+      /* Shortcut when not multiple segments */
+      if ( id->numsegments <= 1 )
+	{
+	  id = id->next;
+	  continue;
+	}
+      
+      longestsegment = 0;
+      longestseg = id->first;
+      
+      /* 1st pass: identify longest segment */
+      seg = id->first;
+      while ( seg )
+        {
+	  segmentlength = seg->endtime - seg->starttime;
+	  
+	  if ( segmentlength > longestsegment )
+	    {
+	      longestseg = seg;
+	      longestsegment = segmentlength;
+	    }
+	  
+          seg = seg->next;
+	}
+      
+      if ( verbose > 2 )
+	{
+	  ms_hptime2seedtimestr (longestseg->starttime, timestr, 1);
+	  ms_log (1, "Removing all but segment of %g seconds for %s starting at %s\n",
+		  (double)longestsegment / HPTMODULUS, id->srcname, timestr);
+	}
+      
+      /* 2nd pass: remove all but the longest segment */
+      seg = id->first;
+      while ( seg )
+        {
+	  if ( seg != longestseg )
+	    {
+	      free (seg);
+	    }
+	  
+          seg = seg->next;
+	}
+      
+      /* Longest segment is the only segment */
+      id->first = longestseg;
+      id->last = longestseg;
+      id->numsegments = 1;
+      longestseg->prev = NULL;
+      longestseg->next = NULL;
+      
+      id = id->next;
+    }
+  
+  return 0;
+} /* End of longestsegmentonly() */
+
+
+/***************************************************************************
  * readfiles:
  *
  * Read input files specified as a Filelink list and populate an
@@ -2315,6 +2486,14 @@ processparam (int argcount, char **argvec)
 	{
 	  skipzerosamps = 1;
 	}
+      else if (strcmp (argvec[optind], "-lso") == 0)
+	{
+	  longestonly = 1;
+	}
+      else if (strcmp (argvec[optind], "-msl") == 0)
+	{
+	  minseglength = strtod (getoptval(argcount, argvec, optind++), NULL);
+	}
       else if (strcmp (argvec[optind], "-m") == 0)
 	{
           tptr = getoptval(argcount, argvec, optind++);
@@ -2962,6 +3141,8 @@ usage (int level)
 	   " -R reject    Limit to records not matching the specfied regular expression\n"
 	   "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
 	   " -szs         Skip input records that contain zero samples\n"
+	   " -lso         Longest segment only, output only longest segment per channel\n"
+	   " -msl secs    Minimum segment length, skip any shorter segments\n"
 	   "\n"
 	   " ## Output options ##\n"
 	   " -rep         Replace input files, creating backup (.orig) files\n"
