@@ -1,5 +1,7 @@
-2011.037:
+2011.037: 3.5rc3
 	- Update to libmseed 2.6rc3.
+	- Add minimum segment length (-msl) option.
+	- Add longest segment only (-lso) option.
 
 2011.033: 3.5rc2
 	- Update to libmseed 2.6rc2.
