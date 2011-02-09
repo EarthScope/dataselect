@@ -5,7 +5,7 @@
  * Written by Chad Trabant
  *   IRIS Data Management Center
  *
- * modified: 2011.036
+ * modified: 2011.039
  ***************************************************************************/
 
 #include <stdio.h>
@@ -658,7 +658,7 @@ ms_readmsr_main (MSFileParam **ppmsfp, MSRecord **ppmsr, char *msfile,
       /* Finished when within MINRECLEN from EOF and buffer less than MINRECLEN */
       if ( (msfp->filesize - msfp->filepos) < MINRECLEN && MSFPBUFLEN(msfp) < MINRECLEN )
 	{
-	  if ( msfp->recordcount == 0 )
+	  if ( msfp->recordcount == 0 && msfp->packtype == 0 )
 	    {
 	      if ( verbose > 0 )
 		ms_log (2, "%s: No data records read, not SEED?\n", msfile);

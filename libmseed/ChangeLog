@@ -1,3 +1,8 @@
+2011.039: 2.6rc4
+	- Do not return MS_NOTSEED when no records read from packed file.
+	- Update user guide to include note about MSTraceLists and change
+	the miniSEED creation example to use mst_writemseed().
+
 2011.036: 2.6rc3
 	- Fix parsing of records without blockette 1000, use pack headers
 	and end-of-file to determine implied record lengths.
