@@ -1,3 +1,6 @@
+2011.124: 3.5+2011.124
+	- Update to libmseed 2.6+2011.124 with a fix for bad data handling.
+
 2011.057: 3.5
 	- Update to final libmseed 2.6.
 
