@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.037
+ * modified 2011.144
  ***************************************************************************/
 
 /***************************************************************************
@@ -788,7 +788,7 @@ trimrecord (Record *rec, char *recordbuf)
   
   int trimsamples;
   int samplesize;
-  int packedsamples;
+  int64_t packedsamples;
   int packedrecords;
   int retcode;
   
