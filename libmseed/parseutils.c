@@ -5,7 +5,7 @@
  * Written by Chad Trabant
  *   IRIS Data Management Center
  *
- * modified: 2011.090
+ * modified: 2011.129
  ***************************************************************************/
 
 #include <stdio.h>
@@ -75,7 +75,7 @@ msr_parse ( char *record, int recbuflen, MSRecord **ppmsr, int reclen,
       /* Found record but could not determine length */
       if ( detlen == 0 )
 	{
-	  return recbuflen + 256;
+	  return 256;
 	}
       
       if ( verbose > 2 )
