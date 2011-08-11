@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.144
+ * modified 2011.222
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.5.1"
+#define VERSION "3.5.2"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -1295,9 +1295,27 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 		{
 		  /* Set Record new end time boundary including specified time tolerance */
 		  rec->newend = cmst->starttime - hpdelta + hptimetol;
-		  effendtime = rec->newend;
-		  rec->flp->rectrimcount++;
-		  modcount++;
+
+		  if ( (starttime != HPTERROR) && (rec->newend < starttime) )
+		    {
+		      if ( verbose > 1 )
+			{
+			  ms_hptime2seedtimestr (rec->starttime, stime, 1);
+			  ms_hptime2seedtimestr (rec->endtime, etime, 1);
+			  ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
+				  targetsrcname, rec->quality, stime, etime);
+			}
+		      
+		      rec->flp->recrmcount++;
+		      rec->reclen = 0;
+		      modcount++;
+		    }
+		  else
+		    {
+		      effendtime = rec->newend;
+		      rec->flp->rectrimcount++;
+		      modcount++;
+		    }
 		}
 	      
 	      /* Record overlaps end of HP coverage */
@@ -1306,9 +1324,27 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 		{
 		  /* Set Record new start time boundary including specified time tolerance */
 		  rec->newstart = cmst->endtime + hpdelta - hptimetol;
-		  effstarttime = rec->newstart;
-		  rec->flp->rectrimcount++;
-		  modcount++;
+		  
+		  if ( (endtime != HPTERROR) && (rec->newstart > endtime) )
+		    {
+		      if ( verbose > 1 )
+			{
+			  ms_hptime2seedtimestr (rec->starttime, stime, 1);
+			  ms_hptime2seedtimestr (rec->endtime, etime, 1);
+			  ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
+				  targetsrcname, rec->quality, stime, etime);
+			}
+		      
+		      rec->flp->recrmcount++;
+		      rec->reclen = 0;
+		      modcount++;
+		    }
+		  else
+		    {
+		      effstarttime = rec->newstart;
+		      rec->flp->rectrimcount++;
+		      modcount++;
+		    }
 		}
 	      
 	      /* Remove record if all samples have been pruned within tolerance,
