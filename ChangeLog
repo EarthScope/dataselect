@@ -1,4 +1,10 @@
-2011.222: 2.5.2
+2011.231:
+	- Add -out option to write a summary of output records to a file.
+	- Skip trimming ASCII encoded data records.
+	- Fix pruning at corner case of selection matching only first or last
+	sample in a record.
+
+2011.222:
 	- Fix pruning in cases involving the global start and end times.
 
 2011.144: 3.5.1

@@ -1,4 +1,4 @@
-.TH DATASELECT 2011/02/06
+.TH DATASELECT 2011/08/19
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -204,6 +204,11 @@ For files specified on the command line all files constitute a group.
 By default this summary will only include the files that were
 modified, if the verbose option is used the summary will include all
 files processed.
+
+.IP "-out file    "
+Print a summary of output records to the specified file.  Each line
+contains the start time, end time and byte count for each output trace
+segment.
 
 .SH THE PRUNING PROCESS
 

@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.222
+ * modified 2011.231
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.5.2"
+#define VERSION "3.6rc1"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -165,7 +165,7 @@ typedef struct RecordMap_s {
 } RecordMap;
 
 
-static int setofilelimit (int limit);
+static int readfiles (MSTraceList **ppmstl);
 static int processtraces (MSTraceList *mstl);
 static int writetraces (MSTraceList *mstl);
 static int trimrecord (Record *rec, char *recbuf);
@@ -182,10 +182,10 @@ static int qcompare (const char quality1, const char quality2);
 static int minsegmentlength (MSTraceList *mstl, double minseconds);
 static int longestsegmentonly (MSTraceList *mstl);
 
-static int readfiles (MSTraceList **ppmstl);
 static void printmodsummary (flag nomods);
 static void printtracemap (MSTraceList *mstl);
 static void printrecordmap (RecordMap *recmap, flag details);
+static void printwritten (MSTraceList *mstl);
 
 static int findselectlimits (Selections *select, char *srcname,
 			     hptime_t starttime, hptime_t endtime, Record *rec);
@@ -194,6 +194,7 @@ static int recordcmp (Record *rec1, Record *rec2);
 
 static int  processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
+static int  setofilelimit (int limit);
 static int  addfile (char *filename);
 static int  addlistfile (char *filename);
 static int  addarchive (const char *path, const char *layout);
@@ -239,6 +240,8 @@ static Filelink *filelist     = 0;    /* List of input files */
 static Filelink *filelisttail = 0;    /* Tail of list of input files */
 static Selections *selections = 0;    /* List of data selections */
 
+static char *writtenfile      = 0;    /* File to write summary of output records */
+static MSTraceList *writtentl = 0;    /* TraceList of output records */
 
 int
 main ( int argc, char **argv )
@@ -255,6 +258,11 @@ main ( int argc, char **argv )
   /* Data stream archiving maximum concurrent open files */
   if ( archiveroot )
     ds_maxopenfiles = 50;
+
+  /* Init written MSTraceList */
+  if ( writtenfile )
+    if ( (writtentl = mstl_init (writtentl)) == NULL )
+      return 1;
   
   if ( verbose > 2 )
     ms_log (1, "Processing input files\n");
@@ -270,50 +278,475 @@ main ( int argc, char **argv )
   if ( modsummary )
     printmodsummary (verbose);
   
+  if ( writtenfile )
+    {
+      printwritten (writtentl);
+      mstl_free (&writtentl, 1);
+    }
+  
   return 0;
 }  /* End of main() */
 
 
 /***************************************************************************
- * setofilelimit:
+ * readfiles:
  *
- * Check the current open file limit and if it is not >= 'limit' try
- * to increase it to 'limit'.
+ * Read input files specified as a Filelink list and populate an
+ * MSTraceList and record maps for each trace.  All input files are
+ * renamed with a ".orig" suffix before being read.
  *
- * Returns the open file limit on success and -1 on error.
+ * Returns 0 on success and -1 otherwise.
  ***************************************************************************/
 static int
-setofilelimit (int limit)
+readfiles (MSTraceList **ppmstl)
 {
-  struct rlimit rlim;
-  rlim_t oldlimit;
+  MSFileParam *msfp = NULL;
+  Filelink *flp;
+  MSRecord *msr = 0;
+  MSTraceSeg *seg = 0;
   
-  /* Get the current soft open file limit */
-  if ( getrlimit (RLIMIT_NOFILE, &rlim) == -1 )
+  int totalrecs  = 0;
+  int totalsamps = 0;
+  int totalfiles = 0;
+  
+  Selections *matchsp = 0;
+  SelectTime *matchstp = 0;
+  
+  RecordMap *recmap = 0;
+  Record *rec = 0;
+  
+  RecordMap newrecmap;
+  Record *newrec = 0;
+  
+  off_t fpos = 0;
+  hptime_t recstarttime;
+  hptime_t recendtime;
+  
+  char srcname[50];
+  char stime[30];
+  
+  int infilenamelen = 0;
+  int retcode;
+  flag whence;
+
+  if ( ! ppmstl )
+    return -1;
+  
+  /* Initialize MSTraceList */
+  *ppmstl = mstl_init (*ppmstl);
+  
+  if ( ! *ppmstl )
     {
-      ms_log (2, "getrlimit() failed to get open file limit\n");
+      ms_log (2, "readfiles(): cannot (re)initialize MSTraceList\n");
       return -1;
     }
   
-  if ( rlim.rlim_cur < limit )
+  /* Read all input files and construct continuous traces, using the
+   * libmseed MSTraceList.  For each trace maintain a list of each
+   * data record that contributed to the trace, implemented as a
+   * RecordMap struct (MSTraceSeg->prvtptr) where a linked list of
+   * Record structs is maintained.  The records are always listed in
+   * time order.
+   */
+  
+  flp = filelist;
+  
+  while ( flp != 0 )
     {
-      oldlimit = rlim.rlim_cur;
-      rlim.rlim_cur = (rlim_t) limit;
-      
-      if ( verbose > 1 )
-	ms_log (1, "Setting open file limit to %d\n",
-		(int) rlim.rlim_cur);
-      
-      if ( setrlimit (RLIMIT_NOFILE, &rlim) == -1 )
+      /* Add '.orig' suffix to input file if it will be replaced */
+      if ( replaceinput )
 	{
-	  ms_log (2, "setrlimit failed to raise open file limit from %d to %d (max: %d)\n",
-		  (int) oldlimit, (int) limit, rlim.rlim_max);
+	  /* The output file name is the original input file name */
+	  flp->outfilename = flp->infilename;
+	  
+	  infilenamelen = strlen(flp->outfilename) + 6;
+	  
+	  if ( ! (flp->infilename = (char *) malloc (infilenamelen)) )
+	    {
+	      ms_log (2, "Cannot allocate memory for input file name\n");
+	      return -1;
+	    }
+	  
+	  snprintf (flp->infilename, infilenamelen, "%s.orig", flp->outfilename);
+	  
+	  if ( rename (flp->outfilename, flp->infilename) )
+	    {
+	      ms_log (2, "Cannot rename %s -> %s : '%s'\n",
+		      flp->outfilename, flp->infilename, strerror(errno));
+	      return -1;
+	    }
+	}
+      
+      if ( verbose )
+	{
+	  if ( replaceinput ) 
+	    ms_log (1, "Reading: %s (was %s)\n", flp->infilename, flp->outfilename);
+	  else
+	    ms_log (1, "Reading: %s\n", flp->infilename);
+	}
+      
+      /* Loop over the input file */
+      while ( (retcode = ms_readmsr_main (&msfp, &msr, flp->infilename, reclen, &fpos, NULL, 1, 0, selections, verbose-2))
+	      == MS_NOERROR )
+	{
+	  recstarttime = msr->starttime;
+	  recendtime = msr_endtime (msr);
+	  
+	  /* Generate the srcname with the quality code */
+	  msr_srcname (msr, srcname, 1);
+	  
+	  /* Check if record should be skipped due to zero samples */
+	  if ( skipzerosamps && msr->samplecnt == 0 )
+	    {
+	      if ( verbose >= 3 )
+		{
+		  ms_hptime2seedtimestr (recstarttime, stime, 1);
+		  ms_log (1, "Skipping (zero samples) %s, %s\n", srcname, stime);
+		}
+	      continue;
+	    }
+	  
+	  /* Check if record matches start time criteria: starts after or contains starttime */
+	  if ( (starttime != HPTERROR) && (recstarttime < starttime && ! (recstarttime <= starttime && recendtime >= starttime)) )
+	    {
+	      if ( verbose >= 3 )
+		{
+		  ms_hptime2seedtimestr (recstarttime, stime, 1);
+		  ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
+		}
+	      continue;
+	    }
+	  
+	  /* Check if record matches end time criteria: ends after or contains endtime */
+	  if ( (endtime != HPTERROR) && (recendtime > endtime && ! (recstarttime <= endtime && recendtime >= endtime)) )
+	    {
+	      if ( verbose >= 3 )
+		{
+		  ms_hptime2seedtimestr (recstarttime, stime, 1);
+		  ms_log (1, "Skipping (endtime) %s, %s\n", srcname, stime);
+		}
+	      continue;
+	    }
+	  
+	  /* Check if record is matched by the match regex */
+	  if ( match )
+	    {
+	      if ( regexec ( match, srcname, 0, 0, 0) != 0 )
+		{
+		  if ( verbose >= 3 )
+		    {
+		      ms_hptime2seedtimestr (recstarttime, stime, 1);
+		      ms_log (1, "Skipping (match) %s, %s\n", srcname, stime);
+		    }
+		  continue;
+		}
+	    }
+	  
+	  /* Check if record is rejected by the reject regex */
+	  if ( reject )
+	    {
+	      if ( regexec ( reject, srcname, 0, 0, 0) == 0 )
+		{
+		  if ( verbose >= 3 )
+		    {
+		      ms_hptime2seedtimestr (recstarttime, stime, 1);
+		      ms_log (1, "Skipping (reject) %s, %s\n", srcname, stime);
+		    }
+		  continue;
+		}
+	    }
+	  
+	  /* Check if record is matched by selection */
+	  if ( selections )
+	    {
+	      if ( ! (matchsp = ms_matchselect (selections, srcname, recstarttime, recendtime, &matchstp)) )
+		{
+		  if ( verbose >= 3 )
+		    {
+		      ms_hptime2seedtimestr (recstarttime, stime, 1);
+		      ms_log (1, "Skipping (selection) %s, %s\n", srcname, stime);
+		    }
+		  continue;
+		}
+	    }
+	  
+	  if ( verbose > 2 )
+	    msr_print (msr, verbose - 3);
+	  
+	  /* Add record to the MSTraceList */
+	  if ( ! (seg = mstl_addmsr (*ppmstl, msr, bestquality, 0, timetol, sampratetol)) )
+	    {
+	      ms_hptime2seedtimestr (recstarttime, stime, 1);
+	      ms_log (2, "Cannot add record to trace list, %s, %s\n", srcname, stime);
+	      continue;
+	    }
+	  
+	  /* Determine where the record fit with this MSTraceSeg
+	   * whence:
+	   *   0 = New MSTrace
+	   *   1 = End of MSTrace
+	   *   2 = Beginning of MSTrace
+	   */
+	  whence = 0;
+	  if ( seg->prvtptr )
+	    {
+	      if ( seg->endtime == recendtime )
+		whence = 1;
+	      else if ( seg->starttime == recstarttime )
+		whence = 2;
+	      else if ( recendtime == recstarttime )
+		{
+		  /* Determine best fit for records with no span */
+		  if ( llabs (recstarttime - seg->endtime) < llabs (recstarttime - seg->starttime) )
+		    whence = 1;
+		  else
+		    whence = 2;
+		}
+	      else
+		{
+		  ms_log (2, "Cannot determine where record fit relative to trace segment\n");
+		  msr_print (msr, 1);
+		  continue;
+		}
+	    }
+	  
+	  /* Create and populate new Record structure */
+	  if ( ! (rec = (Record *) malloc (sizeof(Record))) )
+	    {
+	      ms_log (2, "Cannot allocate memory for Record entry\n");
+	      return -1;
+	    }
+	  
+	  rec->flp = flp;
+	  rec->offset = fpos;
+	  rec->stageoffset = -1;
+	  rec->reclen = msr->reclen;
+	  rec->starttime = recstarttime;
+	  rec->endtime = recendtime;
+	  rec->quality = msr->dataquality;
+	  rec->selectstart = HPTERROR;
+	  rec->selectend = HPTERROR;
+	  rec->newstart = HPTERROR;
+	  rec->newend = HPTERROR;
+	  rec->prev = 0;
+	  rec->next = 0;
+	  
+	  /* Populate a new record map */
+	  newrecmap.recordcnt = 1;
+	  newrecmap.first = rec;
+	  newrecmap.last = rec;
+	  
+	  /* If record is not completely selected search for joint selection limits */
+	  if ( matchstp && ! (matchstp->starttime <= recstarttime && matchstp->endtime >= recendtime) )
+	    {
+	      if ( findselectlimits (matchsp, srcname, recstarttime, recendtime, rec) )
+		{
+		  ms_log (2, "Problem in findselectlimits(), please report\n");
+		}
+	    }
+	  
+	  /* If pruning at the sample level trim right at the start/end times */
+	  if ( prunedata == 's' )
+	    {
+	      hptime_t seltime;
+	      	      
+	      /* Determine strictest start time (selection time or global start time) */
+	      if ( starttime != HPTERROR && rec->selectstart != HPTERROR )
+		seltime = ( starttime > rec->selectstart ) ? starttime : rec->selectstart;
+	      else if ( rec->selectstart != HPTERROR )
+		seltime = rec->selectstart;
+	      else
+		seltime = starttime;
+	      
+	      /* If the Record crosses the start time */
+	      if ( seltime != HPTERROR && (seltime > recstarttime) && (seltime <= recendtime) )
+		{
+		  rec->newstart = seltime;
+		}
+	      
+	      /* Determine strictest end time (selection time or global end time) */
+	      if ( endtime != HPTERROR && rec->selectend != HPTERROR )
+		seltime = ( endtime < rec->selectend ) ? endtime : rec->selectend;
+	      else if ( rec->selectend != HPTERROR )
+		seltime = rec->selectend;
+	      else
+		seltime = endtime;
+	      
+	      /* If the Record crosses the end time */
+	      if ( seltime != HPTERROR && (seltime >= recstarttime) && (seltime < recendtime) )
+		{
+		  rec->newend = seltime;
+		}
+	    }
+	  
+	  /* Create extra Record structures if splitting on a time boundary */
+	  if ( splitboundary )
+	    {
+	      BTime startbtime;
+	      hptime_t boundary = HPTERROR;
+	      hptime_t effstarttime;
+	      
+	      for (;;)
+		{
+		  effstarttime = (rec->newstart != HPTERROR) ? rec->newstart : rec->starttime;
+		  ms_hptime2btime (effstarttime, &startbtime);
+		  
+		  /* Determine next split boundary */
+		  if ( splitboundary == 'd' ) /* Days */
+		    {
+		      startbtime.day += 1;
+		      startbtime.hour = startbtime.min = startbtime.sec = startbtime.fract = 0;
+		      boundary = ms_btime2hptime (&startbtime);
+		    }
+		  else if ( splitboundary == 'h' ) /* Hours */
+		    {
+		      startbtime.hour += 1;
+		      startbtime.min = startbtime.sec = startbtime.fract = 0;
+		      boundary = ms_btime2hptime (&startbtime);
+		    }
+		  else if ( splitboundary == 'm' ) /* Minutes */
+		    {
+		      startbtime.min += 1;
+		      startbtime.sec = startbtime.fract = 0;
+		      boundary = ms_btime2hptime (&startbtime);
+		    }
+		  else
+		    {
+		      ms_log (2, "Split boundary code unrecognized: '%c'\n", splitboundary);
+		      break;
+		    }
+		  
+		  /* If end time is beyond the boundary create a new Record */
+		  if ( rec->endtime > boundary )
+		    {
+		      if ( ! (newrec = (Record *) malloc (sizeof(Record))) )
+			{
+			  ms_log (2, "Cannot allocate memory for Record entry");
+			  return -1;
+			}
+		      
+		      memcpy (newrec, rec, sizeof(Record));
+		      
+		      /* Set current Record and next Record new boundary times */
+		      rec->newend = boundary;
+		      newrec->newstart = boundary;
+		      
+		      /* Update new record map */
+		      newrecmap.recordcnt++;
+		      newrecmap.last = newrec;
+		      
+		      /* Insert the new Record in chain and set as current */
+		      rec->next = newrec;
+		      newrec->prev = rec;
+		      rec = newrec;
+		      
+		      flp->recsplitcount++;
+		    }
+		  /* Otherwise we are done */
+		  else
+		    {
+		      break;
+		    }
+		}
+	    } /* Done splitting on time boundary */
+	  
+	  /* Add the new Record(s) to the RecordMap associated with the MSTraceSeg */
+	  
+	  /* Add new Record(s) to end of the RecordMap */
+	  if ( whence == 1 )
+	    {
+	      recmap = (RecordMap *) seg->prvtptr;
+	      
+	      recmap->last->next = newrecmap.first;
+	      newrecmap.first->prev = recmap->last;
+	      
+	      recmap->last = newrecmap.last;
+	      
+	      recmap->recordcnt += newrecmap.recordcnt;
+	    }
+	  /* Add new Record(s) to beginning of the RecordMap */
+	  else if ( whence == 2 )
+	    {
+	      recmap = (RecordMap *) seg->prvtptr;
+	      
+	      recmap->first->prev = newrecmap.last;
+	      newrecmap.last->next = recmap->first;
+	      
+	      recmap->first = newrecmap.first;
+	      
+	      recmap->recordcnt += newrecmap.recordcnt;
+	      
+	      /* Increment reordered count */
+	      flp->reordercount++;
+	    }
+	  /* First Record(s) for this MSTraceSeg, allocate RecordMap */
+	  else
+	    {
+	      if ( seg->prvtptr )
+		ms_log (2, "Supposedly first record, but RecordMap not empty, report this\n");
+	      
+	      if ( ! (recmap = (RecordMap *) malloc (sizeof(RecordMap))) )
+		{
+		  ms_log (2, "Cannot allocate memory for new RecordMap\n");
+		  return -1;
+		}
+	      recmap->first = newrecmap.first;
+	      recmap->last = newrecmap.last;
+	      recmap->recordcnt = newrecmap.recordcnt;
+	      
+	      seg->prvtptr = recmap;
+	    }
+	  
+	  /* Copy record to staging buffer if space is available */
+	  if ( stagebuffer && ! stagefull )
+	    {
+	      if ( (stagelength - stageoffset) >= msr->reclen )
+		{
+		  /* Copy record to end of staging buffer contents */
+		  memcpy ((stagebuffer + stageoffset), msr->record, msr->reclen);
+		  
+		  /* Set offset to record in staging buffer */
+		  rec->stageoffset = stageoffset;
+		  
+		  /* Update offset to end of staging buffer */
+		  stageoffset += msr->reclen;
+		}
+	      else if ( ! stagefull )
+		{
+		  ms_log (1, "Warning: record staging buffer full, using input files for remaining records\n");
+		  
+		  stagefull = 1;
+		}
+	    }
+	  
+	  totalrecs++;
+	  totalsamps += msr->samplecnt;
+	} /* End of looping through records in file */
+      
+      /* Critical error if file was not read properly */
+      if ( retcode != MS_ENDOFFILE )
+	{
+	  ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr(retcode));
+	  ms_readmsr_main (&msfp, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
 	  return -1;
 	}
-    }
+      
+      /* Make sure everything is cleaned up */
+      ms_readmsr_main (&msfp, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
+      
+      totalfiles++;
+      flp = flp->next;
+    } /* End of looping over file list */
   
-  return (int) rlim.rlim_cur;
-}  /* End of setofilelimit() */
+  /* Increase open file limit if necessary, in general we need the
+   * filecount + ds_maxopenfiles and some wiggle room. */
+  setofilelimit (totalfiles + ds_maxopenfiles + 20);
+  
+  if ( basicsum )
+    ms_log (0, "Files: %d, Records: %d, Samples: %d\n", totalfiles, totalrecs, totalsamps);
+  
+  return 0;
+}  /* End of readfiles() */
 
 
 /***************************************************************************
@@ -402,7 +835,6 @@ writetraces (MSTraceList *mstl)
   Record *rec;
   Record *recnext;
   Filelink *flp;
-  Archive *arch;
   
   FILE *ofp = 0;
   
@@ -637,10 +1069,11 @@ writetraces (MSTraceList *mstl)
 		}
 	    }
 	  
-	  /* Write to Archive(s) if specified */
-	  if ( archiveroot )
+	  /* Write to Archive(s) if specified and/or add to written list */
+	  if ( archiveroot || writtenfile )
 	    {
 	      MSRecord *msr = 0;
+	      Archive *arch;
 	      
 	      if ( msr_unpack (recordptr, rec->reclen, &msr, 0, verbose) != MS_NOERROR )
 		{
@@ -650,13 +1083,42 @@ writetraces (MSTraceList *mstl)
 		  errflag = 2;
 		  break;
 		}
-	      else
+	      
+	      if ( archiveroot )
 		{
 		  arch = archiveroot;
 		  while ( arch )
 		    {
 		      ds_streamproc (&arch->datastream, msr, suffix, verbose-1);
 		      arch = arch->next;
+		    }
+		}
+	      
+	      if ( writtenfile )
+		{
+		  MSTraceSeg *seg;
+		  
+		  if ( (seg = mstl_addmsr (writtentl, msr, 0, 1, -1.0, -1.0)) == NULL )
+		    {
+		      ms_log (2, "Error adding MSRecord to MSTraceList, bah humbug.\n");
+		    }
+		  else
+		    {
+		      if ( ! seg->prvtptr )
+			{
+			  if ( (seg->prvtptr = malloc (sizeof(int64_t))) == NULL )
+			    {
+			      ms_log (2, "Error allocating memory for written count, bah humbug.\n");
+			      errflag = 1;
+			      break;
+			    }
+			  else
+			    {
+			      *((int64_t *)seg->prvtptr) = 0;
+			    }
+			}
+		      
+		      *((int64_t *)seg->prvtptr) += msr->reclen;
 		    }
 		}
 	      
@@ -800,9 +1262,9 @@ trimrecord (Record *rec, char *recordbuf)
   etime[0] = '\0';
   
   /* Sanity check for new start/end times */
-  if ( (rec->newstart != HPTERROR && rec->newend != HPTERROR && rec->newstart >= rec->newend) ||
-       (rec->newstart != HPTERROR && (rec->newstart < rec->starttime || rec->newstart >= rec->endtime)) ||
-       (rec->newend != HPTERROR && (rec->newend > rec->endtime || rec->newend <= rec->starttime)) )
+  if ( (rec->newstart != HPTERROR && rec->newend != HPTERROR && rec->newstart > rec->newend) ||
+       (rec->newstart != HPTERROR && (rec->newstart < rec->starttime || rec->newstart > rec->endtime)) ||
+       (rec->newend != HPTERROR && (rec->newend > rec->endtime || rec->newend < rec->starttime)) )
     {
       ms_log (2, "Problem with new start/end record bound times.\n");
       ms_recsrcname (recordbuf, srcname, 1);
@@ -830,8 +1292,7 @@ trimrecord (Record *rec, char *recordbuf)
   /* Check for missing B1000 or unsupported data encoding, can only trim what can be packed */
   if ( ! msr->Blkt1000 || (msr->encoding != DE_INT16 && msr->encoding != DE_INT32 &&
 			   msr->encoding != DE_FLOAT32 && msr->encoding != DE_FLOAT64 &&
-			   msr->encoding != DE_STEIM1 && msr->encoding != DE_STEIM2 &&
-			   msr->encoding != DE_ASCII) )
+			   msr->encoding != DE_STEIM1 && msr->encoding != DE_STEIM2) )
     {
       if ( verbose )
 	{
@@ -840,7 +1301,10 @@ trimrecord (Record *rec, char *recordbuf)
 	  if ( ! msr->Blkt1000 )
 	    ms_log (1, "Skipping trim of %s (%s), missing blockette 1000\n",
 		    srcname, stime, msr->encoding);
-	  else 
+	  else if ( msr->encoding != DE_ASCII )
+	    ms_log (1, "Skipping trim of %s (%s), ASCII encoded data\n",
+		    srcname, stime, msr->encoding);
+	  else
 	    ms_log (1, "Skipping trim of %s (%s), unsupported encoding (%d)\n",
 		    srcname, stime, msr->encoding);
 	}
@@ -1657,467 +2121,6 @@ longestsegmentonly (MSTraceList *mstl)
 
 
 /***************************************************************************
- * readfiles:
- *
- * Read input files specified as a Filelink list and populate an
- * MSTraceList and record maps for each trace.  All input files are
- * renamed with a ".orig" suffix before being read.
- *
- * Returns 0 on success and -1 otherwise.
- ***************************************************************************/
-static int
-readfiles (MSTraceList **ppmstl)
-{
-  MSFileParam *msfp = NULL;
-  Filelink *flp;
-  MSRecord *msr = 0;
-  MSTraceSeg *seg = 0;
-  
-  int totalrecs  = 0;
-  int totalsamps = 0;
-  int totalfiles = 0;
-  
-  Selections *matchsp = 0;
-  SelectTime *matchstp = 0;
-  
-  RecordMap *recmap = 0;
-  Record *rec = 0;
-  
-  RecordMap newrecmap;
-  Record *newrec = 0;
-  
-  off_t fpos = 0;
-  hptime_t recstarttime;
-  hptime_t recendtime;
-  
-  char srcname[50];
-  char stime[30];
-  
-  int infilenamelen = 0;
-  int retcode;
-  flag whence;
-
-  if ( ! ppmstl )
-    return -1;
-  
-  /* Initialize MSTraceList */
-  *ppmstl = mstl_init (*ppmstl);
-  
-  if ( ! *ppmstl )
-    {
-      ms_log (2, "readfiles(): cannot (re)initialize MSTraceList\n");
-      return -1;
-    }
-  
-  /* Read all input files and construct continuous traces, using the
-   * libmseed MSTraceList.  For each trace maintain a list of each
-   * data record that contributed to the trace, implemented as a
-   * RecordMap struct (MSTraceSeg->prvtptr) where a linked list of
-   * Record structs is maintained.  The records are always listed in
-   * time order.
-   */
-  
-  flp = filelist;
-  
-  while ( flp != 0 )
-    {
-      /* Add '.orig' suffix to input file if it will be replaced */
-      if ( replaceinput )
-	{
-	  /* The output file name is the original input file name */
-	  flp->outfilename = flp->infilename;
-	  
-	  infilenamelen = strlen(flp->outfilename) + 6;
-	  
-	  if ( ! (flp->infilename = (char *) malloc (infilenamelen)) )
-	    {
-	      ms_log (2, "Cannot allocate memory for input file name\n");
-	      return -1;
-	    }
-	  
-	  snprintf (flp->infilename, infilenamelen, "%s.orig", flp->outfilename);
-	  
-	  if ( rename (flp->outfilename, flp->infilename) )
-	    {
-	      ms_log (2, "Cannot rename %s -> %s : '%s'\n",
-		      flp->outfilename, flp->infilename, strerror(errno));
-	      return -1;
-	    }
-	}
-      
-      if ( verbose )
-	{
-	  if ( replaceinput ) 
-	    ms_log (1, "Reading: %s (was %s)\n", flp->infilename, flp->outfilename);
-	  else
-	    ms_log (1, "Reading: %s\n", flp->infilename);
-	}
-      
-      /* Loop over the input file */
-      while ( (retcode = ms_readmsr_main (&msfp, &msr, flp->infilename, reclen, &fpos, NULL, 1, 0, selections, verbose-2))
-	      == MS_NOERROR )
-	{
-	  recstarttime = msr->starttime;
-	  recendtime = msr_endtime (msr);
-	  
-	  /* Generate the srcname with the quality code */
-	  msr_srcname (msr, srcname, 1);
-	  
-	  /* Check if record should be skipped due to zero samples */
-	  if ( skipzerosamps && msr->samplecnt == 0 )
-	    {
-	      if ( verbose >= 3 )
-		{
-		  ms_hptime2seedtimestr (recstarttime, stime, 1);
-		  ms_log (1, "Skipping (zero samples) %s, %s\n", srcname, stime);
-		}
-	      continue;
-	    }
-	  
-	  /* Check if record matches start time criteria: starts after or contains starttime */
-	  if ( (starttime != HPTERROR) && (recstarttime < starttime && ! (recstarttime <= starttime && recendtime >= starttime)) )
-	    {
-	      if ( verbose >= 3 )
-		{
-		  ms_hptime2seedtimestr (recstarttime, stime, 1);
-		  ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
-		}
-	      continue;
-	    }
-	  
-	  /* Check if record matches end time criteria: ends after or contains endtime */
-	  if ( (endtime != HPTERROR) && (recendtime > endtime && ! (recstarttime <= endtime && recendtime >= endtime)) )
-	    {
-	      if ( verbose >= 3 )
-		{
-		  ms_hptime2seedtimestr (recstarttime, stime, 1);
-		  ms_log (1, "Skipping (endtime) %s, %s\n", srcname, stime);
-		}
-	      continue;
-	    }
-	  
-	  /* Check if record is matched by the match regex */
-	  if ( match )
-	    {
-	      if ( regexec ( match, srcname, 0, 0, 0) != 0 )
-		{
-		  if ( verbose >= 3 )
-		    {
-		      ms_hptime2seedtimestr (recstarttime, stime, 1);
-		      ms_log (1, "Skipping (match) %s, %s\n", srcname, stime);
-		    }
-		  continue;
-		}
-	    }
-	  
-	  /* Check if record is rejected by the reject regex */
-	  if ( reject )
-	    {
-	      if ( regexec ( reject, srcname, 0, 0, 0) == 0 )
-		{
-		  if ( verbose >= 3 )
-		    {
-		      ms_hptime2seedtimestr (recstarttime, stime, 1);
-		      ms_log (1, "Skipping (reject) %s, %s\n", srcname, stime);
-		    }
-		  continue;
-		}
-	    }
-	  
-	  /* Check if record is matched by selection */
-	  if ( selections )
-	    {
-	      if ( ! (matchsp = ms_matchselect (selections, srcname, recstarttime, recendtime, &matchstp)) )
-		{
-		  if ( verbose >= 3 )
-		    {
-		      ms_hptime2seedtimestr (recstarttime, stime, 1);
-		      ms_log (1, "Skipping (selection) %s, %s\n", srcname, stime);
-		    }
-		  continue;
-		}
-	    }
-	  
-	  if ( verbose > 2 )
-	    msr_print (msr, verbose - 3);
-	  
-	  /* Add record to the MSTraceList */
-	  if ( ! (seg = mstl_addmsr (*ppmstl, msr, bestquality, 0, timetol, sampratetol)) )
-	    {
-	      ms_hptime2seedtimestr (recstarttime, stime, 1);
-	      ms_log (2, "Cannot add record to trace list, %s, %s\n", srcname, stime);
-	      continue;
-	    }
-	  
-	  /* Determine where the record fit with this MSTraceSeg
-	   * whence:
-	   *   0 = New MSTrace
-	   *   1 = End of MSTrace
-	   *   2 = Beginning of MSTrace
-	   */
-	  whence = 0;
-	  if ( seg->prvtptr )
-	    {
-	      if ( seg->endtime == recendtime )
-		whence = 1;
-	      else if ( seg->starttime == recstarttime )
-		whence = 2;
-	      else if ( recendtime == recstarttime )
-		{
-		  /* Determine best fit for records with no span */
-		  if ( llabs (recstarttime - seg->endtime) < llabs (recstarttime - seg->starttime) )
-		    whence = 1;
-		  else
-		    whence = 2;
-		}
-	      else
-		{
-		  ms_log (2, "Cannot determine where record fit relative to trace segment\n");
-		  msr_print (msr, 1);
-		  continue;
-		}
-	    }
-	  
-	  /* Create and populate new Record structure */
-	  if ( ! (rec = (Record *) malloc (sizeof(Record))) )
-	    {
-	      ms_log (2, "Cannot allocate memory for Record entry\n");
-	      return -1;
-	    }
-	  
-	  rec->flp = flp;
-	  rec->offset = fpos;
-	  rec->stageoffset = -1;
-	  rec->reclen = msr->reclen;
-	  rec->starttime = recstarttime;
-	  rec->endtime = recendtime;
-	  rec->quality = msr->dataquality;
-	  rec->selectstart = HPTERROR;
-	  rec->selectend = HPTERROR;
-	  rec->newstart = HPTERROR;
-	  rec->newend = HPTERROR;
-	  rec->prev = 0;
-	  rec->next = 0;
-	  
-	  /* Populate a new record map */
-	  newrecmap.recordcnt = 1;
-	  newrecmap.first = rec;
-	  newrecmap.last = rec;
-	  
-	  /* If record is not completely selected search for joint selection limits */
-	  if ( matchstp && ! (matchstp->starttime <= recstarttime && matchstp->endtime >= recendtime) )
-	    {
-	      if ( findselectlimits (matchsp, srcname, recstarttime, recendtime, rec) )
-		{
-		  ms_log (2, "Problem in findselectlimits(), please report\n");
-		}
-	    }
-	  
-	  /* If pruning at the sample level trim right at the start/end times */
-	  if ( prunedata == 's' )
-	    {
-	      hptime_t seltime;
-	      	      
-	      /* Determine strictest start time (selection time or global start time) */
-	      if ( starttime != HPTERROR && rec->selectstart != HPTERROR )
-		seltime = ( starttime > rec->selectstart ) ? starttime : rec->selectstart;
-	      else if ( rec->selectstart != HPTERROR )
-		seltime = rec->selectstart;
-	      else
-		seltime = starttime;
-	      
-	      /* If the Record crosses the start time */
-	      if ( seltime != HPTERROR && (seltime > recstarttime) && (seltime < recendtime) )
-		{
-		  rec->newstart = seltime;
-		}
-	      
-	      /* Determine strictest end time (selection time or global end time) */
-	      if ( endtime != HPTERROR && rec->selectend != HPTERROR )
-		seltime = ( endtime < rec->selectend ) ? endtime : rec->selectend;
-	      else if ( rec->selectend != HPTERROR )
-		seltime = rec->selectend;
-	      else
-		seltime = endtime;
-	      
-	      /* If the Record crosses the end time */
-	      if ( seltime != HPTERROR && (seltime > recstarttime) && (seltime < recendtime) )
-		{
-		  rec->newend = seltime;
-		}
-	    }
-	  
-	  /* Create extra Record structures if splitting on a time boundary */
-	  if ( splitboundary )
-	    {
-	      BTime startbtime;
-	      hptime_t boundary = HPTERROR;
-	      hptime_t effstarttime;
-	      
-	      for (;;)
-		{
-		  effstarttime = (rec->newstart != HPTERROR) ? rec->newstart : rec->starttime;
-		  ms_hptime2btime (effstarttime, &startbtime);
-		  
-		  /* Determine next split boundary */
-		  if ( splitboundary == 'd' ) /* Days */
-		    {
-		      startbtime.day += 1;
-		      startbtime.hour = startbtime.min = startbtime.sec = startbtime.fract = 0;
-		      boundary = ms_btime2hptime (&startbtime);
-		    }
-		  else if ( splitboundary == 'h' ) /* Hours */
-		    {
-		      startbtime.hour += 1;
-		      startbtime.min = startbtime.sec = startbtime.fract = 0;
-		      boundary = ms_btime2hptime (&startbtime);
-		    }
-		  else if ( splitboundary == 'm' ) /* Minutes */
-		    {
-		      startbtime.min += 1;
-		      startbtime.sec = startbtime.fract = 0;
-		      boundary = ms_btime2hptime (&startbtime);
-		    }
-		  else
-		    {
-		      ms_log (2, "Split boundary code unrecognized: '%c'\n", splitboundary);
-		      break;
-		    }
-		  
-		  /* If end time is beyond the boundary create a new Record */
-		  if ( rec->endtime > boundary )
-		    {
-		      if ( ! (newrec = (Record *) malloc (sizeof(Record))) )
-			{
-			  ms_log (2, "Cannot allocate memory for Record entry");
-			  return -1;
-			}
-		      
-		      memcpy (newrec, rec, sizeof(Record));
-		      
-		      /* Set current Record and next Record new boundary times */
-		      rec->newend = boundary;
-		      newrec->newstart = boundary;
-		      
-		      /* Update new record map */
-		      newrecmap.recordcnt++;
-		      newrecmap.last = newrec;
-		      
-		      /* Insert the new Record in chain and set as current */
-		      rec->next = newrec;
-		      newrec->prev = rec;
-		      rec = newrec;
-		      
-		      flp->recsplitcount++;
-		    }
-		  /* Otherwise we are done */
-		  else
-		    {
-		      break;
-		    }
-		}
-	    } /* Done splitting on time boundary */
-	  
-	  /* Add the new Record(s) to the RecordMap associated with the MSTraceSeg */
-	  
-	  /* Add new Record(s) to end of the RecordMap */
-	  if ( whence == 1 )
-	    {
-	      recmap = (RecordMap *) seg->prvtptr;
-	      
-	      recmap->last->next = newrecmap.first;
-	      newrecmap.first->prev = recmap->last;
-	      
-	      recmap->last = newrecmap.last;
-	      
-	      recmap->recordcnt += newrecmap.recordcnt;
-	    }
-	  /* Add new Record(s) to beginning of the RecordMap */
-	  else if ( whence == 2 )
-	    {
-	      recmap = (RecordMap *) seg->prvtptr;
-	      
-	      recmap->first->prev = newrecmap.last;
-	      newrecmap.last->next = recmap->first;
-	      
-	      recmap->first = newrecmap.first;
-	      
-	      recmap->recordcnt += newrecmap.recordcnt;
-	      
-	      /* Increment reordered count */
-	      flp->reordercount++;
-	    }
-	  /* First Record(s) for this MSTraceSeg, allocate RecordMap */
-	  else
-	    {
-	      if ( seg->prvtptr )
-		ms_log (2, "Supposedly first record, but RecordMap not empty, report this\n");
-	      
-	      if ( ! (recmap = (RecordMap *) malloc (sizeof(RecordMap))) )
-		{
-		  ms_log (2, "Cannot allocate memory for new RecordMap\n");
-		  return -1;
-		}
-	      recmap->first = newrecmap.first;
-	      recmap->last = newrecmap.last;
-	      recmap->recordcnt = newrecmap.recordcnt;
-	      
-	      seg->prvtptr = recmap;
-	    }
-	  
-	  /* Copy record to staging buffer if space is available */
-	  if ( stagebuffer && ! stagefull )
-	    {
-	      if ( (stagelength - stageoffset) >= msr->reclen )
-		{
-		  /* Copy record to end of staging buffer contents */
-		  memcpy ((stagebuffer + stageoffset), msr->record, msr->reclen);
-		  
-		  /* Set offset to record in staging buffer */
-		  rec->stageoffset = stageoffset;
-		  
-		  /* Update offset to end of staging buffer */
-		  stageoffset += msr->reclen;
-		}
-	      else if ( ! stagefull )
-		{
-		  ms_log (1, "Warning: record staging buffer full, using input files for remaining records\n");
-		  
-		  stagefull = 1;
-		}
-	    }
-	  
-	  totalrecs++;
-	  totalsamps += msr->samplecnt;
-	} /* End of looping through records in file */
-      
-      /* Critical error if file was not read properly */
-      if ( retcode != MS_ENDOFFILE )
-	{
-	  ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr(retcode));
-	  ms_readmsr_main (&msfp, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
-	  return -1;
-	}
-      
-      /* Make sure everything is cleaned up */
-      ms_readmsr_main (&msfp, &msr, NULL, 0, NULL, NULL, 0, 0, NULL, 0);
-      
-      totalfiles++;
-      flp = flp->next;
-    } /* End of looping over file list */
-  
-  /* Increase open file limit if necessary, in general we need the
-   * filecount + ds_maxopenfiles and some wiggle room. */
-  setofilelimit (totalfiles + ds_maxopenfiles + 20);
-  
-  if ( basicsum )
-    ms_log (0, "Files: %d, Records: %d, Samples: %d\n", totalfiles, totalrecs, totalsamps);
-  
-  return 0;
-}  /* End of readfiles() */
-
-
-/***************************************************************************
  * printmodsummary():
  *
  * Print a summary of modifications to stdout.  If 'nomods' is true
@@ -2261,6 +2264,59 @@ printrecordmap (RecordMap *recmap, flag details)
       rec = rec->next;
     }
 }  /* End of printrecordmap() */
+
+
+/***************************************************************************
+ * printwritten():
+ *
+ * Print summary of output records.
+ ***************************************************************************/
+static void
+printwritten (MSTraceList *mstl)
+{
+  MSTraceID *id = 0;
+  MSTraceSeg *seg = 0;
+  char stime[30];
+  char etime[30];
+  FILE *ofp;
+  
+  if ( ! mstl )
+    return;
+  
+  if ( strcmp (writtenfile, "-") == 0 )
+    {
+      ofp = stdout;
+    }
+  else if ( (ofp = fopen (writtenfile, "wb")) == NULL )
+    {
+      ms_log (2, "Cannot open output file: %s (%s)\n",
+	      writtenfile, strerror(errno));
+      return;
+    }
+  
+  /* Loop through trace list */
+  id = mstl->traces;  
+  while ( id )
+    {
+      /* Loop through segment list */
+      seg = id->first;
+      while ( seg )
+        {
+	  if ( ms_hptime2seedtimestr (seg->starttime, stime, 1) == NULL )
+	    ms_log (2, "Cannot convert trace start time for %s\n", id->srcname);
+	  
+	  if ( ms_hptime2seedtimestr (seg->endtime, etime, 1) == NULL )
+	    ms_log (2, "Cannot convert trace end time for %s\n", id->srcname);
+	  
+	  fprintf (ofp, "%-17s %-24s %-24s %lld\n",
+		   id->srcname, stime, etime, (long long int) *((int64_t *)seg->prvtptr));
+	  
+	  seg = seg->next;
+	}
+
+      id = id->next;
+    }
+}  /* End of printwritten() */
 
 
 /***************************************************************************
@@ -2606,6 +2662,10 @@ processparam (int argcount, char **argvec)
         {
           modsummary = 1;
         }
+      else if (strcmp (argvec[optind], "-out") == 0)
+        {
+	  writtenfile = getoptval(argcount, argvec, optind++);
+        }
       else if (strcmp (argvec[optind], "-CHAN") == 0)
         {
           if ( addarchive(getoptval(argcount, argvec, optind++), CHANLAYOUT) == -1 )
@@ -2827,6 +2887,11 @@ getoptval (int argcount, char **argvec, int argopt)
   if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-s") == 0 )
     if ( strcmp (argvec[argopt+1], "-") == 0 )
       return argvec[argopt+1];
+
+  /* Special case of '-out -' usage */
+  if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-out") == 0 )
+    if ( strcmp (argvec[argopt+1], "-") == 0 )
+      return argvec[argopt+1];
   
   if ( (argopt+1) < argcount && *argvec[argopt+1] != '-' )
     return argvec[argopt+1];
@@ -2835,6 +2900,48 @@ getoptval (int argcount, char **argvec, int argopt)
   exit (1);
   return 0;
 }  /* End of getoptval() */
+
+
+/***************************************************************************
+ * setofilelimit:
+ *
+ * Check the current open file limit and if it is not >= 'limit' try
+ * to increase it to 'limit'.
+ *
+ * Returns the open file limit on success and -1 on error.
+ ***************************************************************************/
+static int
+setofilelimit (int limit)
+{
+  struct rlimit rlim;
+  rlim_t oldlimit;
+  
+  /* Get the current soft open file limit */
+  if ( getrlimit (RLIMIT_NOFILE, &rlim) == -1 )
+    {
+      ms_log (2, "getrlimit() failed to get open file limit\n");
+      return -1;
+    }
+  
+  if ( rlim.rlim_cur < limit )
+    {
+      oldlimit = rlim.rlim_cur;
+      rlim.rlim_cur = (rlim_t) limit;
+      
+      if ( verbose > 1 )
+	ms_log (1, "Setting open file limit to %d\n",
+		(int) rlim.rlim_cur);
+      
+      if ( setrlimit (RLIMIT_NOFILE, &rlim) == -1 )
+	{
+	  ms_log (2, "setrlimit failed to raise open file limit from %d to %d (max: %d)\n",
+		  (int) oldlimit, (int) limit, rlim.rlim_max);
+	  return -1;
+	}
+    }
+  
+  return (int) rlim.rlim_cur;
+}  /* End of setofilelimit() */
 
 
 /***************************************************************************
@@ -3194,6 +3301,7 @@ usage (int level)
 	   " ## Diagnostic output ##\n"
 	   " -sum         Print a basic summary after reading all input files\n"
 	   " -mod         Print summary of file modifications after processing\n"
+	   " -out file    Write a summary of output records to specified file\n"
 	   "\n"
 	   " ## Input data ##\n"
 	   " file#        Files(s) of Mini-SEED records\n"
