@@ -2287,7 +2287,7 @@ printwritten (MSTraceList *mstl)
     {
       ofp = stdout;
     }
-  else if ( (ofp = fopen (writtenfile, "wb")) == NULL )
+  else if ( (ofp = fopen (writtenfile, "ab")) == NULL )
     {
       ms_log (2, "Cannot open output file: %s (%s)\n",
 	      writtenfile, strerror(errno));
