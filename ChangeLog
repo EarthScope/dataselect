@@ -1,6 +1,6 @@
 2011.242: 3.6
-	- Modify output of -out file to include quality code and sample count
-	and to use vertical bars to seprate fields.
+	- Modify contents of -out file to include quality code and sample count
+	and to use vertical bars to separate fields.
 
 2011.231:
 	- Add -out option to write a summary of output records to a file.

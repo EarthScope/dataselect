@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.231
+ * modified 2011.242
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.6rc1"
+#define VERSION "3.6"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -1098,7 +1098,7 @@ writetraces (MSTraceList *mstl)
 		{
 		  MSTraceSeg *seg;
 		  
-		  if ( (seg = mstl_addmsr (writtentl, msr, 0, 1, -1.0, -1.0)) == NULL )
+		  if ( (seg = mstl_addmsr (writtentl, msr, 1, 1, -1.0, -1.0)) == NULL )
 		    {
 		      ms_log (2, "Error adding MSRecord to MSTraceList, bah humbug.\n");
 		    }
@@ -2308,14 +2308,21 @@ printwritten (MSTraceList *mstl)
 	  if ( ms_hptime2seedtimestr (seg->endtime, etime, 1) == NULL )
 	    ms_log (2, "Cannot convert trace end time for %s\n", id->srcname);
 	  
-	  fprintf (ofp, "%-17s %-24s %-24s %lld\n",
-		   id->srcname, stime, etime, (long long int) *((int64_t *)seg->prvtptr));
+	  fprintf (ofp, "%s|%s|%s|%s|%c|%-24s|%-24s|%lld|%lld\n",
+		   id->network, id->station, id->location, id->channel, id->dataquality,
+		   stime, etime, (long long int) *((int64_t *)seg->prvtptr),
+		   (long long int)seg->samplecnt);
 	  
 	  seg = seg->next;
 	}
-
+      
       id = id->next;
     }
+  
+  if ( ofp != stdout && fclose (ofp) )
+    ms_log (2, "Cannot close output file: %s (%s)\n",
+	    writtenfile, strerror(errno));
+  
 }  /* End of printwritten() */
 
 
