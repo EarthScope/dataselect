@@ -1,3 +1,8 @@
+2011.287: coprocessor day
+	- Optimize search for overlapping traces in findcoverage() by ending
+	search of a segment list after getting to segments that start after
+	the end time of the target, possible because the list is time ordered.
+
 2011.242: 3.6
 	- Modify contents of -out file to include quality code and sample count
 	and to use vertical bars to separate fields.

@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.242
+ * modified 2011.287
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,9 +115,8 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.6"
+#define VERSION "3.6+2011.287"
 #define PACKAGE "dataselect"
-
 /* Input/output file information containers */
 typedef struct Filelink_s {
   char    *infilename;     /* Input file name */
@@ -1570,6 +1569,13 @@ findcoverage (MSTraceList *mstl, MSTraceID *targetid, MSTraceSeg *targetseg,
 	    {
 	      seg = seg->next;
 	      continue;
+	    }
+	  
+	  /* Stop searching if target segment is before segment start time,
+	   * assuming the segments are in time order nothing later will overlap. */
+	  if ( (targetseg->endtime + hptimetol) < seg->starttime )
+	    {
+	      break;
 	    }
 	  
 	  /* Skip out-of-band (0 samprate) trace */
