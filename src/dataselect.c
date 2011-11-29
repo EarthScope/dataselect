@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.287
+ * modified 2011.332
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.6+2011.287"
+#define VERSION "3.6+2011.332"
 #define PACKAGE "dataselect"
 /* Input/output file information containers */
 typedef struct Filelink_s {
@@ -2581,11 +2581,11 @@ processparam (int argcount, char **argvec)
 	}
       else if (strcmp (argvec[optind], "-M") == 0)
 	{
-	  matchpattern = getoptval(argcount, argvec, optind++);
+	  matchpattern = strdup(getoptval(argcount, argvec, optind++));
 	}
       else if (strcmp (argvec[optind], "-R") == 0)
 	{
-	  rejectpattern = getoptval(argcount, argvec, optind++);
+	  rejectpattern = strdup(getoptval(argcount, argvec, optind++));
 	}
       else if (strcmp (argvec[optind], "-szs") == 0)
 	{
@@ -2778,7 +2778,8 @@ processparam (int argcount, char **argvec)
     {
       if ( *matchpattern == '@' )
 	{
-	  tptr = matchpattern + 1; /* Skip the @ sign */
+	  tptr = strdup(matchpattern + 1); /* Skip the @ sign */
+	  free (matchpattern);
 	  matchpattern = 0;
 	  
 	  if ( readregexfile (tptr, &matchpattern) <= 0 )
@@ -2786,6 +2787,8 @@ processparam (int argcount, char **argvec)
 	      ms_log (2, "Cannot read match pattern regex file\n");
 	      exit (1);
 	    }
+	  
+	  free (tptr);
 	}
     }
   
@@ -2794,7 +2797,8 @@ processparam (int argcount, char **argvec)
     {
       if ( *rejectpattern == '@' )
 	{
-	  tptr = rejectpattern + 1; /* Skip the @ sign */
+	  tptr = strdup(rejectpattern + 1); /* Skip the @ sign */
+	  free (rejectpattern);
 	  rejectpattern = 0;
 	  
 	  if ( readregexfile (tptr, &rejectpattern) <= 0 )
@@ -2802,6 +2806,8 @@ processparam (int argcount, char **argvec)
 	      ms_log (2, "Cannot read reject pattern regex file\n");
 	      exit (1);
 	    }
+	  
+	  free (tptr);
 	}
     }
   
@@ -2818,6 +2824,8 @@ processparam (int argcount, char **argvec)
 	{
 	  ms_log (2, "Cannot compile match regex: '%s'\n", matchpattern);
 	}
+      
+      free (matchpattern);
     }
   
   if ( rejectpattern )
@@ -2832,6 +2840,8 @@ processparam (int argcount, char **argvec)
 	{
 	  ms_log (2, "Cannot compile reject regex: '%s'\n", rejectpattern);
 	}
+      
+      free (rejectpattern);
     }
   
   /* Allocate record staging buffer */
@@ -3128,7 +3138,20 @@ readregexfile (char *regexfile, char **pppattern)
   char  line[1024];
   char  linepattern[1024];
   int   regexcnt = 0;
-  int   newpatternsize;
+  int   lengthbase;
+  int   lengthadd;
+  
+  if ( ! regexfile )
+    {
+      ms_log (2, "readregexfile: regex file not supplied\n");
+      return -1;
+    }
+  
+  if ( ! pppattern )
+    {
+      ms_log (2, "readregexfile: pattern string buffer not supplied\n");
+      return -1;
+    }
   
   /* Open the regex list file */
   if ( (fp = fopen (regexfile, "rb")) == NULL )
@@ -3158,23 +3181,36 @@ readregexfile (char *regexfile, char **pppattern)
       /* Add regex to compound regex */
       if ( *pppattern )
 	{
-	  newpatternsize = strlen(*pppattern) + strlen(linepattern) + 4;
-	  if ( ! (*pppattern = realloc (*pppattern, newpatternsize)) )
+	  lengthbase = strlen(*pppattern);
+	  lengthadd = strlen(linepattern) + 4; /* Length of addition plus 4 characters: |()\0 */
+	  
+	  *pppattern = realloc (*pppattern, lengthbase + lengthadd);
+	  
+	  if ( *pppattern )
 	    {
-	      ms_log (2, "Cannot reallocate memory for regex pattern\n");
+	      snprintf ((*pppattern)+lengthbase, lengthadd, "|(%s)", linepattern);
+	    }
+	  else
+	    {
+	      ms_log (2, "Cannot allocate memory for regex string\n");
 	      return -1;
 	    }
-	  snprintf (*pppattern, newpatternsize, "%s|(%s)", *pppattern, linepattern);
 	}
       else
 	{
-	  newpatternsize = strlen(linepattern) + 3;
-	  if ( ! (*pppattern = realloc (*pppattern, newpatternsize)) )
+	  lengthadd = strlen(linepattern) + 3; /* Length of addition plus 3 characters: ()\0 */
+	  
+	  *pppattern = malloc (lengthadd);
+	  
+	  if ( *pppattern )
 	    {
-	      ms_log (2, "Cannot allocate memory for regex pattern\n");
+	      snprintf (*pppattern, lengthadd, "(%s)", linepattern);
+	    }
+	  else
+	    {
+	      ms_log (2, "Cannot allocate memory for regex string\n");
 	      return -1;
 	    }
-	  snprintf (*pppattern, newpatternsize, "(%s)", linepattern);
 	}
     }
   
