@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.332
+ * modified 2011.362
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.6+2011.332"
+#define VERSION "3.6+2011.362"
 #define PACKAGE "dataselect"
 /* Input/output file information containers */
 typedef struct Filelink_s {
@@ -320,6 +320,7 @@ readfiles (MSTraceList **ppmstl)
   off_t fpos = 0;
   hptime_t recstarttime;
   hptime_t recendtime;
+  hptime_t hpdelta;
   
   char srcname[50];
   char stime[30];
@@ -616,7 +617,7 @@ readfiles (MSTraceList **ppmstl)
 		    }
 		  
 		  /* If end time is beyond the boundary create a new Record */
-		  if ( rec->endtime > boundary )
+		  if ( rec->endtime >= boundary )
 		    {
 		      if ( ! (newrec = (Record *) malloc (sizeof(Record))) )
 			{
@@ -626,8 +627,11 @@ readfiles (MSTraceList **ppmstl)
 		      
 		      memcpy (newrec, rec, sizeof(Record));
 		      
+		      /* Determine sample period in high precision time ticks */
+		      hpdelta = ( seg->samprate ) ? (hptime_t) (HPTMODULUS / seg->samprate) : 0;
+		      
 		      /* Set current Record and next Record new boundary times */
-		      rec->newend = boundary;
+		      rec->newend = boundary - (hpdelta * 0.75);
 		      newrec->newstart = boundary;
 		      
 		      /* Update new record map */
