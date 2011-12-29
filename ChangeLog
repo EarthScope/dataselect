@@ -1,3 +1,7 @@
+2011.362:
+	- Fix splitting of records on boundaries where the sample is exactly on
+	the boundary.
+
 2011.349:
 	- Update to libmseed 2.6.2.
 
