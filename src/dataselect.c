@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.362
+ * modified 2011.363
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,8 +115,9 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.6+2011.362"
+#define VERSION "3.6+2011.363"
 #define PACKAGE "dataselect"
+
 /* Input/output file information containers */
 typedef struct Filelink_s {
   char    *infilename;     /* Input file name */
@@ -1239,14 +1240,14 @@ writetraces (MSTraceList *mstl)
  * times, this routine calculates which samples fit within the new
  * boundaries.
  *
- * Return 0 on success, -1 on failure and -2 on unpacking errors.
+ * Return 0 on success, -1 on failure or skip and -2 on unpacking errors.
  ***************************************************************************/
 static int
 trimrecord (Record *rec, char *recordbuf)
 {
   MSRecord *msr = 0;
   hptime_t hpdelta;
-  
+
   char srcname[50];
   char stime[30];
   char etime[30];
@@ -1358,7 +1359,13 @@ trimrecord (Record *rec, char *recordbuf)
 	}
       
       if ( trimsamples >= msr->samplecnt )
-	ms_log (2, "All %d samples trimmed from record ??\n", trimsamples);
+	{
+	  if ( verbose > 1 )
+	    ms_log (1, "All samples would be trimmed from record, skipping\n");
+	  
+	  msr_free (&msr);
+	  return -1;
+	}
       
       if ( verbose > 2 )
 	{
@@ -1394,7 +1401,13 @@ trimrecord (Record *rec, char *recordbuf)
 	}
       
       if ( trimsamples >= msr->samplecnt )
-	ms_log (2, "All %d samples trimmed from record ??\n", trimsamples);
+	{
+	  if ( verbose > 1 )
+	    ms_log (1, "All samples would be trimmed from record, skipping\n");
+	  
+	  msr_free (&msr);
+	  return -1;
+	}
       
       if ( verbose > 2 )
 	{
@@ -1769,7 +1782,7 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 		{
 		  /* Set Record new end time boundary including specified time tolerance */
 		  rec->newend = cmst->starttime - hpdelta + hptimetol;
-
+		  
 		  if ( (starttime != HPTERROR) && (rec->newend < starttime) )
 		    {
 		      if ( verbose > 1 )
@@ -1840,6 +1853,7 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 		  rec->reclen = 0;
 		  modcount++;
 		}
+	      
 	    } /* Done pruning at sample level */
 	  
 	  cmst = cmst->next;
@@ -1849,7 +1863,7 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
     }
   
   return modcount;
-}  /* End of trimtraces() */
+}  /* End of trimtrace() */
 
 
 /***************************************************************************

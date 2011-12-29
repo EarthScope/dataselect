@@ -1,3 +1,8 @@
+2011.363:
+	- Detect trimming of all samples from a record and skip gracefully (do not
+	report an error), this can legitimately happen when a selected time range
+	is shorter than the sample period and no sample exists in the range.
+ 
 2011.362:
 	- Fix splitting of records on boundaries where the sample is exactly on
 	the boundary.  Thanks to Jean-Baptiste Le Blanc for reporting.
