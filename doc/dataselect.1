@@ -76,7 +76,8 @@ quality indicator: (highest) Q > D > R (lowest).
 Use an internal buffer of \fIsize\fP bytes (\fBK\fP, \fBM\fP and
 \fBG\fP suffixes recognized) to store records during the initial read
 and use them for output instead of re-reading the files.  Useful for
-speeding up reads from slow network storage, but not always faster.
+speeding up reads from slow network storage, but not always faster due
+to OS and other caching.
 
 .IP "-s \fIselectfile\fP"
 Limit processing to Mini-SEED records that match a selection in the
