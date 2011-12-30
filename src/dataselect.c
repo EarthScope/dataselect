@@ -1051,6 +1051,9 @@ writetraces (MSTraceList *mstl)
 		  errflag = 2;
 		  break;
 		}
+	      
+	      /* Trimmed records are re-packed in the global record buffer */
+	      recordptr = recordbuf;
 	    }
 	  
 	  /* Re-stamp quality indicator if specified */

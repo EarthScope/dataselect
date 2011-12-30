@@ -2,6 +2,7 @@
 	- Detect trimming of all samples from a record and skip gracefully (do not
 	report an error), this can legitimately happen when a selected time range
 	is shorter than the sample period and no sample exists in the range.
+	- Fix usage of staging buffer (-sb option) when pruning to sample level.
  
 2011.362:
 	- Fix splitting of records on boundaries where the sample is exactly on
