@@ -1,4 +1,4 @@
-2011.363:
+2011.363: 3.7rc1
 	- Detect trimming of all samples from a record and skip gracefully (do not
 	report an error), this can legitimately happen when a selected time range
 	is shorter than the sample period and no sample exists in the range.

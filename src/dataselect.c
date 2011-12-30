@@ -1032,7 +1032,7 @@ writetraces (MSTraceList *mstl)
 	      
 	      recordptr = recordbuf;
 	    }
- 
+	  
 	  /* Trim data from the record if new start or end times are specifed */
 	  if ( rec->newstart != HPTERROR || rec->newend != HPTERROR )
 	    {
