@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.363
+ * modified 2012.056
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.7"
+#define VERSION "3.8"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -270,7 +270,7 @@ main ( int argc, char **argv )
   /* Read and process all files specified on the command line */
   if ( readfiles (&mstl) )
     return 1;
-  
+
   /* Processes traces */
   if ( mstl->numtraces > 0 && processtraces (mstl) )
     return 1;
@@ -892,61 +892,64 @@ writetraces (MSTraceList *mstl)
 	    }
 	}
       
-      /* Allocate group ID RecordMap */
-      if ( ! groupid->prvtptr )
-	{
-	  if ( ! (id->prvtptr = calloc (1, sizeof(RecordMap))) )
-	    {
-	      ms_log (2, "writetraces(): Cannot allocate memory\n");
-	      return 1;
-	    }
-	  groupmap = (RecordMap *) id->prvtptr;
-	}
-      
       seg = id->first;
-      while ( seg )
-	{
-	  recmap = (RecordMap *) seg->prvtptr;
-	  rec = recmap->first;
-	  while ( rec && ! errflag )
+      if ( seg )
+        {
+          /* Allocate group ID RecordMap if needed */
+          if ( ! groupid->prvtptr )
 	    {
-	      recnext = rec->next;
-	      
-	      /* Skip marked (pre-identified as non-contributing) records */
-	      if ( rec->reclen == 0 )
-		{
-		  rec = recnext;
-		  continue;
-		}
-	      
-	      /* Add record to group ID write list */
-	      if ( ! groupmap->first )
-		{
-		  groupmap->first = rec;
-		  rec->prev = 0;
-		  rec->next = 0;
-		  groupmap->last = rec;
-		  groupmap->recordcnt = 1;
-		}
-	      else
-		{
-		  groupmap->last->next = rec;
-		  rec->prev = groupmap->last;
-		  rec->next = 0;
-		  groupmap->last = rec;
-		  groupmap->recordcnt++;
-		}
-	      
-	      rec = recnext;
-	    } /* Done looping through Records in the RecordMap */
+	      if ( ! (id->prvtptr = calloc (1, sizeof(RecordMap))) )
+	        {
+	          ms_log (2, "writetraces(): Cannot allocate memory\n");
+	          return 1;
+	        }
+	      groupmap = (RecordMap *) id->prvtptr;
+	    }
 	  
-	  /* Free segment RecordMap and cauterize */
-	  if ( seg->prvtptr )
-	    free (seg->prvtptr);
-	  seg->prvtptr = 0;
-	  
-	  seg = seg->next;
-	} /* Done looping through MSTraceSegs in the MSTraceID */
+          while ( seg )
+	    {
+	      recmap = (RecordMap *) seg->prvtptr;
+	      rec = recmap->first;
+	      while ( rec && ! errflag )
+	        {
+	          recnext = rec->next;
+		  
+	          /* Skip marked (pre-identified as non-contributing) records */
+	          if ( rec->reclen == 0 )
+		    {
+		      rec = recnext;
+		      continue;
+		    }
+		  
+	          /* Add record to group ID write list */
+	          if ( ! groupmap->first )
+		    {
+		      groupmap->first = rec;
+		      rec->prev = 0;
+		      rec->next = 0;
+		      groupmap->last = rec;
+		      groupmap->recordcnt = 1;
+		    }
+	          else
+		    {
+		      groupmap->last->next = rec;
+		      rec->prev = groupmap->last;
+		      rec->next = 0;
+		      groupmap->last = rec;
+		      groupmap->recordcnt++;
+		    }
+		  
+	          rec = recnext;
+	        } /* Done looping through Records in the RecordMap */
+	      
+	      /* Free segment RecordMap and cauterize */
+	      if ( seg->prvtptr )
+	        free (seg->prvtptr);
+	      seg->prvtptr = 0;
+	      
+	      seg = seg->next;
+	    } /* Done looping through MSTraceSegs in the MSTraceID */
+        }
       
       id = id->next;
     } /* Done looping through MSTraceIDs in the MSTraceList */  
@@ -1877,7 +1880,7 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
  * In other words, set the start and end times of each MSTraceSeg in
  * the MSTraceList according to the start time of the first and end
  * time of the last contributing records in the associated record map;
- * this should be preformed after the pruning process which could mark
+ * this should be performed after the pruning process which could mark
  * complete records as pruned (non-contributing).
  *
  * Returns 0 on success and -1 on error.
@@ -2419,6 +2422,9 @@ sortrecmap (RecordMap *recmap)
   
   if ( ! recmap )
     return -1;
+  
+  if ( ! recmap->first || ! recmap->last ) /* Done if empty */
+    return 0;
   
   top = recmap->first;
   insize = 1;
