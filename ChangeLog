@@ -1,3 +1,6 @@
+2012.135:
+	- Fix error message when skipping unsupported encodings or ASCII.
+
 2012.056: 3.8
 	- Fix crash when minimum-segment-length eliminates all traces and leaves
 	an empty record structure.  Note MSL is tested on quality-specific traces.

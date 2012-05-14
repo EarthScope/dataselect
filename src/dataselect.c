@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.056
+ * modified 2012.135
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.8"
+#define VERSION "3.9dev"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -1311,12 +1311,12 @@ trimrecord (Record *rec, char *recordbuf)
 	  if ( ! msr->Blkt1000 )
 	    ms_log (1, "Skipping trim of %s (%s), missing blockette 1000\n",
 		    srcname, stime, msr->encoding);
-	  else if ( msr->encoding != DE_ASCII )
+	  else if ( msr->encoding == DE_ASCII )
 	    ms_log (1, "Skipping trim of %s (%s), ASCII encoded data\n",
 		    srcname, stime, msr->encoding);
 	  else
-	    ms_log (1, "Skipping trim of %s (%s), unsupported encoding (%d)\n",
-		    srcname, stime, msr->encoding);
+	    ms_log (1, "Skipping trim of %s (%s), unsupported encoding (%d: %s)\n",
+		    srcname, stime, msr->encoding, ms_encodingstr(msr->encoding));
 	}
       
       msr_free (&msr);
