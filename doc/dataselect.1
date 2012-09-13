@@ -1,4 +1,4 @@
-.TH DATASELECT 2011/08/31
+.TH DATASELECT 2012/09/13
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -177,6 +177,12 @@ records partially overlap the lowest priority record is unpacked,
 trimmed and repacked.  Record trimming requires a supported data
 encoding, if unsupported (primarily older encodings) the record will
 be in the output untrimmed.
+
+.IP "-Pe         "
+Prune (trim) returned traces to user specified edges (start and end
+times) at the sample level. This option will not remove overlap data
+within specified start and end time window.  Caveats the same as for
+\fB-Ps\fR.
 
 .IP "-S[dhm]      "
 Split records on day, hour or minute boundaries.  When data records

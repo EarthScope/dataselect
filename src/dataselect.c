@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.135
+ * modified 2012.257
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.9dev"
+#define VERSION "3.9rc"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -206,7 +206,7 @@ static void usage (int level);
 static flag     verbose       = 0;
 static flag     basicsum      = 0;    /* Controls printing of basic summary */
 static flag     bestquality   = 1;    /* Use D, R, Q, M quality to retain the "best" data when pruning */
-static flag     prunedata     = 0;    /* Prune data: 'r= record level, 's' = sample level */
+static flag     prunedata     = 0;    /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
 static double   timetol       = -1.0; /* Time tolerance for continuous traces */
 static double   sampratetol   = -1.0; /* Sample rate tolerance for continuous traces */
 static char     restampqind   = 0;    /* Re-stamp data record/quality indicator */
@@ -547,10 +547,10 @@ readfiles (MSTraceList **ppmstl)
 	    }
 	  
 	  /* If pruning at the sample level trim right at the start/end times */
-	  if ( prunedata == 's' )
+	  if ( prunedata == 's' || prunedata == 'e' )
 	    {
 	      hptime_t seltime;
-	      	      
+	      
 	      /* Determine strictest start time (selection time or global start time) */
 	      if ( starttime != HPTERROR && rec->selectstart != HPTERROR )
 		seltime = ( starttime > rec->selectstart ) ? starttime : rec->selectstart;
@@ -770,9 +770,10 @@ processtraces (MSTraceList *mstl)
   /* Prune data */
   if ( prunedata )
     {
-      /* Perform pre-identified pruning actions */
-      if ( prunetraces (mstl) )
-	return -1;
+      /* Prune overlaps */
+      if ( prunedata == 'r' || prunedata == 's' )
+	if ( prunetraces (mstl) )
+	  return -1;
       
       /* Reconcile MSTraceID times with associated record maps */
       if ( reconcile_tracetimes (mstl) )
@@ -2667,6 +2668,10 @@ processparam (int argcount, char **argvec)
 	{
 	  prunedata = 's';
 	}
+      else if (strcmp (argvec[optind], "-Pe") == 0)
+	{
+	  prunedata = 'e';
+	}
       else if (strcmp (argvec[optind], "-Sd") == 0)
 	{
 	  splitboundary = 'd';
@@ -3370,6 +3375,7 @@ usage (int level)
 	   " -A format    Write all records in a custom directory/file layout (try -H)\n"
 	   " -Pr          Prune data at the record level using 'best' quality priority\n"
 	   " -Ps          Prune data at the sample level using 'best' quality priority\n"
+	   " -Pe          Prune traces at user specified edges only, leave overlaps\n"
 	   " -S[dhm]      Split records on day, hour or minute boundaries\n"
 	   " -rls         Add suffixes to output files to split on record length changes\n"
 	   " -Q DRQM      Re-stamp output data records with quality code: D, R, Q or M\n"

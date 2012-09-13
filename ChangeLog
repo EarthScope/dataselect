@@ -1,3 +1,9 @@
+2012.257:
+	- Update libmseed to 2.7.
+	- Add -Pe option to request pruning at edges only (user specified start 
+	and end) at the sample level.  This will leave overlap within the user
+	specified time window but will trim traces to the window.
+
 2012.135:
 	- Fix error message when skipping unsupported encodings or ASCII.
 
