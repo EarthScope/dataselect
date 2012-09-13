@@ -7,7 +7,7 @@
  * ORFEUS/EC-Project MEREDIAN
  * IRIS Data Management Center
  *
- * modified: 2011.124
+ * modified: 2012.114
  ***************************************************************************/
 
 #include <stdio.h>
@@ -217,6 +217,52 @@ ms_strncpclean (char *dest, const char *source, int length)
   
   return didx;
 }  /* End of ms_strncpclean() */
+
+
+/***************************************************************************
+ * ms_strncpcleantail:
+ *
+ * Copy up to 'length' characters from 'source' to 'dest' without any
+ * trailing spaces.  The result is left justified and always null
+ * terminated.  The destination string must have enough room needed
+ * for the characters within 'length' and the null terminator, a
+ * maximum of 'length + 1'.
+ *
+ * Returns the number of characters (not including the null terminator) in
+ * the destination string.
+ ***************************************************************************/
+int
+ms_strncpcleantail (char *dest, const char *source, int length)
+{
+  int idx, pretail;
+  
+  if ( ! dest )
+    return 0;
+  
+  if ( ! source )
+    {
+      *dest = '\0';
+      return 0;
+    }
+  
+  *(dest+length) = '\0';
+  
+  pretail = 0;
+  for ( idx=length-1; idx >= 0 ; idx-- )
+    {
+      if ( ! pretail && *(source+idx) == ' ' )
+	{
+	  *(dest+idx) = '\0';
+	}
+      else
+	{
+	  pretail++;
+	  *(dest+idx) = *(source+idx);
+	}
+    }
+  
+  return pretail;
+}  /* End of ms_strncpcleantail() */
 
 
 /***************************************************************************
@@ -1081,7 +1127,7 @@ ms_genfactmult (double samprate, int16_t *factor, int16_t *multiplier)
   
   /* This routine does not support very high or negative sample rates,
      even though high rates are possible in Mini-SEED */
-  if ( samprate > 32727.0 || samprate < 0.0 )
+  if ( samprate > 32767.0 || samprate < 0.0 )
     {
       ms_log (2, "ms_genfactmult(): samprate out of range: %g\n", samprate);
       return -1;
@@ -1098,7 +1144,7 @@ ms_genfactmult (double samprate, int16_t *factor, int16_t *multiplier)
     }
   else
     {
-      ms_ratapprox (samprate, &num, &den, 32727, 1e-12);
+      ms_ratapprox (samprate, &num, &den, 32767, 1e-12);
       
       /* Negate the multiplier to denote a division factor */
       *factor = (int16_t ) num;
