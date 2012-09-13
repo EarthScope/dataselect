@@ -1,4 +1,4 @@
-2012.257:
+2012.257: 3.9
 	- Update libmseed to 2.7.
 	- Add -Pe option to request pruning at edges only (user specified start 
 	and end) at the sample level.  This will leave overlap within the user
