@@ -1,3 +1,9 @@
+2012.356: 3.10
+	- Set time correction applied flag when repacking records with previously
+	unapplied time corrections.
+	- Fix missing samples when splitting on day, hour, minute.
+	
+
 2012.257: 3.9
 	- Update libmseed to 2.7.
 	- Add -Pe option to request pruning at edges only (user specified start 

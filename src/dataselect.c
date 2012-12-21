@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.257
+ * modified 2012.356
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.9"
+#define VERSION "3.10"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -628,11 +628,8 @@ readfiles (MSTraceList **ppmstl)
 		      
 		      memcpy (newrec, rec, sizeof(Record));
 		      
-		      /* Determine sample period in high precision time ticks */
-		      hpdelta = ( seg->samprate ) ? (hptime_t) (HPTMODULUS / seg->samprate) : 0;
-		      
 		      /* Set current Record and next Record new boundary times */
-		      rec->newend = boundary - (hpdelta * 0.75);
+		      rec->newend = boundary - 1;
 		      newrec->newstart = boundary;
 		      
 		      /* Update new record map */
@@ -1425,6 +1422,13 @@ trimrecord (Record *rec, char *recordbuf)
       msr->numsamples -= trimsamples;
       msr->samplecnt -= trimsamples;
       rec->endtime = newendtime;
+    }
+
+  /* Repacking the record will apply any unapplied time corrections to the start time,
+   * make sure the flag is set to indicate that the correction has been applied. */
+  if ( msr->fsdh && msr->fsdh->time_correct != 0 && ! (msr->fsdh->act_flags & 0x02) )
+    {
+      msr->fsdh->act_flags |= (1<<1);
     }
   
   /* Pack the data record into the global record buffer used by writetraces() */
