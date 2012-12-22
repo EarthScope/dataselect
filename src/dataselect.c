@@ -321,7 +321,6 @@ readfiles (MSTraceList **ppmstl)
   off_t fpos = 0;
   hptime_t recstarttime;
   hptime_t recendtime;
-  hptime_t hpdelta;
   
   char srcname[50];
   char stime[30];
