@@ -1,6 +1,7 @@
 2013.056: 3.11
 	- Update libmseed to 2.10, including more time string parsing and more
 	checks for bad data potentially causing a segmentation fault.
+	The bad data check results in the remainder of the channel being skipped.
 
 2012.356: 3.10
 	- Set time correction applied flag when repacking records with previously
