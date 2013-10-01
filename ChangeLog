@@ -1,3 +1,8 @@
+2013.274: 3.12
+	- Update libmseed to 2.12, including a fix for reconstructing a time
+	series when a positive leap second is noted in the activity flags of
+	the fixed section data header.
+
 2013.056: 3.11
 	- Update libmseed to 2.10, including more time string parsing and more
 	checks for bad data potentially causing a segmentation fault.
