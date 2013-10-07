@@ -1,3 +1,8 @@
+2013.280: 3.13
+	- Do not time sort records when only pruning the start/end times (-Pe).
+	The records have already been sorted by time within a segment and if
+	overlap is contained in the data we do not want the records re-sorted.
+
 2013.274: 3.12
 	- Update libmseed to 2.12, including a fix for reconstructing a time
 	series when a positive leap second is noted in the activity flags of

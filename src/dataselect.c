@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.356
+ * modified 2013.280
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.12"
+#define VERSION "3.13"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -847,7 +847,7 @@ writetraces (MSTraceList *mstl)
   
   if ( verbose )
     ms_log (1, "Writing output data\n");
-
+  
   /* Open the output file if specified */
   if ( outputfile )
     {
@@ -972,8 +972,8 @@ writetraces (MSTraceList *mstl)
       
       recmap = (RecordMap *) id->prvtptr;
       
-      /* Sort record list if data has been pruned */
-      if ( prunedata )
+      /* Sort record list if overlaps have been pruned */
+      if ( prunedata == 'r' || prunedata == 's' )
 	{
           sortrecmap (recmap);
 	}
