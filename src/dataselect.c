@@ -1059,7 +1059,7 @@ writetraces (MSTraceList *mstl)
 	  /* Re-stamp quality indicator if specified */
 	  if ( restampqind )
 	    {
-	      if ( verbose > 1 )
+	      if ( verbose > 3 )
 		ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
 	      
 	      *(recordptr + 6) = restampqind;
