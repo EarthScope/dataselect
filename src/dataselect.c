@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2013.280
+ * modified 2013.329
  ***************************************************************************/
 
 /***************************************************************************
@@ -866,7 +866,9 @@ writetraces (MSTraceList *mstl)
         }
     }
   
-  /* Re-link records into write lists */
+  /* Re-link records into write lists, from per-segment lists to per ID lists.
+   * This allows (later) sorting of data records as logical groups regardless
+   * from which segment the record was originally associated. */
   id = mstl->traces;
   groupid = id;
   while ( id )
@@ -874,7 +876,9 @@ writetraces (MSTraceList *mstl)
       /* Determine if this is a new group */
       if ( groupid != id )
 	{
-	  /* If data was pruned group by network, station, location or channel */
+	  /* If data was pruned, group by network, station, location and channel.
+	   * When pruning, data is grouped by NSLC and quality.  This groups the write 
+	   * lists by NSLC without quality considered. */
 	  if ( prunedata )
 	    {
 	      if ( strcmp (id->network, groupid->network) || strcmp (id->station, groupid->station) ||
@@ -911,9 +915,10 @@ writetraces (MSTraceList *mstl)
 	        {
 	          recnext = rec->next;
 		  
-	          /* Skip marked (pre-identified as non-contributing) records */
+	          /* Free and skip marked (pre-identified as non-contributing) records */
 	          if ( rec->reclen == 0 )
 		    {
+		      free (rec);
 		      rec = recnext;
 		      continue;
 		    }
@@ -972,7 +977,8 @@ writetraces (MSTraceList *mstl)
       
       recmap = (RecordMap *) id->prvtptr;
       
-      /* Sort record list if overlaps have been pruned */
+      /* Sort record list if overlaps have been pruned, if the data has not been
+       * pruned it is already in time order. */
       if ( prunedata == 'r' || prunedata == 's' )
 	{
           sortrecmap (recmap);
@@ -2018,6 +2024,10 @@ minsegmentlength (MSTraceList *mstl, double minseconds)
   hptime_t hpminimum;
   hptime_t segmentlength;
   char timestr[50];
+  RecordMap *recmap = 0;
+  Record *rec;
+  Record *recnext;
+  int prevcount;
   
   if ( ! mstl )
     return -1;
@@ -2030,6 +2040,7 @@ minsegmentlength (MSTraceList *mstl, double minseconds)
     {
       /* Loop through segment list */
       seg = id->first;
+      prevcount  = 0;
       while ( seg )
         {
 	  segmentlength = seg->endtime - seg->starttime;
@@ -2057,6 +2068,19 @@ minsegmentlength (MSTraceList *mstl, double minseconds)
 		seg->next->prev = seg->prev;
 	      
 	      id->numsegments--;
+	      
+	      if ( seg->prvtptr )
+		{
+		  recmap = (RecordMap *) seg->prvtptr;
+		  rec = recmap->first;
+		  while ( rec )
+		    {
+		      recnext = rec->next;
+		      free (rec);
+		      rec = recnext;
+		    }
+		  free (recmap);
+		}
 	      
 	      free (seg);
 	    }
@@ -2088,6 +2112,9 @@ longestsegmentonly (MSTraceList *mstl)
   hptime_t longestsegment;
   hptime_t segmentlength;
   char timestr[50];
+  RecordMap *recmap = 0;
+  Record *rec;
+  Record *recnext;
   
   if ( ! mstl )
     return -1;
@@ -2134,6 +2161,19 @@ longestsegmentonly (MSTraceList *mstl)
         {
 	  if ( seg != longestseg )
 	    {
+	      if ( seg->prvtptr )
+		{
+		  recmap = (RecordMap *) seg->prvtptr;
+		  rec = recmap->first;
+		  while ( rec )
+		    {
+		      recnext = rec->next;
+		      free (rec);
+		      rec = recnext;
+		    }
+		  free (recmap);
+		}
+	      
 	      free (seg);
 	    }
 	  

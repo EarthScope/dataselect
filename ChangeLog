@@ -1,3 +1,10 @@
+2013.329:
+	- Free memory of pruned structures to avoid (mostly inconsequential)
+	memory leaks, best to be clean about this kind of thing (I suppose).
+	- Remember why "write lists" are created and add comments so I stop
+	wondering why.  Hint: it is so the record entries can be sorted
+	together even when they come from different segments/qualities.
+
 2013.280: 3.13
 	- Do not time sort records when only pruning the start/end times (-Pe).
 	The records have already been sorted by time within a segment and if
