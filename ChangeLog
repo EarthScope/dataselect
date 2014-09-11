@@ -1,3 +1,6 @@
+2014.254:
+	- Update libmseed to 2.13.
+
 2013.329:
 	- Free memory of pruned structures to avoid (mostly inconsequential)
 	memory leaks, best to be clean about this kind of thing (I suppose).

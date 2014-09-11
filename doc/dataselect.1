@@ -1,12 +1,12 @@
-.TH DATASELECT 2012/09/13
+.TH DATASELECT 1 2012/09/13
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
 .SH SYNOPSIS
 .nf
 dataselect [options] file1 [file2 file3 ...]
-
 .fi
+
 .SH DESCRIPTION
 \fBdataselect\fP selects, sorts and prunes Mini-SEED data.  Any output
 data will always be sorted by ascending time-series segments.  Various
@@ -35,7 +35,7 @@ possible.
 
 Files on the command line prefixed with a '@' character are input list
 files and are expected to contain a simple list of input files, see
-\fBINPUT LIST FILE\fR for more details.
+\fBINPUT LIST FILE\fP for more details.
 
 When a input file is full SEED including both SEED headers and data
 records all of the headers will be skipped and completely unprocessed.
@@ -85,7 +85,7 @@ specified file.  The selection file contains parameters to match the
 network, station, location, channel, quality and time range for input
 records.  As a special case, specifying "-" will result in selection
 lines being read from stdin.  For more details see the \fBSELECTION
-FILE\fR section below.
+FILE\fP section below.
 
 .IP "-ts \fItime\fP"
 Limit processing to Mini-SEED records that start after or contain
@@ -104,7 +104,7 @@ Limit input to records that match this regular expression, the
 \fImatch\fP is tested against the full source
 name: 'NET_STA_LOC_CHAN_QUAL'.  If the match expression begins with
 an '@' character it is assumed to indicate a file containing a list of
-expressions to match, see the \fBMATCH OR REJECT LIST FILE\fR section
+expressions to match, see the \fBMATCH OR REJECT LIST FILE\fP section
 below.
 
 .IP "-R \fIreject\fP"
@@ -112,7 +112,7 @@ Limit input to records that do not match this regular expression, the
 \fIreject\fP is tested against the full source
 name: 'NET_STA_LOC_CHAN_QUAL'.  If the reject expression begins with
 an '@' character it is assumed to indicate a file containing a list of
-expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fR
+expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fP
 section below.
 
 .IP "-szs"
@@ -148,21 +148,21 @@ specified as the output file all output data will be written to
 standard out.  By default the output file will be overwritten,
 changing the option to \fI+o file\fP appends to the output file.
 
-.IP "-A \fIformat\fR"
+.IP "-A \fIformat\fP"
 All output records will be written to a directory/file layout defined
 by \fIformat\fP.  All directories implied in the \fIformat\fP string
 will be created if necessary.  The option may be used multiple times
 to write input records to multiple archives.  See the \fBARCHIVE
-FORMAT\fR section below for more details including pre-defined archive
+FORMAT\fP section below for more details including pre-defined archive
 layouts.
 
-.IP "-CHAN \fIdirectory\fR"
-.IP "-QCHAN \fIdirectory\fR"
-.IP "-CDAY \fIdirectory\fR"
-.IP "-SDAY \fIdirectory\fR"
-.IP "-BUD \fIdirectory\fR"
-.IP "-CSS \fIdirectory\fR"
-Pre-defined output archive formats, see the \fBArchive Format\fR
+.IP "-CHAN \fIdirectory\fP"
+.IP "-QCHAN \fIdirectory\fP"
+.IP "-CDAY \fIdirectory\fP"
+.IP "-SDAY \fIdirectory\fP"
+.IP "-BUD \fIdirectory\fP"
+.IP "-CSS \fIdirectory\fP"
+Pre-defined output archive formats, see the \fBArchive Format\fP
 section below for more details.
 
 .IP "-Pr         "
@@ -182,7 +182,7 @@ be in the output untrimmed.
 Prune (trim) returned traces to user specified edges (start and end
 times) at the sample level. This option will not remove overlap data
 within specified start and end time window.  Caveats the same as for
-\fB-Ps\fR.
+\fB-Ps\fP.
 
 .IP "-S[dhm]      "
 Split records on day, hour or minute boundaries.  When data records
