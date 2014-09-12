@@ -1,4 +1,4 @@
-.TH DATASELECT 1 2012/09/13
+.TH DATASELECT 1 2014/09/12
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -214,8 +214,16 @@ files processed.
 
 .IP "-out file    "
 Print a summary of output records to the specified file.  Any existing
-file will be appended to.  Each line contains the start time, end
-time, byte count and sample count for each output trace segment.
+file will be appended to.  Specify the file as '-' to print to stdout
+or '--' to print to stderr.  Each line contains network, station,
+location, channel, quality, start time, end time, byte count and
+sample count for each output trace segment.
+
+.IP "-outprefix prefix"
+Include the specified prefix string at the beginning of each line of
+summary output when using the \fI-out\fP option.  This is useful to
+identify the summary output in a stream that is potentially mixed with
+other output.
 
 .SH THE PRUNING PROCESS
 

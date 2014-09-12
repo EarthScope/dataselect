@@ -1,5 +1,8 @@
-2014.254:
+2014.255: 3.14
 	- Update libmseed to 2.13.
+	- New -outprefix argument to add a prefix to each output record
+	summary line.  Helpful when identifying the potentially mixed output.
+	- Allow '-out --' for sending the output summary to stderr.
 
 2013.329:
 	- Free memory of pruned structures to avoid (mostly inconsequential)

@@ -114,7 +114,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
     {
       if ( fnptr->next != 0 )
 	{
-	  strncat (filename, "/", sizeof(filename));
+	  strncat (filename, "/", sizeof(filename)-1);
 	  fnptr = fnptr->next;
 	}
       else

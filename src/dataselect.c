@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2013.329
+ * modified 2014.255
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.13"
+#define VERSION "3.14"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -241,6 +241,7 @@ static Filelink *filelisttail = 0;    /* Tail of list of input files */
 static Selections *selections = 0;    /* List of data selections */
 
 static char *writtenfile      = 0;    /* File to write summary of output records */
+static char *writtenprefix    = 0;    /* Prefix for summary of output records */
 static MSTraceList *writtentl = 0;    /* TraceList of output records */
 
 int
@@ -2361,6 +2362,10 @@ printwritten (MSTraceList *mstl)
     {
       ofp = stdout;
     }
+  else if ( strcmp (writtenfile, "--") == 0 )
+    {
+      ofp = stderr;
+    }
   else if ( (ofp = fopen (writtenfile, "ab")) == NULL )
     {
       ms_log (2, "Cannot open output file: %s (%s)\n",
@@ -2382,7 +2387,8 @@ printwritten (MSTraceList *mstl)
 	  if ( ms_hptime2seedtimestr (seg->endtime, etime, 1) == NULL )
 	    ms_log (2, "Cannot convert trace end time for %s\n", id->srcname);
 	  
-	  fprintf (ofp, "%s|%s|%s|%s|%c|%-24s|%-24s|%lld|%lld\n",
+	  fprintf (ofp, "%s%s|%s|%s|%s|%c|%-24s|%-24s|%lld|%lld\n",
+		   ( writtenprefix )? writtenprefix : "",
 		   id->network, id->station, id->location, id->channel, id->dataquality,
 		   stime, etime, (long long int) *((int64_t *)seg->prvtptr),
 		   (long long int)seg->samplecnt);
@@ -2754,6 +2760,10 @@ processparam (int argcount, char **argvec)
         {
 	  writtenfile = getoptval(argcount, argvec, optind++);
         }
+      else if (strcmp (argvec[optind], "-outprefix") == 0)
+        {
+	  writtenprefix = getoptval(argcount, argvec, optind++);
+        }
       else if (strcmp (argvec[optind], "-CHAN") == 0)
         {
           if ( addarchive(getoptval(argcount, argvec, optind++), CHANLAYOUT) == -1 )
@@ -2986,9 +2996,10 @@ getoptval (int argcount, char **argvec, int argopt)
     if ( strcmp (argvec[argopt+1], "-") == 0 )
       return argvec[argopt+1];
 
-  /* Special case of '-out -' usage */
+  /* Special case of '-out -' or '-out --' usage */
   if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-out") == 0 )
-    if ( strcmp (argvec[argopt+1], "-") == 0 )
+    if ( strcmp (argvec[argopt+1], "-") == 0 ||
+	 strcmp (argvec[argopt+1], "--") == 0)
       return argvec[argopt+1];
   
   if ( (argopt+1) < argcount && *argvec[argopt+1] != '-' )
@@ -3427,6 +3438,7 @@ usage (int level)
 	   " -sum         Print a basic summary after reading all input files\n"
 	   " -mod         Print summary of file modifications after processing\n"
 	   " -out file    Write a summary of output records to specified file\n"
+	   " -outprefix X Include prefix on summary output lines for identification\n"
 	   "\n"
 	   " ## Input data ##\n"
 	   " file#        Files(s) of Mini-SEED records\n"
