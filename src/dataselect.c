@@ -285,6 +285,9 @@ main ( int argc, char **argv )
       mstl_free (&writtentl, 1);
     }
   
+  if ( mstl )
+    mstl_free (&mstl, 1);
+
   return 0;
 }  /* End of main() */
 
