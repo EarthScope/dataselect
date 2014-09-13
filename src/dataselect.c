@@ -285,8 +285,11 @@ main ( int argc, char **argv )
       mstl_free (&writtentl, 1);
     }
   
-  if ( mstl )
-    mstl_free (&mstl, 1);
+  /* The main MSTraceList (mstl) is not freed on purpose: the structure has a
+   * potentially huge number of sub-structures (Records in the RecordMap of
+   * each ID) which would take a long time iterate through.  This would be a
+   * waste of time given that the program is now done.
+   * Mind that this may show up as a memory leak for some profilers. */
 
   return 0;
 }  /* End of main() */
@@ -520,7 +523,7 @@ readfiles (MSTraceList **ppmstl)
 	      ms_log (2, "Cannot allocate memory for Record entry\n");
 	      return -1;
 	    }
-	  
+
 	  rec->flp = flp;
 	  rec->offset = fpos;
 	  rec->stageoffset = -1;
@@ -697,7 +700,7 @@ readfiles (MSTraceList **ppmstl)
 	      recmap->first = newrecmap.first;
 	      recmap->last = newrecmap.last;
 	      recmap->recordcnt = newrecmap.recordcnt;
-	      
+
 	      seg->prvtptr = recmap;
 	    }
 	  
