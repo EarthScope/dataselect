@@ -1,8 +1,9 @@
-2014.255: 3.14
+2014.258: 3.14
 	- Update libmseed to 2.13.
 	- New -outprefix argument to add a prefix to each output record
 	summary line.  Helpful when identifying the potentially mixed output.
 	- Allow '-out --' for sending the output summary to stderr.
+	- Clean up Makefile and src/Makefile, remove gcc specifics and tidy.
 
 2013.329:
 	- Free memory of pruned structures to avoid (mostly inconsequential)
