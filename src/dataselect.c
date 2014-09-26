@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2014.255
+ * modified 2014.268
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.14"
+#define VERSION "3.15"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -2028,13 +2028,13 @@ minsegmentlength (MSTraceList *mstl, double minseconds)
 {
   MSTraceID *id = 0;
   MSTraceSeg *seg = 0;
+  MSTraceSeg *freeseg = 0;
   hptime_t hpminimum;
   hptime_t segmentlength;
   char timestr[50];
   RecordMap *recmap = 0;
   Record *rec;
   Record *recnext;
-  int prevcount;
   
   if ( ! mstl )
     return -1;
@@ -2047,7 +2047,6 @@ minsegmentlength (MSTraceList *mstl, double minseconds)
     {
       /* Loop through segment list */
       seg = id->first;
-      prevcount  = 0;
       while ( seg )
         {
 	  segmentlength = seg->endtime - seg->starttime;
@@ -2089,10 +2088,14 @@ minsegmentlength (MSTraceList *mstl, double minseconds)
 		  free (recmap);
 		}
 	      
-	      free (seg);
+	      freeseg = seg;
+	      seg = seg->next;
+	      free (freeseg);
 	    }
-	  
-          seg = seg->next;
+	  else
+	    {
+	      seg = seg->next;
+	    }
 	}
       
       id = id->next;

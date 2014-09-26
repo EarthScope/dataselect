@@ -1,3 +1,7 @@
+2014.268: 3.15
+	- Fix loop logic causing segmentation fault for in minsegmentlength(),
+	this error caused non-repeatable faults when using the -msl option.
+
 2014.258: 3.14
 	- Update libmseed to 2.13.
 	- New -outprefix argument to add a prefix to each output record
