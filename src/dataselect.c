@@ -1779,7 +1779,7 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 	  if ( rec->selectend != HPTERROR && rec->selectend < effendtime )
 	    effendtime = rec->selectend;
 	  
-	  /* Mark Record if it is completely overlaped by the coverage including tolerance */
+	  /* Mark Record if it is completely overlapped by the coverage including tolerance */
 	  if ( effstarttime >= (cmst->starttime - hptimetol) &&
 	       effendtime <= (cmst->endtime + hptimetol) )
 	    {
