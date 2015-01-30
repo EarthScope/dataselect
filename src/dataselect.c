@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2014.268
+ * modified 2015.129
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.15"
+#define VERSION "3.16dev"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -1769,6 +1769,9 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
       cmst = coverage->traces;
       while ( cmst )
 	{
+          if ( ! rec->reclen ) /* Skip if marked non-contributing */
+            break;
+          
 	  /* Determine effective record start and end times for comparison */
 	  effstarttime = ( rec->newstart != HPTERROR ) ? rec->newstart : rec->starttime;
 	  effendtime = ( rec->newend != HPTERROR ) ? rec->newend : rec->endtime;
@@ -1787,8 +1790,9 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 		{
 		  ms_hptime2seedtimestr (rec->starttime, stime, 1);
 		  ms_hptime2seedtimestr (rec->endtime, etime, 1);
-		  ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
-			  targetsrcname, rec->quality, stime, etime);
+		  ms_log (1, "Removing Record %s (%c) :: %s  %s  offset: %lld, reclen: %d\n",
+			  targetsrcname, rec->quality, stime, etime,
+                          (long long int)rec->offset, rec->reclen);
 		}
 	      
 	      rec->flp->recrmcount++;

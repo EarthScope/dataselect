@@ -1,3 +1,8 @@
+2015.129:
+	- Optimize search for coverage in trimtrace() by avoiding multiple
+	checks on records that have already been removed.  This also fixes
+	a mis-count of removed records.
+
 2014.268: 3.15
 	- Fix loop logic in minsegmentlength() causing segmentation faults.
 
