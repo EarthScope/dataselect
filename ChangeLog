@@ -1,4 +1,7 @@
-2015.129:
+2015.030: 3.16
+        - Optimize dealing with duplication when pruning traces by changing
+	findcoverage() to skip trace entries that are already represented
+	in the coverage.
 	- Optimize search for coverage in trimtrace() by avoiding multiple
 	checks on records that have already been removed.  This also fixes
 	a mis-count of removed records.

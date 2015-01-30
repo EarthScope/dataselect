@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2015.129
+ * modified 2015.130
  ***************************************************************************/
 
 /***************************************************************************
@@ -115,7 +115,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.16dev"
+#define VERSION "3.16"
 #define PACKAGE "dataselect"
 
 /* Input/output file information containers */
@@ -1566,6 +1566,7 @@ findcoverage (MSTraceList *mstl, MSTraceID *targetid, MSTraceSeg *targetseg,
   MSTraceID *id = 0;
   MSTraceSeg *seg = 0;
   MSTrace *cmst = 0;
+  MSTrace *prevcmst = 0;
   RecordMap *recmap;
   Record *rec;
   hptime_t hpdelta, hptimetol;
@@ -1601,6 +1602,7 @@ findcoverage (MSTraceList *mstl, MSTraceID *targetid, MSTraceSeg *targetseg,
 	    }
 	}
       
+      prevcmst = 0;
       seg = id->first;
       while ( seg )
 	{
@@ -1631,7 +1633,20 @@ findcoverage (MSTraceList *mstl, MSTraceID *targetid, MSTraceSeg *targetseg,
 	      seg = seg->next;
 	      continue;
 	    }
-	  
+
+          /* Check for duplicate or overlap NSLCQ last coverage entry */
+          if ( prevcmst )
+            {
+              /* At this point the NSLCQ and rate are the same, check if the
+               * segment is completly contained by the previous coverage entry. */
+              if ( seg->starttime >= prevcmst->starttime &&
+                   seg->endtime <= prevcmst->endtime )
+                {
+                  seg = seg->next;
+                  continue;
+                }
+            }
+          
 	  /* Test for overlap with targetseg */
 	  if ( (targetseg->endtime + hptimetol) >= seg->starttime &&
 	       (targetseg->starttime - hptimetol) <= seg->endtime )
@@ -1694,7 +1709,8 @@ findcoverage (MSTraceList *mstl, MSTraceID *targetid, MSTraceSeg *targetseg,
 				*ppcoverage = mst_initgroup (NULL);
 			      
 			      mst_addtracetogroup (*ppcoverage, cmst);
-			      
+
+			      prevcmst = cmst;
 			      cmst->dataquality = id->dataquality;
 			      cmst->samprate = seg->samprate;
 			      cmst->starttime = effstarttime;
