@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2015.130
+ * modified 2015.050
  ***************************************************************************/
 
 /***************************************************************************
@@ -100,6 +100,8 @@
 /* _ISOC9X_SOURCE needed to get a declaration for llabs on some archs */
 #define _ISOC9X_SOURCE
 
+#define __STDC_FORMAT_MACROS
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -115,21 +117,23 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.16"
+#define VERSION "3.17"
 #define PACKAGE "dataselect"
 
-/* Input/output file information containers */
+/* Input/output file selection information containers */
 typedef struct Filelink_s {
   char    *infilename;     /* Input file name */
   FILE    *infp;           /* Input file descriptor */
   char    *outfilename;    /* Output file name */
   FILE    *outfp;          /* Output file descriptor */
+  uint64_t startoffset;    /* Byte offset to start reading, 0 = unused */
+  uint64_t endoffset;      /* Byte offset to end reading, 0 = unused */
   int      reordercount;   /* Number of records re-ordered */
   int      recsplitcount;  /* Number of records split */
   int      recrmcount;     /* Number of records removed */
   int      rectrimcount;   /* Number of records trimmed */
-  hptime_t earliest;       /* Earliest data time in this file */
-  hptime_t latest;         /* Latest data time in this file */
+  hptime_t earliest;       /* Earliest data time in this file selection */
+  hptime_t latest;         /* Latest data time in this file selection */
   int      byteswritten;   /* Number of bytes written out */
   struct Filelink_s *next;
 } Filelink;
@@ -259,7 +263,7 @@ main ( int argc, char **argv )
   /* Data stream archiving maximum concurrent open files */
   if ( archiveroot )
     ds_maxopenfiles = 50;
-
+  
   /* Init written MSTraceList */
   if ( writtenfile )
     if ( (writtentl = mstl_init (writtentl)) == NULL )
@@ -386,17 +390,40 @@ readfiles (MSTraceList **ppmstl)
       
       if ( verbose )
 	{
-	  if ( replaceinput ) 
-	    ms_log (1, "Reading: %s (was %s)\n", flp->infilename, flp->outfilename);
+	  if ( replaceinput )
+            {
+              if ( flp->startoffset || flp->endoffset )
+                ms_log (1, "Reading: %s (was %s) [range %"PRIu64":%"PRIu64"]\n",
+                        flp->infilename, flp->outfilename, flp->startoffset, flp->endoffset);
+              else
+                ms_log (1, "Reading: %s (was %s)\n",
+                        flp->infilename, flp->outfilename);
+            }
 	  else
-	    ms_log (1, "Reading: %s\n", flp->infilename);
+            {
+              if ( flp->startoffset || flp->endoffset )
+                ms_log (1, "Reading: %s [range %"PRIu64":%"PRIu64"]\n",
+                        flp->infilename, flp->startoffset, flp->endoffset);
+              else
+                ms_log (1, "Reading: %s\n", flp->infilename);
+            }
 	}
+      
+      /* Instruct libmseed to start at specified offset by setting a negative file position */
+      fpos = - flp->startoffset;  /* Unset value is a 0, making this a non-operation */
       
       /* Loop over the input file */
       while ( (retcode = ms_readmsr_main (&msfp, &msr, flp->infilename, reclen, &fpos, NULL, 1, 0, selections, verbose-2))
 	      == MS_NOERROR )
 	{
-	  recstarttime = msr->starttime;
+          /* Break out as EOF if we have read past end offset */
+          if ( flp->endoffset > 0 && fpos >= flp->endoffset )
+            {
+              retcode = MS_ENDOFFILE; 
+              break;
+            }
+          
+          recstarttime = msr->starttime;
 	  recendtime = msr_endtime (msr);
 	  
 	  /* Generate the srcname with the quality code */
@@ -728,7 +755,14 @@ readfiles (MSTraceList **ppmstl)
 	  
 	  totalrecs++;
 	  totalsamps += msr->samplecnt;
-	} /* End of looping through records in file */
+          
+          /* Break out as EOF if record is at or beyond end offset */
+          if ( flp->endoffset > 0 && (fpos + msr->reclen) >= flp->endoffset )
+            {
+              retcode = MS_ENDOFFILE; 
+              break;
+            }
+        } /* End of looping through records in file */
       
       /* Critical error if file was not read properly */
       if ( retcode != MS_ENDOFFILE )
@@ -3087,12 +3121,19 @@ setofilelimit (int limit)
  *
  * Add file to end of the specified file list.
  *
+ * Check for and parse start and end byte offsets (a read range)
+ * embedded in the file name.  The form for specifying a read range is:
+ *  filename@startoffset:endoffset
+ * where both start and end offsets are optional.
+
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
 static int
 addfile (char *filename)
 {
   Filelink *newlp;
+  char *at;
+  char *colon;
   
   if ( ! filename )
     {
@@ -3104,6 +3145,22 @@ addfile (char *filename)
     {
       ms_log (2, "addfile(): Cannot allocate memory\n");
       return -1;
+    }
+  
+  /* Check for optional read byte range specifiers
+   * Expected form: "filename@startoffset:endoffset"
+   * Both start are optional */
+  if ( (at = strrchr (filename, '@')) )
+    {
+      *at++ = '\0';
+      
+      if ( (colon = strrchr (at, ':')) )
+        {
+          *colon++ = '\0';
+          newlp->endoffset = strtoull (colon, NULL, 10);
+        }
+      
+      newlp->startoffset = strtoull (at, NULL, 10);
     }
   
   if ( ! (newlp->infilename = strdup(filename)) )
@@ -3136,7 +3193,7 @@ addfile (char *filename)
  * Returns count of files added on success and -1 on error.
  ***************************************************************************/
 static int
-addlistfile (char *filename) 
+addlistfile (char *filename)
 {
   FILE *fp;
   char filelistent[1024];

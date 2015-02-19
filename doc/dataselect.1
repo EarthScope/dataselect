@@ -1,4 +1,4 @@
-.TH DATASELECT 1 2014/09/12
+.TH DATASELECT 1 2015/02/19
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -36,6 +36,11 @@ possible.
 Files on the command line prefixed with a '@' character are input list
 files and are expected to contain a simple list of input files, see
 \fBINPUT LIST FILE\fP for more details.
+
+Each input file may be specified with an explict byte range to read.
+The program will begin reading at the specified start offset and stop
+reading at the specified end range.  See \fBINPUT FILE RANGE\fP for
+more details.
 
 When a input file is full SEED including both SEED headers and data
 records all of the headers will be skipped and completely unprocessed.
@@ -274,6 +279,21 @@ data/day1.mseed
 data/day2.mseed
 data/day3.mseed
 .fi
+
+.SH "INPUT FILE RANGE"
+Each input file may be specified with an associated byte range to
+read.  The program will begin reading at the specified start offset
+and finish reading when at or beyond the end offset.  The range is
+specified by appending an '@' charater to the filename with the start
+and end offsets separated by a colon:
+
+.nf
+filename.mseed@<startoffset>:<endoffset>
+.fi
+
+For example: "filename.mseed:4096:8192".  Both the start and end
+offsets are optional.  The colon separator is optional if no end
+offset is specified.
 
 .SH "MATCH OR REJECT LIST FILE"
 A list file used with either the \fB-M\fP or \fB-R\fP contains a list

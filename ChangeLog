@@ -1,5 +1,9 @@
+2015.050: 3.17
+	- Each input file may be specified with a byte range to read. Useful
+	to limit dataselect's operation to specific parts of files.
+
 2015.030: 3.16
-        - Optimize dealing with duplication when pruning traces by changing
+	- Optimize dealing with duplication when pruning traces by changing
 	findcoverage() to skip trace entries that are already represented
 	in the coverage.
 	- Optimize search for coverage in trimtrace() by avoiding multiple
