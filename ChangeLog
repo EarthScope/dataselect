@@ -1,3 +1,6 @@
+2016.179: 3.18
+	- Update libmseed to 2.17.
+
 2015.050: 3.17
 	- Each input file may be specified with a byte range to read. Useful
 	to limit dataselect's operation to specific parts of files.
