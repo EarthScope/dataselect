@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2015.050
+ * modified 2016.179
  ***************************************************************************/
 
 /***************************************************************************
@@ -1297,6 +1297,7 @@ trimrecord (Record *rec, char *recordbuf)
 {
   MSRecord *msr = 0;
   hptime_t hpdelta;
+  hptime_t ostarttime = rec->starttime;
 
   char srcname[50];
   char stime[30];
@@ -1479,6 +1480,24 @@ trimrecord (Record *rec, char *recordbuf)
   
   /* Pack the data record into the global record buffer used by writetraces() */
   packedrecords = msr_pack (msr, &record_handler, NULL, &packedsamples, 1, verbose-1);
+  
+  if ( packedrecords != 1 )
+    {
+      msr_srcname (msr, srcname, 1);
+      ms_hptime2seedtimestr (ostarttime, stime, 1);
+      
+      if ( packedrecords <= 0 )
+        {
+          ms_log (2, "trimrecord(): Cannot pack Mini-SEED record for %s %s\n",
+                  srcname, stime);
+          return -2;
+        }
+      else
+        {
+          ms_log (1, "Warning: Data loss, trimrecord() repacked data into more than one record for %s %s\n",
+                  srcname, stime);
+        }
+    }
   
   /* Clean up MSRecord */
   msr_free (&msr);
