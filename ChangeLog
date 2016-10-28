@@ -2,6 +2,8 @@
 	- Update libmseed to 2.18.
 	- Read any leap second list file indicated by the LIBMSEED_LEAPSECOND_FILE
 	environment variable and use it when determining data coverage.
+	- Fix edge case of pruning data and splitting on time boundaries when
+	resulting record only contains a single sample.
 
 2016.179: 3.18
 	- Update libmseed to 2.17.

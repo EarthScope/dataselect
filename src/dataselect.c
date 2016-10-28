@@ -1942,25 +1942,29 @@ trimtrace (MSTraceSeg *targetseg, char *targetsrcname, MSTraceGroup *coverage)
 		      modcount++;
 		    }
 		}
-	      
-	      /* Remove record if all samples have been pruned within tolerance,
-	       * test for special case of no time coverage (single sample) and no pruning */
-	      if ( effstarttime >= (effendtime - hptimetol) &&
-		   ! (rec->starttime == rec->endtime &&
-		      rec->starttime == effstarttime &&
-		      rec->endtime == effendtime) )
-		{
-		  if ( verbose > 1 )
-		    {
-		      ms_hptime2seedtimestr (rec->starttime, stime, 1);
-		      ms_hptime2seedtimestr (rec->endtime, etime, 1);
-		      ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
-			      targetsrcname, rec->quality, stime, etime);
-		    }
-		  
-		  rec->flp->recrmcount++;
-		  rec->reclen = 0;
-		  modcount++;
+
+              /* Remove record if all samples have been pruned within tolerance,
+	       * test for special cases of:
+               * a) no time coverage (single sample) and no pruning
+               * b) no time coverage (single last sample) and split boundary usage */
+              if (effstarttime >= (effendtime - hptimetol) &&
+                  !(rec->starttime == rec->endtime &&
+                    rec->starttime == effstarttime &&
+                    rec->endtime == effendtime) &&
+                  !(splitboundary &&
+                    (effstarttime == effendtime && effendtime == rec->endtime)))
+              {
+                if (verbose > 1)
+                {
+                  ms_hptime2seedtimestr (rec->starttime, stime, 1);
+                  ms_hptime2seedtimestr (rec->endtime, etime, 1);
+                  ms_log (1, "Removing Record %s (%c) :: %s  %s\n",
+                          targetsrcname, rec->quality, stime, etime);
+                }
+
+                rec->flp->recrmcount++;
+                rec->reclen = 0;
+                modcount++;
 		}
 	      
 	    } /* Done pruning at sample level */
