@@ -1,9 +1,12 @@
-2016.302:
+2016.302: 3.19
 	- Update libmseed to 2.18.
 	- Read any leap second list file indicated by the LIBMSEED_LEAPSECOND_FILE
 	environment variable and use it when determining data coverage.
 	- Fix edge case of pruning data and splitting on time boundaries when
 	resulting record only contains a single sample.
+	- Reformat source according to included clang-format profile.
+	- Remove Makefile.wat, src/Makefile.wat and src/Makefile.win.  This
+	will not build in Windows without a replacement for system regex.
 
 2016.179: 3.18
 	- Update libmseed to 2.17.
