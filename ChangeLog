@@ -1,3 +1,8 @@
+2016.302:
+	- Update libmseed to 2.18.
+	- Read any leap second list file indicated by the LIBMSEED_LEAPSECOND_FILE
+	environment variable and use it when determining data coverage.
+
 2016.179: 3.18
 	- Update libmseed to 2.17.
 	- Add error check in trimrecord() for errors returned by msr_pack().

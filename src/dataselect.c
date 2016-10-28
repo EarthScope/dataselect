@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2016.179
+ * modified 2016.302
  ***************************************************************************/
 
 /***************************************************************************
@@ -117,7 +117,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.18"
+#define VERSION "3.19dev"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */
@@ -252,6 +252,7 @@ int
 main ( int argc, char **argv )
 {
   MSTraceList *mstl = 0;
+  char *leapsecondfile = NULL;
   
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
@@ -260,6 +261,18 @@ main ( int argc, char **argv )
   if ( processparam (argc, argv) < 0 )
     return 1;
   
+  /* Read leap second list file if env. var. LIBMSEED_LEAPSECOND_FILE is set */
+  if ((leapsecondfile = getenv ("LIBMSEED_LEAPSECOND_FILE")))
+  {
+    if (strcmp (leapsecondfile, "NONE"))
+      ms_readleapsecondfile (leapsecondfile);
+  }
+  else if (verbose >= 1)
+  {
+    ms_log (1, "Warning: No leap second file specified with LIBMSEED_LEAPSECOND_FILE\n");
+    ms_log (1, "  This is highly recommended, see man page for details.\n");
+  }
+
   /* Data stream archiving maximum concurrent open files */
   if ( archiveroot )
     ds_maxopenfiles = 50;
