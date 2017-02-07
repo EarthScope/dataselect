@@ -6,6 +6,10 @@ miniSEED format.
 For usage infromation see the [dataselect manual](doc/dataselect.md) in the
 'doc' directory.
 
+## Downloading
+
+The [Releases](releases) area contains release versions.
+
 ## Building and installing
 
 In most environments a simple 'make' will build the program.
