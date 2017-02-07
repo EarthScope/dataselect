@@ -8,7 +8,7 @@ For usage infromation see the [dataselect manual](doc/dataselect.md) in the
 
 ## Downloading
 
-The [Releases](releases) area contains release versions.
+The [releases](https://github.com/iris-edu/dataselect/releases) area contains release versions.
 
 ## Building and installing
 
