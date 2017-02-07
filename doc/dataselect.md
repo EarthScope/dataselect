@@ -217,10 +217,10 @@ data/day3.mseed
 <p >Each input file may be specified with an associated byte range to read.  The program will begin reading at the specified start offset and finish reading when at or beyond the end offset.  The range is specified by appending an '@' charater to the filename with the start and end offsets separated by a colon:</p>
 
 <pre >
-filename.mseed@<startoffset>:<endoffset>
+filename.mseed@[startoffset][:][endoffset]
 </pre>
 
-<p >For example: "filename.mseed:4096:8192".  Both the start and end offsets are optional.  The colon separator is optional if no end offset is specified.</p>
+<p >For example: "filename.mseed@4096:8192".  Both the start and end offsets are optional.  The colon separator is optional if no end offset is specified.</p>
 
 ## <a id='match-or-reject-list-file'>Match Or Reject List File</a>
 

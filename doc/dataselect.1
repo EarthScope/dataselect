@@ -290,10 +290,10 @@ specified by appending an '@' charater to the filename with the start
 and end offsets separated by a colon:
 
 .nf
-filename.mseed@<startoffset>:<endoffset>
+filename.mseed@[startoffset][:][endoffset]
 .fi
 
-For example: "filename.mseed:4096:8192".  Both the start and end
+For example: "filename.mseed@4096:8192".  Both the start and end
 offsets are optional.  The colon separator is optional if no end
 offset is specified.
 
