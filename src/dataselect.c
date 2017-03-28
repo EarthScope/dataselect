@@ -2899,6 +2899,11 @@ processparam (int argcount, char **argvec)
       if (addarchive (getoptval (argcount, argvec, optind++), BUDLAYOUT) == -1)
         return -1;
     }
+    else if (strcmp (argvec[optind], "-SDS") == 0)
+    {
+      if (addarchive (getoptval (argcount, argvec, optind++), SDSLAYOUT) == -1)
+        return -1;
+    }
     else if (strcmp (argvec[optind], "-CSS") == 0)
     {
       if (addarchive (getoptval (argcount, argvec, optind++), CSSLAYOUT) == -1)
@@ -3580,6 +3585,7 @@ usage (int level)
              " -CDAY dir    Write records into separate Net.Sta.Loc.Chan.Year:Yday:<time> files\n"
              " -SDAY dir    Write records into separate Net.Sta.Year:Yday files\n"
              " -BUD BUDdir  Write records in a BUD file layout\n"
+             " -SDS SDSdir  Write records in a SDS file layout\n"
              " -CSS CSSdir  Write records in a CSS-like file layout\n"
              "\n"
              "The archive 'format' argument is expanded for each record using the\n"
