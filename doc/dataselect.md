@@ -133,6 +133,8 @@ dataselect [options] file1 [file2 file3 ...]
 
 <b>-BUD </b><i>directory</i>
 
+<b>-SDS </b><i>directory</i>
+
 <b>-CSS </b><i>directory</i>
 
 <p style="padding-left: 30px;">Pre-defined output archive formats, see the <b>Archive Format</b> section below for more details.</p>
@@ -248,6 +250,7 @@ II_BFO_00_BHZ_Q
 -CDAY dir   :: dir/%n.%s.%l.%c.%Y:%j:#H:#M:#S
 -SDAY dir   :: dir/%n.%s.%Y:%j
 -BUD dir    :: dir/%n/%s/%s.%n.%l.%c.%Y.%j
+-SDS dir    :: dir/%Y/%n/%s/%c.D/%n.%s.%l.%c.D.%Y.%j
 -CSS dir    :: dir/%Y/%j/%s.%c.%Y:%j:#H:#M:#S
 </pre>
 
