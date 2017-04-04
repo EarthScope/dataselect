@@ -11,6 +11,7 @@
 #define SDAYLAYOUT  "%n.%s.%Y:%j"
 #define BUDLAYOUT   "%n/%s/%s.%n.%l.%c.%Y.%j"
 #define CSSLAYOUT   "%Y/%j/%s.%c.%Y:%j:#H:#M:#S"
+#define SDSLAYOUT   "%Y/%n/%s/%c.D/%n.%s.%l.%c.D.%Y.%j"
 
 typedef struct DataStreamGroup_s
 {
