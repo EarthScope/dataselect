@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2016.302
+ * modified 2017.251
  ***************************************************************************/
 
 /***************************************************************************
@@ -117,7 +117,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.19"
+#define VERSION "3.20rc"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */
@@ -172,11 +172,21 @@ typedef struct RecordMap_s
   struct Record_s *last;
 } RecordMap;
 
+/* Holder for data passed to the record writer */
+typedef struct WriterData_s
+{
+  FILE *ofp;
+  Record *rec;
+  MSTraceID *id;
+  long *suffixp;
+  int8_t *errflagp;
+} WriterData;
+
 static int readfiles (MSTraceList **ppmstl);
 static int processtraces (MSTraceList *mstl);
 static int writetraces (MSTraceList *mstl);
-static int trimrecord (Record *rec, char *recbuf);
-static void record_handler (char *record, int reclen, void *handlerdata);
+static int trimrecord (Record *rec, char *recbuf, WriterData *writerdata);
+static void writerecord (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MSTraceList *mstl);
 static int findcoverage (MSTraceList *mstl, MSTraceID *targetid,
@@ -869,14 +879,14 @@ processtraces (MSTraceList *mstl)
 static int
 writetraces (MSTraceList *mstl)
 {
-  static uint64_t totalrecsout  = 0;
+  static uint64_t totalrecsout = 0;
   static uint64_t totalbytesout = 0;
-  char *recordptr               = NULL;
-  char *wb                      = "wb";
-  char *ab                      = "ab";
+  char *recordptr = NULL;
+  char *wb = "wb";
+  char *ab = "ab";
   char *mode;
-  char errflag = 0;
-  long suffix  = 0;
+  int8_t errflag = 0;
+  long suffix = 0;
   int rv;
 
   MSTraceID *id;
@@ -890,6 +900,10 @@ writetraces (MSTraceList *mstl)
   Filelink *flp;
 
   FILE *ofp = 0;
+  WriterData writerdata;
+
+  writerdata.errflagp = &errflag;
+  writerdata.suffixp = &suffix;
 
   if (!mstl)
     return 1;
@@ -1091,10 +1105,28 @@ writetraces (MSTraceList *mstl)
         recordptr = recordbuf;
       }
 
+      /* Re-stamp quality indicator if specified */
+      if (restampqind)
+      {
+        if (verbose > 3)
+          ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
+
+        *(recordptr + 6) = restampqind;
+      }
+
+      /* Setup writer data */
+      writerdata.ofp = ofp;
+      writerdata.rec = rec;
+      writerdata.id = id;
+
+      /* Write out the data, either the record needs to be trimmed (and will be
+       * send to the record writer) or we send it directly to the record writer.
+       */
+
       /* Trim data from the record if new start or end times are specifed */
       if (rec->newstart != HPTERROR || rec->newend != HPTERROR)
       {
-        rv = trimrecord (rec, recordptr);
+        rv = trimrecord (rec, recordptr, &writerdata);
 
         if (rv == -1)
         {
@@ -1109,106 +1141,14 @@ writetraces (MSTraceList *mstl)
           errflag = 2;
           break;
         }
-
-        /* Trimmed records are re-packed in the global record buffer */
-        recordptr = recordbuf;
       }
-
-      /* Re-stamp quality indicator if specified */
-      if (restampqind)
+      else
       {
-        if (verbose > 3)
-          ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
-
-        *(recordptr + 6) = restampqind;
+        writerecord (recordptr, rec->reclen, &writerdata);
       }
 
-      /* Write to a single output file if specified */
-      if (ofp)
-      {
-        if (fwrite (recordptr, rec->reclen, 1, ofp) != 1)
-        {
-          ms_log (2, "Cannot write to '%s'\n", outputfile);
-          errflag = 1;
-          break;
-        }
-      }
-
-      /* Write to Archive(s) if specified and/or add to written list */
-      if (archiveroot || writtenfile)
-      {
-        MSRecord *msr = 0;
-        Archive *arch;
-
-        if (msr_unpack (recordptr, rec->reclen, &msr, 0, verbose) != MS_NOERROR)
-        {
-          ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s, file changed?\n",
-                  rec->offset, rec->flp->infilename);
-          ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->srcname);
-          errflag = 2;
-          break;
-        }
-
-        if (archiveroot)
-        {
-          arch = archiveroot;
-          while (arch)
-          {
-            ds_streamproc (&arch->datastream, msr, suffix, verbose - 1);
-            arch = arch->next;
-          }
-        }
-
-        if (writtenfile)
-        {
-          MSTraceSeg *seg;
-
-          if ((seg = mstl_addmsr (writtentl, msr, 1, 1, -1.0, -1.0)) == NULL)
-          {
-            ms_log (2, "Error adding MSRecord to MSTraceList, bah humbug.\n");
-          }
-          else
-          {
-            if (!seg->prvtptr)
-            {
-              if ((seg->prvtptr = malloc (sizeof (int64_t))) == NULL)
-              {
-                ms_log (2, "Error allocating memory for written count, bah humbug.\n");
-                errflag = 1;
-                break;
-              }
-              else
-              {
-                *((int64_t *)seg->prvtptr) = 0;
-              }
-            }
-
-            *((int64_t *)seg->prvtptr) += msr->reclen;
-          }
-        }
-
-        msr_free (&msr);
-      }
-
-      /* Open original file for output if replacing input and write */
-      if (replaceinput)
-      {
-        if (!rec->flp->outfp)
-          if (!(rec->flp->outfp = fopen (rec->flp->outfilename, "wb")))
-          {
-            ms_log (2, "Cannot open '%s' for writing: %s\n",
-                    rec->flp->outfilename, strerror (errno));
-            errflag = 1;
-            break;
-          }
-
-        if (fwrite (recordptr, rec->reclen, 1, rec->flp->outfp) != 1)
-        {
-          ms_log (2, "Cannot write to '%s'\n", rec->flp->outfilename);
-          errflag = 1;
-          break;
-        }
-      }
+      if ( errflag )
+        break;
 
       /* Update file entry time stamps and counts */
       if (!rec->flp->earliest || (rec->flp->earliest > rec->starttime))
@@ -1303,7 +1243,7 @@ writetraces (MSTraceList *mstl)
  * Return 0 on success, -1 on failure or skip and -2 on unpacking errors.
  ***************************************************************************/
 static int
-trimrecord (Record *rec, char *recordbuf)
+trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
 {
   MSRecord *msr = 0;
   hptime_t hpdelta;
@@ -1497,7 +1437,8 @@ trimrecord (Record *rec, char *recordbuf)
   }
 
   /* Pack the data record into the global record buffer used by writetraces() */
-  packedrecords = msr_pack (msr, &record_handler, NULL, &packedsamples, 1, verbose - 1);
+  packedrecords = msr_pack (msr, &writerecord, writerdata,
+                            &packedsamples, 1, verbose - 1);
 
   if (packedrecords != 1)
   {
@@ -1510,11 +1451,6 @@ trimrecord (Record *rec, char *recordbuf)
               srcname, stime);
       return -2;
     }
-    else
-    {
-      ms_log (1, "Warning: Data loss, trimrecord() repacked data into more than one record for %s %s\n",
-              srcname, stime);
-    }
   }
 
   /* Clean up MSRecord */
@@ -1524,18 +1460,101 @@ trimrecord (Record *rec, char *recordbuf)
 } /* End of trimrecord() */
 
 /***************************************************************************
- * record_handler():
+ * writerecord():
  *
  * Used by trimrecord() to save repacked Mini-SEED to global record
  * buffer.
  ***************************************************************************/
 static void
-record_handler (char *record, int reclen, void *handlerdata)
+writerecord (char *record, int reclen, void *handlerdata)
 {
-  /* Copy record to global record buffer */
-  memcpy (recordbuf, record, reclen);
+  WriterData *writerdata = handlerdata;
+  MSRecord *msr = 0;
+  Archive *arch;
 
-} /* End of record_handler() */
+  if ( ! record || reclen <= 0 || ! handlerdata )
+    return;
+
+  /* Write to a single output file if specified */
+  if (writerdata->ofp)
+  {
+    if (fwrite (record, reclen, 1, writerdata->ofp) != 1)
+    {
+      ms_log (2, "Cannot write to '%s'\n", outputfile);
+      *writerdata->errflagp = 1;
+    }
+  }
+
+  /* Write to Archive(s) if specified and/or add to written list */
+  if (archiveroot || writtenfile)
+  {
+    if (msr_unpack (record, reclen, &msr, 0, verbose) != MS_NOERROR)
+    {
+      ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s, file changed?\n",
+              writerdata->rec->offset, writerdata->rec->flp->infilename);
+      ms_log (2, "  Expecting %s, skipping the rest of this channel\n",
+              writerdata->id->srcname);
+      *writerdata->errflagp = 2;
+    }
+
+    if (archiveroot)
+    {
+      arch = archiveroot;
+      while (arch)
+      {
+        ds_streamproc (&arch->datastream, msr, *writerdata->suffixp, verbose - 1);
+        arch = arch->next;
+      }
+    }
+
+    if (writtenfile)
+    {
+      MSTraceSeg *seg;
+
+      if ((seg = mstl_addmsr (writtentl, msr, 1, 1, -1.0, -1.0)) == NULL)
+      {
+        ms_log (2, "Error adding MSRecord to MSTraceList, bah humbug.\n");
+      }
+      else
+      {
+        if (!seg->prvtptr)
+        {
+          if ((seg->prvtptr = malloc (sizeof (int64_t))) == NULL)
+          {
+            ms_log (2, "Error allocating memory for written count, bah humbug.\n");
+            *writerdata->errflagp = 1;
+          }
+          else
+          {
+            *((int64_t *)seg->prvtptr) = 0;
+          }
+        }
+
+        *((int64_t *)seg->prvtptr) += msr->reclen;
+      }
+    }
+
+    msr_free (&msr);
+  }
+
+  /* Open original file for output if replacing input and write */
+  if (replaceinput)
+  {
+    if (!writerdata->rec->flp->outfp)
+      if (!(writerdata->rec->flp->outfp = fopen (writerdata->rec->flp->outfilename, "wb")))
+      {
+        ms_log (2, "Cannot open '%s' for writing: %s\n",
+                writerdata->rec->flp->outfilename, strerror (errno));
+        *writerdata->errflagp = 1;
+      }
+
+    if (fwrite (record, reclen, 1, writerdata->rec->flp->outfp) != 1)
+    {
+      ms_log (2, "Cannot write to '%s'\n", writerdata->rec->flp->outfilename);
+      *writerdata->errflagp = 1;
+    }
+  }
+} /* End of writerecord() */
 
 /***************************************************************************
  * prunetraces():
