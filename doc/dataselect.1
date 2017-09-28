@@ -1,4 +1,4 @@
-.TH DATASELECT 1 2016/10/28
+.TH DATASELECT 1 2017/9/27
 .SH NAME
 Mini-SEED data selection, sorting and pruning
 
@@ -265,6 +265,10 @@ IU   COLA 00   LH[ENZ] R
 IU   COLA 00   LHZ   *     2008,100,10,00,00 2008,100,10,30,00
 .fi
 
+\fBWarning:\fP with a selection file it is possible to specify
+multiple, arbitrary selections.  Some combinations of these selects
+are not possible.  See \fBCAVEATS AND LIMITATIONS\fP for more details.
+
 .SH "INPUT LIST FILE"
 A list file can be used to specify input files, one file per line.
 The initial '@' character indicating a list file is not considered
@@ -405,6 +409,18 @@ Any significant error message will be pre-pended with "ERROR" which
 can be parsed to determine run-time errors.  Additionally the program
 will return an exit code of 0 on successful operation and 1 when any
 errors were encountered.
+
+.SH CAVEATS AND LIMITATIONS
+
+With the ability to specify multiple, arbitrary data selections it is
+possbile to specify very complex and pathological compound selections.
+When pruning samples from records into order to fit the requested
+selections, this program is limited to trimming samples from the
+beginning and/or end of the record.  This means it is not possible to
+select two or more non-intersecting time ranges from a single record.
+Put another way, one cannot select select data from the beginning and
+end, but not the middle of a record.  The work-around for this
+limitation is to run the program once for each selection.
 
 .SH AUTHOR
 .nf

@@ -13,6 +13,7 @@
 1. [Archive Format Examples](#archive-format-examples)
 1. [Leap Second List File](#leap-second-list-file)
 1. [Error Handling And Return Codes](#error-handling-and-return-codes)
+1. [Caveats And Limitations](#caveats-and-limitations)
 1. [Author](#author)
 
 ## <a id='synopsis'>Synopsis</a>
@@ -198,6 +199,8 @@ IU   COLA 00   LH[ENZ] R
 IU   COLA 00   LHZ   *     2008,100,10,00,00 2008,100,10,30,00
 </pre>
 
+<p ><b>Warning:</b> with a selection file it is possible to specify multiple, arbitrary selections.  Some combinations of these selects are not possible.  See <b>CAVEATS AND LIMITATIONS</b> for more details.</p>
+
 ## <a id='input-list-file'>Input List File</a>
 
 <p >A list file can be used to specify input files, one file per line. The initial '@' character indicating a list file is not considered part of the file name.  As an example, if the following command line option was used:</p>
@@ -314,6 +317,10 @@ II_BFO_00_BHZ_Q
 
 <p >Any significant error message will be pre-pended with "ERROR" which can be parsed to determine run-time errors.  Additionally the program will return an exit code of 0 on successful operation and 1 when any errors were encountered.</p>
 
+## <a id='caveats-and-limitations'>Caveats And Limitations</a>
+
+<p >With the ability to specify multiple, arbitrary data selections it is possbile to specify very complex and pathological compound selections. When pruning samples from records into order to fit the requested selections, this program is limited to trimming samples from the beginning and/or end of the record.  This means it is not possible to select two or more non-intersecting time ranges from a single record. Put another way, one cannot select select data from the beginning and end, but not the middle of a record.  The work-around for this limitation is to run the program once for each selection.</p>
+
 ## <a id='author'>Author</a>
 
 <pre >
@@ -322,4 +329,4 @@ IRIS Data Management Center
 </pre>
 
 
-(man page 2016/10/28)
+(man page 2017/9/27)

@@ -12,7 +12,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2017.251
+ * modified 2017.270
  ***************************************************************************/
 
 /***************************************************************************
@@ -117,7 +117,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.20rc"
+#define VERSION "3.20"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */
@@ -2537,6 +2537,7 @@ findselectlimits (Selections *select, char *srcname, hptime_t starttime,
                   hptime_t endtime, Record *rec)
 {
   SelectTime *selecttime;
+  char timestring[100];
 
   if (!rec || !srcname || !select)
     return -1;
@@ -2545,6 +2546,7 @@ findselectlimits (Selections *select, char *srcname, hptime_t starttime,
   {
     while (selecttime)
     {
+      /* Continue if selection edge time does not intersect with record coverage */
       if ((starttime < selecttime->starttime && !(starttime <= selecttime->starttime && endtime >= selecttime->starttime)))
       {
         selecttime = selecttime->next;
@@ -2556,11 +2558,28 @@ findselectlimits (Selections *select, char *srcname, hptime_t starttime,
         continue;
       }
 
+      /* Check that the selection intersects previous selection range if set,
+       * otherwise the combined selection is not possible. */
+      if (rec->selectstart != HPTERROR && rec->selectend != HPTERROR &&
+          !(rec->selectstart <= selecttime->endtime && rec->selectend >= selecttime->starttime))
+      {
+        ms_hptime2mdtimestr(starttime, timestring, 1);
+        ms_log (1, "Warning: impossible combination of selections for record (%s, %s), not pruning.\n",
+                srcname, timestring);
+        rec->selectstart = HPTERROR;
+        rec->selectend = HPTERROR;
+        return 0;
+      }
+
       if (rec->selectstart == HPTERROR || rec->selectstart > selecttime->starttime)
+      {
         rec->selectstart = selecttime->starttime;
+      }
 
       if (rec->selectend == HPTERROR || rec->selectend < selecttime->endtime)
+      {
         rec->selectend = selecttime->endtime;
+      }
 
       /* Shortcut if the entire record is already selected */
       if (rec->starttime >= rec->selectstart && rec->endtime <= rec->selectend)

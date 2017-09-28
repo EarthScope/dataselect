@@ -1,3 +1,10 @@
+2017.270: 3.20
+	- Add test and warning for impossible combination of selections
+	applied to a single record and avoid any pruning operation.
+	Specifically, two or more selections may specify two or more different
+	time ranges within the same record.  The program does not support this
+	as it is limited to trimming a single record to a single time range.
+
 2017.251: 3.20rc
 	- Update libmseed to 2.19.4.
 	- Reorgznize miniSEED output writer such that re-packed records that
