@@ -7,7 +7,7 @@
 
 2017.251: 3.20rc
 	- Update libmseed to 2.19.4.
-	- Reorgznize miniSEED output writer such that re-packed records that
+	- Reorganize miniSEED output writer such that re-packed records that
 	result in two or more records are properly included in the output.
 	- Add preset -SDS archive layout, patch from @bonaime, thanks!
 
