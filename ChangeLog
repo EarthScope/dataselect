@@ -1,4 +1,4 @@
-2019.185:
+2019.185: 3.22
 	- Update libmseed to 2.19.6
 	- Treat archiving writing failures as fatal errors.
 
