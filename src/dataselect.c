@@ -1502,7 +1502,11 @@ writerecord (char *record, int reclen, void *handlerdata)
       arch = archiveroot;
       while (arch)
       {
-        ds_streamproc (&arch->datastream, msr, *writerdata->suffixp, verbose - 1);
+        if (ds_streamproc (&arch->datastream, msr, *writerdata->suffixp, verbose - 1))
+        {
+          *writerdata->errflagp = 1;
+        }
+
         arch = arch->next;
       }
     }
