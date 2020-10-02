@@ -12,10 +12,14 @@ The [releases](https://github.com/iris-edu/dataselect/releases) area contains re
 
 ## Building and installing
 
-In most environments a simple 'make' will build the program.
+Building the program requires a C compiler (C99-compatible) and the GNU make program.
 
-The CC and CFLAGS environment variables can be used to configure
-the build parameters.
+In most environments a simple `make`, in the source directory, will build the program.
+The CC and CFLAGS environment variables can be used to configure the build parameters.
+
+After successfully compiling the program, the `dataselect` binary may be copied to
+any desired location, normally in your PATH.  The man page, in the `doc` directory, may
+be copied to somewhere in your MANPATH for use with the `man` program.
 
 ## Licensing 
 
