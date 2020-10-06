@@ -12,7 +12,7 @@ The [releases](https://github.com/iris-edu/dataselect/releases) area contains re
 
 ## Building and installing
 
-Building the program requires a C compiler (C99-compatible) and the GNU make program.
+Building the program requires a C compiler (C99-compatible) and the GNU make program. On a mac system, this can be accomplished with the installation of the Xcode Developer Tools.
 
 In most environments a simple `make`, in the source directory, will build the program.
 The CC and CFLAGS environment variables can be used to configure the build parameters.
