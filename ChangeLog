@@ -1,4 +1,5 @@
 2023.009:
+	- Update libmseed to 2.19.8.
 	- Properly handle larger file sizes.
 
 2019.185: 3.22
