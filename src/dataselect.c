@@ -1325,7 +1325,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   /* Unpack data record header including data samples */
   if ((retcode = msr_unpack (recordbuf, rec->reclen, &msr, 1, verbose - 1)) != MS_NOERROR)
   {
-    ms_log (2, "Cannot unpack Mini-SEED record: %s\n", ms_errorstr (retcode));
+    ms_log (2, "Cannot unpack miniSEED record: %s\n", ms_errorstr (retcode));
     return -2;
   }
 
@@ -1445,7 +1445,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
 
     if (packedrecords <= 0)
     {
-      ms_log (2, "trimrecord(): Cannot pack Mini-SEED record for %s %s\n",
+      ms_log (2, "trimrecord(): Cannot pack miniSEED record for %s %s\n",
               srcname, stime);
       return -2;
     }
@@ -1460,7 +1460,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
 /***************************************************************************
  * writerecord():
  *
- * Used by trimrecord() to save repacked Mini-SEED to global record
+ * Used by trimrecord() to save repacked miniSEED to global record
  * buffer.
  ***************************************************************************/
 static void
@@ -1488,7 +1488,7 @@ writerecord (char *record, int reclen, void *handlerdata)
   {
     if (msr_unpack (record, reclen, &msr, 0, verbose) != MS_NOERROR)
     {
-      ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s, file changed?\n",
+      ms_log (2, "Cannot unpack miniSEED from byte offset %lld in %s, file changed?\n",
               writerdata->rec->offset, writerdata->rec->flp->infilename);
       ms_log (2, "  Expecting %s, skipping the rest of this channel\n",
               writerdata->id->srcname);
@@ -3568,7 +3568,7 @@ calcsize (char *sizestr)
 static void
 usage (int level)
 {
-  fprintf (stderr, "%s - select, sort and prune Mini-SEED: %s\n\n", PACKAGE, VERSION);
+  fprintf (stderr, "%s - select, sort and prune miniSEED: %s\n\n", PACKAGE, VERSION);
   fprintf (stderr, "Usage: %s [options] file1 [file2] [file3] ...\n\n", PACKAGE);
   fprintf (stderr,
            " ## Options ##\n"
@@ -3612,7 +3612,7 @@ usage (int level)
            " -outprefix X Include prefix on summary output lines for identification\n"
            "\n"
            " ## Input data ##\n"
-           " file#        Files(s) of Mini-SEED records\n"
+           " file#        Files(s) of miniSEED records\n"
            "\n");
 
   if (level)

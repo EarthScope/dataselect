@@ -1,13 +1,13 @@
 /***************************************************************************
  * dsarchive.c
- * Routines to archive Mini-SEED data records.
+ * Routines to archive miniSEED data records.
  *
  * Written by Chad Trabant
  *   ORFEUS/EC-Project MEREDIAN
  *   IRIS Data Management Center
  *   EarthScope Data Services
  *
- * The philosophy: a "DataStream" describes an archive that Mini-SEED
+ * The philosophy: a "DataStream" describes an archive that miniSEED
  * records will be saved to.  Each archive can be separated into
  * "DataStreamGroup"s, each unique group will be saved into a unique
  * file.  The definition of the groups is implied by the format of the
