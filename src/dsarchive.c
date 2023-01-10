@@ -5,14 +5,13 @@
  * Written by Chad Trabant
  *   ORFEUS/EC-Project MEREDIAN
  *   IRIS Data Management Center
+ *   EarthScope Data Services
  *
  * The philosophy: a "DataStream" describes an archive that Mini-SEED
  * records will be saved to.  Each archive can be separated into
  * "DataStreamGroup"s, each unique group will be saved into a unique
  * file.  The definition of the groups is implied by the format of the
  * archive.
- *
- * modified: 2010.104
  ***************************************************************************/
 
 #include <errno.h>
@@ -491,7 +490,7 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
   /* If no file is open, well, open it */
   if (foundgroup->filed == 0)
   {
-    int filepos;
+    off_t filepos;
 
     if (dsverbose >= 1)
       fprintf (stderr, "Opening data stream file %s\n", filename);
@@ -502,7 +501,7 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
       return NULL;
     }
 
-    if ((filepos = (int)lseek (foundgroup->filed, (off_t)0, SEEK_END)) < 0)
+    if ((filepos = (off_t)lseek (foundgroup->filed, (off_t)0, SEEK_END)) < 0)
     {
       fprintf (stderr, "cannot seek in data stream file, %s\n", strerror (errno));
       return NULL;

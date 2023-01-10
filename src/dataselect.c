@@ -1,5 +1,5 @@
 /***************************************************************************
- * dataselect.c - Mini-SEED data selection.
+ * dataselect.c - miniSEED data selection.
  *
  * Opens one or more user specified files, applys filtering criteria
  * and outputs any matched data while time-ordering the data and
@@ -10,9 +10,7 @@
  * the return code will be 1.  On successfull operation the return
  * code will be 0.
  *
- * Written by Chad Trabant, IRIS Data Management Center.
- *
- * modified 2017.270
+ * Written by Chad Trabant, EarthScope Data Services.
  ***************************************************************************/
 
 /***************************************************************************
@@ -117,25 +115,25 @@
 
 #include "dsarchive.h"
 
-#define VERSION "3.22"
+#define VERSION "3.23DEV"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */
 typedef struct Filelink_s
 {
-  char *infilename;     /* Input file name */
-  FILE *infp;           /* Input file descriptor */
-  char *outfilename;    /* Output file name */
-  FILE *outfp;          /* Output file descriptor */
-  uint64_t startoffset; /* Byte offset to start reading, 0 = unused */
-  uint64_t endoffset;   /* Byte offset to end reading, 0 = unused */
-  int reordercount;     /* Number of records re-ordered */
-  int recsplitcount;    /* Number of records split */
-  int recrmcount;       /* Number of records removed */
-  int rectrimcount;     /* Number of records trimmed */
-  hptime_t earliest;    /* Earliest data time in this file selection */
-  hptime_t latest;      /* Latest data time in this file selection */
-  int byteswritten;     /* Number of bytes written out */
+  char *infilename;       /* Input file name */
+  FILE *infp;             /* Input file descriptor */
+  char *outfilename;      /* Output file name */
+  FILE *outfp;            /* Output file descriptor */
+  uint64_t startoffset;   /* Byte offset to start reading, 0 = unused */
+  uint64_t endoffset;     /* Byte offset to end reading, 0 = unused */
+  uint64_t reordercount;  /* Number of records re-ordered */
+  uint64_t recsplitcount; /* Number of records split */
+  uint64_t recrmcount;    /* Number of records removed */
+  uint64_t rectrimcount;  /* Number of records trimmed */
+  hptime_t earliest;      /* Earliest data time in this file selection */
+  hptime_t latest;        /* Latest data time in this file selection */
+  uint64_t byteswritten;  /* Number of bytes written out */
   struct Filelink_s *next;
 } Filelink;
 
@@ -146,7 +144,7 @@ typedef struct Archive_s
   struct Archive_s *next;
 } Archive;
 
-/* Mini-SEED record information structures */
+/* miniSEED record information structures */
 typedef struct Record_s
 {
   struct Filelink_s *flp;
@@ -1135,7 +1133,7 @@ writetraces (MSTraceList *mstl)
         }
         if (rv == -2)
         {
-          ms_log (2, "Cannot unpack Mini-SEED from byte offset %lld in %s\n",
+          ms_log (2, "Cannot unpack miniSEED from byte offset %lld in %s\n",
                   rec->offset, rec->flp->infilename);
           ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->srcname);
           errflag = 2;
@@ -1184,10 +1182,10 @@ writetraces (MSTraceList *mstl)
     if (!ofp && verbose)
     {
       if (replaceinput)
-        ms_log (1, "Wrote %d bytes from file %s (was %s)\n",
+        ms_log (1, "Wrote %" PRId64 " bytes from file %s (was %s)\n",
                 flp->byteswritten, flp->infilename, flp->outfilename);
       else
-        ms_log (1, "Wrote %d bytes from file %s\n",
+        ms_log (1, "Wrote %" PRId64 " bytes from file %s\n",
                 flp->byteswritten, flp->infilename);
     }
 
@@ -1294,7 +1292,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   /* Unpack data record header without data samples */
   if ((retcode = msr_unpack (recordbuf, rec->reclen, &msr, 0, 0)) != MS_NOERROR)
   {
-    ms_log (2, "Cannot unpack Mini-SEED record: %s\n", ms_errorstr (retcode));
+    ms_log (2, "Cannot unpack miniSEED record: %s\n", ms_errorstr (retcode));
     return -2;
   }
 
@@ -2337,10 +2335,10 @@ printmodsummary (flag nomods)
     }
 
     if (replaceinput)
-      ms_log (0, " Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
+      ms_log (0, " Records split: % " PRId64 " trimmed: %" PRId64 " removed: %" PRId64 ", Segments reordered: %" PRId64 " :: %s\n",
               flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->outfilename);
     else
-      ms_log (0, " Records split: %3d trimmed: %3d removed: %3d, Segments reordered: %3d :: %s\n",
+      ms_log (0, " Records split: %" PRId64 " trimmed: %" PRId64 " removed: %" PRId64 ", Segments reordered: %" PRId64 " :: %s\n",
               flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->infilename);
 
     flp = flp->next;
