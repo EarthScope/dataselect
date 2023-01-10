@@ -1,4 +1,4 @@
-# <p >Mini-SEED data selection, sorting and pruning</p>
+# <p >miniSEED data selection, sorting and pruning</p>
 
 1. [Name](#)
 1. [Synopsis](#synopsis)
@@ -24,7 +24,7 @@ dataselect [options] file1 [file2 file3 ...]
 
 ## <a id='description'>Description</a>
 
-<p ><b>dataselect</b> selects, sorts and prunes Mini-SEED data.  Any output data will always be sorted by ascending time-series segments.  Various data selection operations are possible including time criteria, the removal of duplicate data and the splicing of partially overlapping data records to form continuous time-series.</p>
+<p ><b>dataselect</b> selects, sorts and prunes miniSEED data.  Any output data will always be sorted by ascending time-series segments.  Various data selection operations are possible including time criteria, the removal of duplicate data and the splicing of partially overlapping data records to form continuous time-series.</p>
 
 <p >Data pruning, removal of overlap, can be performed at either the record or sample level.  Pruning at the record level guarantees that records are never unpacked/repacked, but this could potentially leave small amounts of overlap in the data.  Pruning at the sample level will remove any overlap and splice data to within the time-series tolerance, this requires the unpacking and repacking of data records and is done in a modification-minimizing way.</p>
 
@@ -74,15 +74,15 @@ dataselect [options] file1 [file2 file3 ...]
 
 <b>-s </b><i>selectfile</i>
 
-<p style="padding-left: 30px;">Limit processing to Mini-SEED records that match a selection in the specified file.  The selection file contains parameters to match the network, station, location, channel, quality and time range for input records.  As a special case, specifying "-" will result in selection lines being read from stdin.  For more details see the <b>SELECTION FILE</b> section below.</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that match a selection in the specified file.  The selection file contains parameters to match the network, station, location, channel, quality and time range for input records.  As a special case, specifying "-" will result in selection lines being read from stdin.  For more details see the <b>SELECTION FILE</b> section below.</p>
 
 <b>-ts </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to Mini-SEED records that start after or contain <i>time</i>.  The format of the <i>time</i> argument is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.), except the seconds and fractional seconds must be separated by a period (.).</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that start after or contain <i>time</i>.  The format of the <i>time</i> argument is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.), except the seconds and fractional seconds must be separated by a period (.).</p>
 
 <b>-te </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to Mini-SEED records that end before or contain <i>time</i>.  The format of the <i>time</i> argument is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.), except the seconds and fractional seconds must be separated by a period (.).</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that end before or contain <i>time</i>.  The format of the <i>time</i> argument is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.), except the seconds and fractional seconds must be separated by a period (.).</p>
 
 <b>-M </b><i>match</i>
 
@@ -106,7 +106,7 @@ dataselect [options] file1 [file2 file3 ...]
 
 <b>-m </b><i>match</i>
 
-<p style="padding-left: 30px;">This is effectively the same as <b>-M</b> except that <i>match</i> is evaluated as a globbing expression instead of regular expression. Otherwise undocumented as it is primarily useful at the IRIS DMC.</p>
+<p style="padding-left: 30px;">This is effectively the same as <b>-M</b> except that <i>match</i> is evaluated as a globbing expression instead of regular expression. Otherwise undocumented as it is primarily useful at the IRIS/EarthScope.</p>
 
 <b>-rep</b>
 
@@ -325,8 +325,8 @@ II_BFO_00_BHZ_Q
 
 <pre >
 Chad Trabant
-IRIS Data Management Center
+EarthScope Data Services
 </pre>
 
 
-(man page 2017/9/27)
+(man page 2023/1/9)

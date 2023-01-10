@@ -1,4 +1,4 @@
-2023.009:
+2023.009: 3.23
 	- Update libmseed to 2.19.8.
 	- Properly handle larger file sizes.
 
