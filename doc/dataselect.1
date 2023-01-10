@@ -1,6 +1,6 @@
-.TH DATASELECT 1 2017/9/27
+.TH DATASELECT 1 2023/1/9
 .SH NAME
-Mini-SEED data selection, sorting and pruning
+miniSEED data selection, sorting and pruning
 
 .SH SYNOPSIS
 .nf
@@ -8,7 +8,7 @@ dataselect [options] file1 [file2 file3 ...]
 .fi
 
 .SH DESCRIPTION
-\fBdataselect\fP selects, sorts and prunes Mini-SEED data.  Any output
+\fBdataselect\fP selects, sorts and prunes miniSEED data.  Any output
 data will always be sorted by ascending time-series segments.  Various
 data selection operations are possible including time criteria, the
 removal of duplicate data and the splicing of partially overlapping
@@ -85,7 +85,7 @@ speeding up reads from slow network storage, but not always faster due
 to OS and other caching.
 
 .IP "-s \fIselectfile\fP"
-Limit processing to Mini-SEED records that match a selection in the
+Limit processing to miniSEED records that match a selection in the
 specified file.  The selection file contains parameters to match the
 network, station, location, channel, quality and time range for input
 records.  As a special case, specifying "-" will result in selection
@@ -93,14 +93,14 @@ lines being read from stdin.  For more details see the \fBSELECTION
 FILE\fP section below.
 
 .IP "-ts \fItime\fP"
-Limit processing to Mini-SEED records that start after or contain
+Limit processing to miniSEED records that start after or contain
 \fItime\fP.  The format of the \fItime\fP argument
 is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either
 commas (,), colons (:) or periods (.), except the seconds and
 fractional seconds must be separated by a period (.).
 
 .IP "-te \fItime\fP"
-Limit processing to Mini-SEED records that end before or contain
+Limit processing to miniSEED records that end before or contain
 \fItime\fP.  The format of the \fItime\fP argument
 is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either
 commas (,), colons (:) or periods (.), except the seconds and
@@ -137,7 +137,7 @@ Specify minimum segment length, no continuous segments shorter than
 .IP "-m \fImatch\fP"
 This is effectively the same as \fB-M\fP except that \fImatch\fP is
 evaluated as a globbing expression instead of regular expression.
-Otherwise undocumented as it is primarily useful at the IRIS DMC.
+Otherwise undocumented as it is primarily useful at the IRIS/EarthScope.
 
 .IP "-rep"
 Replace input files.  By default this will rename the original files
@@ -425,5 +425,5 @@ limitation is to run the program once for each selection.
 .SH AUTHOR
 .nf
 Chad Trabant
-IRIS Data Management Center
+EarthScope Data Services
 .fi
