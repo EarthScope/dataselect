@@ -1,3 +1,9 @@
+2023.054: 3.24
+	- Fix heap corruption fault due to free'ing just-allocated archive
+	file entry.
+	- Avoid needelessly closing open files when seeking to remain under
+	open file limit.
+
 2023.009: 3.23
 	- Update libmseed to 2.19.8.
 	- Properly handle larger file sizes.

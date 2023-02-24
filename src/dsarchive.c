@@ -70,11 +70,14 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
   DataStreamGroup *foundgroup = NULL;
   BTime stime;
   strlist *fnlist, *fnptr;
-  char net[3], sta[6], loc[3], chan[4];
-  char filename[400];
-  char definition[400];
-  char pathformat[600];
-  char tstr[20];
+  char net[9] = {0};
+  char sta[9] = {0};
+  char loc[9] = {0};
+  char chan[9] = {0};
+  char filename[400] = {0};
+  char definition[400] = {0};
+  char pathformat[600] = {0};
+  char tstr[20] = {0};
   int fnlen = 0;
 
   /* Set Verbosity for ds_ functions */
@@ -464,7 +467,7 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
 
     foundgroup->defkey  = strdup (defkey);
     foundgroup->filed   = 0;
-    foundgroup->modtime = curtime;
+    foundgroup->modtime = -curtime;
     foundgroup->next    = NULL;
 
     /* Set the stream root if this is the first entry */
@@ -652,6 +655,12 @@ ds_closeidle (DataStream *datastream, int idletimeout)
     {
       prevgroup = searchgroup;
     }
+
+    /* Avoid closing all files if we are under the limit and idle timeout is less
+     * than possible  due to progresive decreases. */
+    if (idletimeout < 0 &&
+        (ds_openfilecount - 10 - count) < ds_maxopenfiles)
+      break;
 
     searchgroup = nextgroup;
   }
