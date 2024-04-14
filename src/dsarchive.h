@@ -4,8 +4,11 @@
 
 #include <time.h>
 
+#include <libmseed.h>
+
 /* Define pre-formatted archive layouts */
 #define CHANLAYOUT  "%n.%s.%l.%c"
+#define VCHANLAYOUT "%n.%s.%l.%c.%v"
 #define QCHANLAYOUT "%n.%s.%l.%c.%q"
 #define CDAYLAYOUT  "%n.%s.%l.%c.%Y:%j:#H:#M:#S"
 #define SDAYLAYOUT  "%n.%s.%Y:%j"
@@ -33,7 +36,7 @@ DataStream;
 /* Maximum number of open files for all DataStreams */
 extern int ds_maxopenfiles;
 
-extern int ds_streamproc (DataStream *datastream, MSRecord *msr,
+extern int ds_streamproc (DataStream *datastream, MS3Record *msr,
                           long suffix, int verbose);
 
 #endif /* DSARCHIVE_H */

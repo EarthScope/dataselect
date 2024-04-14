@@ -10,22 +10,22 @@ SRCS = dataselect.c dsarchive.c
 OBJS = $(SRCS:.c=.o)
 
 # Required compiler parameters
-REQCFLAGS = -I../libmseed
+EXTRACFLAGS = -I../libmseed
+EXTRALDFLAGS = -L../libmseed
 
-LDFLAGS = -L../libmseed
-LDLIBS = -lmseed 
+LDLIBS = -lmseed
 
 all: $(BIN)
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) -o ../$@ $(OBJS) $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CFLAGS) -o ../$@ $(OBJS) $(EXTRALDFLAGS) $(LDLIBS) $(LDFLAGS)
 
 clean:
 	rm -f $(OBJS) ../$(BIN)
 
 # Implicit rule for building object files
 %.o: %.c
-	$(CC) $(CFLAGS) $(REQCFLAGS) -c $<
+	$(CC) $(CFLAGS) $(EXTRACFLAGS) -c $<
 
 install:
 	@echo

@@ -1,3 +1,8 @@
+2024.105:
+	- Port to libmseed 3.1.1 with support for both miniSEED v2 and v3.
+	- The modification log now includes SourceIDs instead of Net,Sta,Loc,Chan.
+	
+
 2023.054: 3.24
 	- Fix heap corruption fault due to free'ing just-allocated archive
 	file entry.
