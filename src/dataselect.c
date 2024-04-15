@@ -48,9 +48,9 @@
  * added to the MS3TraceList.
  *
  * Each MS3TraceSeg has an associated RecordMap which includes a list of
- * Records.  A Record structure is not the actual data record itself
- * but meta information about the record coverage and location (file
- * and offset).  The list of Records is always in time order.
+ * Records.  A Record structure is meta information about the record
+ * coverage and location (file and offset).  The list of Records is
+ * always in time order.
  *
  * When splitting on a time boundary and an input record crosses the
  * specified boundary, two Record structures will be created for the
@@ -110,7 +110,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
-#include <unistd.h>
+#include <unistd.h>  /* For unlink(), TODO this can go when replacing input files goes */
 
 #include <libmseed.h>
 
@@ -122,12 +122,11 @@
 /* Input/output file selection information containers */
 typedef struct Filelink_s
 {
-  char *infilename;       /* Input file name */
+  char *infilename_raw;   /* Input file name with potential annotation (byte range) */
+  char *infilename;       /* Input file name without annotation (byte range) */
   FILE *infp;             /* Input file descriptor */
   char *outfilename;      /* Output file name */
   FILE *outfp;            /* Output file descriptor */
-  uint64_t startoffset;   /* Byte offset to start reading, 0 = unused */
-  uint64_t endoffset;     /* Byte offset to end reading, 0 = unused */
   uint64_t reordercount;  /* Number of records re-ordered */
   uint64_t recsplitcount; /* Number of records split */
   uint64_t recrmcount;    /* Number of records removed */
@@ -376,7 +375,6 @@ readfiles (MS3TraceList **ppmstl)
   RecordMap newrecmap;
   Record *newrec = 0;
 
-  off_t fpos = 0;
   nstime_t recstarttime;
   nstime_t recendtime;
 
@@ -439,20 +437,13 @@ readfiles (MS3TraceList **ppmstl)
     {
       if (replaceinput)
       {
-        if (flp->startoffset || flp->endoffset)
-          ms_log (1, "Reading: %s (was %s) [range %" PRIu64 ":%" PRIu64 "]\n",
-                  flp->infilename, flp->outfilename, flp->startoffset, flp->endoffset);
-        else
-          ms_log (1, "Reading: %s (was %s)\n",
-                  flp->infilename, flp->outfilename);
+        ms_log (1, "Reading: %s (was %s)\n",
+                flp->infilename, flp->outfilename);
       }
       else
       {
-        if (flp->startoffset || flp->endoffset)
-          ms_log (1, "Reading: %s [range %" PRIu64 ":%" PRIu64 "]\n",
-                  flp->infilename, flp->startoffset, flp->endoffset);
-        else
-          ms_log (1, "Reading: %s\n", flp->infilename);
+        ms_log (1, "Reading: %s\n", flp->infilename);
+        ms_log (1, "Reading RAW: %s\n", flp->infilename_raw);
       }
     }
 
@@ -461,16 +452,9 @@ readfiles (MS3TraceList **ppmstl)
     flags |= MSF_PNAMERANGE;
 
     /* Loop over the input file */
-    while ((retcode = ms3_readmsr_selection (&msfp, &msr, flp->infilename, flags,
+    while ((retcode = ms3_readmsr_selection (&msfp, &msr, flp->infilename_raw, flags,
                                              selections, verbose - 2)) == MS_NOERROR)
     {
-      /* Break out as EOF if we have read past end offset */
-      if (flp->endoffset > 0 && fpos >= flp->endoffset)
-      {
-        retcode = MS_ENDOFFILE;
-        break;
-      }
-
       recstarttime = msr->starttime;
       recendtime = msr3_endtime (msr);
 
@@ -598,7 +582,7 @@ readfiles (MS3TraceList **ppmstl)
       }
 
       rec->flp = flp;
-      rec->offset = fpos;
+      rec->offset = (msfp->streampos - msr->reclen);
       rec->stageoffset = -1;
       rec->reclen = msr->reclen;
       rec->starttime = recstarttime;
@@ -806,13 +790,6 @@ readfiles (MS3TraceList **ppmstl)
 
       totalrecs++;
       totalsamps += msr->samplecnt;
-
-      /* Break out as EOF if record is at or beyond end offset */
-      if (flp->endoffset > 0 && (fpos + msr->reclen) >= flp->endoffset)
-      {
-        retcode = MS_ENDOFFILE;
-        break;
-      }
     } /* End of looping through records in file */
 
     /* Critical error if file was not read properly */
@@ -1323,7 +1300,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
     return -2;
   }
 
-  if (ms_encoding_sizetype (msr->encoding, &samplesize, &sampletype) == 0)
+  if (ms_encoding_sizetype (msr->encoding, &samplesize, &sampletype))
   {
     ms_log (2, "Cannot determine sample size and type for encoding %d\n", msr->encoding);
     msr3_free (&msr);
@@ -1473,8 +1450,8 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
 /***************************************************************************
  * writerecord():
  *
- * Used by writetraces() directly, and trimrecord() when called, to save repacked miniSEED to global record
- * buffer.
+ * Used by writetraces() directly, and trimrecord() when called, to save
+ * repacked miniSEED to global record buffer.
  ***************************************************************************/
 static void
 writerecord (char *record, int reclen, void *handlerdata)
@@ -2883,7 +2860,7 @@ processparam (int argcount, char **argvec)
       restampqind = *tptr;
 
       if (restampqind != 'D' && restampqind != 'R' &&
-          restampqind != 'Q' && restampqind != 'Q')
+          restampqind != 'Q' && restampqind != 'M')
       {
         ms_log (2, "Invalid data indicator: '%c'\n", restampqind);
         exit (1);
@@ -3218,35 +3195,38 @@ addfile (char *filename)
 
   if (!filename)
   {
-    ms_log (2, "addfile(): No file name specified\n");
+    ms_log (2, "%s(): No file name specified\n", __func__);
     return -1;
   }
 
   if (!(newlp = (Filelink *)calloc (1, sizeof (Filelink))))
   {
-    ms_log (2, "addfile(): Cannot allocate memory\n");
+    ms_log (2, "%s(): Cannot allocate memory, out of memory?\n", __func__);
+    return -1;
+  }
+
+  if (!(newlp->infilename_raw = strdup (filename)))
+  {
+    ms_log (2, "%s(): Cannot allocate memory, out of memory?\n", __func__);
     return -1;
   }
 
   /* Check for optional read byte range specifiers
-   * Expected form: "filename@startoffset:endoffset"
-   * Both start are optional */
-  if ((at = strrchr (filename, '@')))
+   * Convert legacy byte separator of ":" to "-" as used by libmseed
+   * Legacy form: "filename@startoffset:endoffset"
+   * Needed form: "filename@startoffset-endoffset"
+   */
+  if ((at = strrchr (newlp->infilename_raw, '@')))
   {
-    *at++ = '\0';
-
     if ((colon = strrchr (at, ':')))
     {
-      *colon++ = '\0';
-      newlp->endoffset = strtoull (colon, NULL, 10);
+      *colon = '-';
     }
-
-    newlp->startoffset = strtoull (at, NULL, 10);
   }
 
-  if (!(newlp->infilename = strdup (filename)))
+  if (!(newlp->infilename = strndup (filename, strcspn (filename, "@"))))
   {
-    ms_log (2, "addfile(): Cannot duplicate string\n");
+    ms_log (2, "%s(): Cannot duplicate string, out of memory?\n", __func__);
     return -1;
   }
 
