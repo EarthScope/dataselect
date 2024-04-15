@@ -236,9 +236,8 @@ static nstime_t starttime = NSTERROR; /* Limit to records containing or after st
 static nstime_t endtime = NSTERROR;   /* Limit to records containing or before endtime */
 static char splitboundary = 0;        /* Split records on day 'd', hour 'h' or minute 'm' boundaries */
 static char splitreclen = 0;          /* Split output files on record length changes */
-
-static double timetol;     /* Time tolerance for continuous traces */
-static double sampratetol; /* Sample rate tolerance for continuous traces */
+static double timetol = -1.0;         /* Time tolerance for continuous traces */
+static double sampratetol = -1.0;     /* Sample rate tolerance for continuous traces */
 static MS3Tolerance tolerance = {.time = NULL, .samprate = NULL};
 
 /* Trivial callback functions for fixed time and sample rate tolerances */
@@ -1843,6 +1842,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
 {
   RecordMap *recmap;
   Record *rec;
+  Coverage *cov;
   nstime_t effstarttime, effendtime;
   nstime_t nsdelta, nstimetol;
   char stime[30] = {0};
@@ -1864,7 +1864,8 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
   rec = recmap->first;
   while (rec)
   {
-    while (coverage)
+    cov = coverage;
+    while (cov)
     {
       if (!rec->reclen) /* Skip if marked non-contributing */
         break;
@@ -1900,7 +1901,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
       /* Determine the new start/end times if pruning at the sample level */
       if (prunedata == 's' && rec->reclen != 0)
       {
-        /* Record overlaps beginning of HP coverage */
+        /* Record overlaps beginning of coverage */
         if (effstarttime < coverage->starttime &&
             (effendtime + nstimetol) >= coverage->starttime)
         {
@@ -1929,7 +1930,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
           }
         }
 
-        /* Record overlaps end of HP coverage */
+        /* Record overlaps end of coverage */
         if ((effstarttime - nstimetol) <= coverage->endtime &&
             effendtime > coverage->endtime)
         {
@@ -1984,7 +1985,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
 
       } /* Done pruning at sample level */
 
-      coverage = coverage->next;
+      cov = cov->next;
     }
 
     rec = rec->next;
