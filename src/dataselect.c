@@ -216,12 +216,13 @@ static int addarchive (const char *path, const char *layout);
 static int readregexfile (char *regexfile, char **pppattern);
 static void usage (int level);
 
-static flag verbose = 0;
-static flag basicsum = 0;             /* Controls printing of basic summary */
-static flag bestversion = 1;          /* Use publication version to retain the "best" data when pruning */
-static flag prunedata = 0;            /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
+static int8_t verbose = 0;
+static int8_t basicsum = 0;           /* Controls printing of basic summary */
+static int8_t skipnotdata = 0;        /* Controls skipping of non-miniSEED data */
+static int8_t bestversion = 1;        /* Use publication version to retain the "best" data when pruning */
+static int8_t prunedata = 0;          /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
 static char restampqind = 0;          /* Re-stamp data record/quality indicator */
-static flag modsummary = 0;           /* Print modification summary after all processing */
+static int8_t modsummary = 0;         /* Print modification summary after all processing */
 static nstime_t starttime = NSTUNSET; /* Limit to records containing or after starttime */
 static nstime_t endtime = NSTUNSET;   /* Limit to records containing or before endtime */
 static char splitboundary = 0;        /* Split records on day 'd', hour 'h' or minute 'm' boundaries */
@@ -247,7 +248,7 @@ samprate_callback (const MS3Record *msr)
 static regex_t *match = NULL;  /* Compiled match regex */
 
 static char *outputfile = NULL;  /* Single output file */
-static flag outputmode = 0;      /* Mode for single output file: 0=overwrite, 1=append */
+static int8_t outputmode = 0;    /* Mode for single output file: 0=overwrite, 1=append */
 static Archive *archiveroot = 0; /* Output file structures */
 
 static char recordbuf[16384]; /* Global record buffer */
@@ -360,7 +361,7 @@ readfiles (MS3TraceList **ppmstl)
 
   uint32_t flags = 0;
   int retcode;
-  flag whence;
+  int8_t whence;
 
   if (!ppmstl)
     return -1;
@@ -382,8 +383,14 @@ readfiles (MS3TraceList **ppmstl)
    * time order.
    */
 
-  flp = filelist;
+  /* Set bit flags to validate CRC and extrace start-stop range from file names */
+  flags |= MSF_VALIDATECRC;
+  flags |= MSF_PNAMERANGE;
 
+  if (skipnotdata)
+    flags |= MSF_SKIPNOTDATA;
+
+  flp = filelist;
   while (flp)
   {
     if (verbose)
@@ -393,10 +400,6 @@ readfiles (MS3TraceList **ppmstl)
       else
         ms_log (1, "Reading: %s (specified as %s)\n", flp->infilename, flp->infilename_raw);
     }
-
-    /* Set bit flags to validate CRC and extrace start-stop range from file names */
-    flags |= MSF_VALIDATECRC;
-    flags |= MSF_PNAMERANGE;
 
     /* Loop over the input file */
     while ((retcode = ms3_readmsr_selection (&msfp, &msr, flp->infilename_raw, flags,
@@ -1940,7 +1943,7 @@ reconcile_tracetimes (MS3TraceList *mstl)
  * include files that were not modified.
  ***************************************************************************/
 static void
-printmodsummary (flag nomods)
+printmodsummary (int8_t nomods)
 {
   Filelink *flp;
 
@@ -2031,7 +2034,7 @@ printtracemap (MS3TraceList *mstl)
  * Print record map to stdout.
  ***************************************************************************/
 static void
-printrecordmap (RecordMap *recmap, flag details)
+printrecordmap (RecordMap *recmap, int8_t details)
 {
   char stime[30] = {0};
   char etime[30] = {0};
@@ -2399,6 +2402,10 @@ processparam (int argcount, char **argvec)
     {
       sampratetol = strtod (getoptval (argcount, argvec, optind++), NULL);
       tolerance.samprate = samprate_callback;
+    }
+    else if (strcmp (argvec[optind], "-snd") == 0)
+    {
+      skipnotdata = 1;
     }
     else if (strcmp (argvec[optind], "-E") == 0)
     {
@@ -3027,6 +3034,7 @@ usage (int level)
            " -v           Be more verbose, multiple flags can be used\n"
            " -tt secs     Specify a time tolerance for continuous traces\n"
            " -rt diff     Specify a sample rate tolerance for continuous traces\n"
+           " -snd         Skip non-miniSEED data, otherwise quit on unrecognized input\n"
            " -E           Consider all qualities equal instead of 'best' prioritization\n"
            "\n"
            " ## Data selection options ##\n"

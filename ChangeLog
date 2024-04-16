@@ -3,6 +3,7 @@
 	- The modification log now includes SourceIDs instead of Net,Sta,Loc,Chan.
 	- Byte range annotation on input file names now uses a "-" between start
 	and end offsets to match libmseed.  Legacy delimiter ":" also supported.
+	- Add -snd to skip non-miniSEED data, otherwise quit on unrecognized input
 	- Remove the -szs (skip-zero-sample records) option
 	- Remove the -lso (longest segment only) option
 	- Remove the -msl (minimum segment length) option
