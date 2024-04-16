@@ -265,7 +265,6 @@ int
 main (int argc, char **argv)
 {
   MS3TraceList *mstl = NULL;
-  char *leapsecondfile = NULL;
 
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
@@ -275,16 +274,7 @@ main (int argc, char **argv)
     return 1;
 
   /* Read leap second list file if env. var. LIBMSEED_LEAPSECOND_FILE is set */
-  if ((leapsecondfile = getenv ("LIBMSEED_LEAPSECOND_FILE")))
-  {
-    if (strcmp (leapsecondfile, "NONE"))
-      ms_readleapsecondfile (leapsecondfile);
-  }
-  else if (verbose >= 1)
-  {
-    ms_log (1, "Warning: No leap second file specified with LIBMSEED_LEAPSECOND_FILE\n");
-    ms_log (1, "  This is highly recommended, see man page for details.\n");
-  }
+  ms_readleapseconds ("LIBMSEED_LEAPSECOND_FILE");
 
   /* Data stream archiving maximum concurrent open files */
   if (archiveroot)
