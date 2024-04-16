@@ -149,7 +149,6 @@ typedef struct Record_s
 {
   struct Filelink_s *flp;
   off_t offset;
-  off_t stageoffset;
   int reclen;
   nstime_t starttime;
   nstime_t endtime;
@@ -220,7 +219,6 @@ static int addfile (char *filename);
 static int addlistfile (char *filename);
 static int addarchive (const char *path, const char *layout);
 static int readregexfile (char *regexfile, char **pppattern);
-static off_t calcsize (char *sizestr);
 static void usage (int level);
 
 static flag verbose = 0;
@@ -260,11 +258,7 @@ static char *outputfile = NULL;  /* Single output file */
 static flag outputmode = 0;      /* Mode for single output file: 0=overwrite, 1=append */
 static Archive *archiveroot = 0; /* Output file structures */
 
-static char recordbuf[16384];    /* Global record buffer */
-static char *stagebuffer = NULL; /* Global record staging buffer */
-static off_t stagelength = 0;    /* Global record staging buffer length */
-static off_t stageoffset = 0;    /* Global record staging buffer end offset */
-static flag stagefull = 0;       /* Global record staging buffer full flag */
+static char recordbuf[16384]; /* Global record buffer */
 
 static Filelink *filelist = NULL;        /* List of input files */
 static Filelink *filelisttail = NULL;    /* Tail of list of input files */
@@ -565,7 +559,6 @@ readfiles (MS3TraceList **ppmstl)
 
       rec->flp = flp;
       rec->offset = (msfp->streampos - msr->reclen);
-      rec->stageoffset = -1;
       rec->reclen = msr->reclen;
       rec->starttime = recstarttime;
       rec->endtime = recendtime;
@@ -746,28 +739,6 @@ readfiles (MS3TraceList **ppmstl)
         recmap->recordcnt = newrecmap.recordcnt;
 
         seg->prvtptr = recmap;
-      }
-
-      /* Copy record to staging buffer if space is available */
-      if (stagebuffer && !stagefull)
-      {
-        if ((stagelength - stageoffset) >= msr->reclen)
-        {
-          /* Copy record to end of staging buffer contents */
-          memcpy ((stagebuffer + stageoffset), msr->record, msr->reclen);
-
-          /* Set offset to record in staging buffer */
-          rec->stageoffset = stageoffset;
-
-          /* Update offset to end of staging buffer */
-          stageoffset += msr->reclen;
-        }
-        else if (!stagefull)
-        {
-          ms_log (1, "Warning: record staging buffer full, using input files for remaining records\n");
-
-          stagefull = 1;
-        }
       }
 
       totalrecs++;
@@ -1029,54 +1000,46 @@ writetraces (MS3TraceList *mstl)
     rec = recmap->first;
     while (rec && !errflag)
     {
-      /* Set record pointer to location in the staging buffer */
-      if (rec->stageoffset >= 0)
+      /* Read the record from the input file */
+
+      if (rec->reclen > sizeof (recordbuf))
       {
-        recordptr = stagebuffer + rec->stageoffset;
+        ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
+                rec->reclen, (long long unsigned int)sizeof (recordbuf));
+        errflag = 1;
+        break;
       }
-      /* Otherwise read the record from the input file */
-      else
-      {
-        /* Make sure the record buffer is large enough */
-        if (rec->reclen > sizeof (recordbuf))
-        {
-          ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
-                  rec->reclen, (long long unsigned int)sizeof (recordbuf));
-          errflag = 1;
-          break;
-        }
 
-        /* Open file for reading if not already done */
-        if (!rec->flp->infp)
-          if (!(rec->flp->infp = fopen (rec->flp->infilename, "rb")))
-          {
-            ms_log (2, "Cannot open '%s' for reading: %s\n",
-                    rec->flp->infilename, strerror (errno));
-            errflag = 1;
-            break;
-          }
-
-        /* Seek to record offset */
-        if (lmp_fseek64 (rec->flp->infp, rec->offset, SEEK_SET) == -1)
+      /* Open file for reading if not already done */
+      if (!rec->flp->infp)
+        if (!(rec->flp->infp = fopen (rec->flp->infilename, "rb")))
         {
-          ms_log (2, "Cannot seek in '%s': %s\n",
+          ms_log (2, "Cannot open '%s' for reading: %s\n",
                   rec->flp->infilename, strerror (errno));
           errflag = 1;
           break;
         }
 
-        /* Read record into buffer */
-        if (fread (recordbuf, rec->reclen, 1, rec->flp->infp) != 1)
-        {
-          ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
-                  rec->reclen, (long long unsigned)rec->offset,
-                  rec->flp->infilename);
-          errflag = 1;
-          break;
-        }
-
-        recordptr = recordbuf;
+      /* Seek to record offset */
+      if (lmp_fseek64 (rec->flp->infp, rec->offset, SEEK_SET) == -1)
+      {
+        ms_log (2, "Cannot seek in '%s': %s\n",
+                rec->flp->infilename, strerror (errno));
+        errflag = 1;
+        break;
       }
+
+      /* Read record into buffer */
+      if (fread (recordbuf, rec->reclen, 1, rec->flp->infp) != 1)
+      {
+        ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
+                rec->reclen, (long long unsigned)rec->offset,
+                rec->flp->infilename);
+        errflag = 1;
+        break;
+      }
+
+      recordptr = recordbuf;
 
       /* Re-stamp quality indicator if specified */
       // TODO fix for two versions
@@ -2495,7 +2458,6 @@ static int
 processparam (int argcount, char **argvec)
 {
   int optind;
-  char *stagelengthstr = NULL;
   char *selectfile = NULL;
   char *matchpattern = NULL;
   char *rejectpattern = NULL;
@@ -2536,10 +2498,6 @@ processparam (int argcount, char **argvec)
     else if (strcmp (argvec[optind], "-E") == 0)
     {
       bestversion = 0;
-    }
-    else if (strcmp (argvec[optind], "-sb") == 0)
-    {
-      stagelengthstr = getoptval (argcount, argvec, optind++);
     }
     else if (strcmp (argvec[optind], "-s") == 0)
     {
@@ -2822,29 +2780,6 @@ processparam (int argcount, char **argvec)
     }
 
     free (rejectpattern);
-  }
-
-  /* Allocate record staging buffer */
-  if (stagelengthstr)
-  {
-    /* Parse size from argument */
-    if (!(stagelength = calcsize (stagelengthstr)))
-    {
-      ms_log (2, "Cannot parse staging buffer length: '%s'\n", stagelengthstr);
-      exit (1);
-    }
-
-    /* Parse buffer */
-    if (!(stagebuffer = (char *)malloc (stagelength)))
-    {
-      ms_log (2, "Cannot allocate memory for staging buffer (%lld bytes requested)\n",
-              (long long int)stagelength);
-      exit (1);
-    }
-
-    if (verbose > 1)
-      ms_log (1, "Allocated staging buffer (%lld bytes)\n",
-              (long long int)stagelength);
   }
 
   /* Report the program version */
@@ -3222,89 +3157,6 @@ readregexfile (char *regexfile, char **pppattern)
 } /* End of readregexfile() */
 
 /***************************************************************************
- * calcsize:
- *
- * Calculate a size in bytes for the specified size string.  If the
- * string is terminated with the following suffixes the specified
- * scaling will be applied:
- *
- * 'K' or 'k' : kilobytes - value * 1024
- * 'M' or 'm' : megabytes - value * 1024*1024
- * 'G' or 'g' : gigabytes - value * 1024*1024*1024
- *
- * Returns a size in bytes on success and 0 on error.
- ***************************************************************************/
-static off_t
-calcsize (char *sizestr)
-{
-  off_t size = 0;
-  char *parsestr;
-  int termchar;
-
-  if (!sizestr)
-    return 0;
-
-  if (!(parsestr = strdup (sizestr)))
-    return 0;
-
-  termchar = strlen (parsestr) - 1;
-
-  if (termchar <= 0)
-    return 0;
-
-  /* For kilobytes */
-  if (parsestr[termchar] == 'K' || parsestr[termchar] == 'k')
-  {
-    parsestr[termchar] = '\0';
-    size = strtoull (parsestr, NULL, 10);
-    if (!size)
-    {
-      ms_log (1, "calcsize(): Error converting %s to integer", parsestr);
-      return 0;
-    }
-    size *= 1024;
-  }
-  /* For megabytes */
-  else if (parsestr[termchar] == 'M' || parsestr[termchar] == 'm')
-  {
-    parsestr[termchar] = '\0';
-    size = strtoull (parsestr, NULL, 10);
-    if (!size)
-    {
-      ms_log (1, "calcsize(): Error converting %s to integer", parsestr);
-      return 0;
-    }
-    size *= 1024 * 1024;
-  }
-  /* For gigabytes */
-  else if (parsestr[termchar] == 'G' || parsestr[termchar] == 'g')
-  {
-    parsestr[termchar] = '\0';
-    size = strtoull (parsestr, NULL, 10);
-    if (!size)
-    {
-      ms_log (1, "calcsize(): Error converting %s to integer", parsestr);
-      return 0;
-    }
-    size *= 1024 * 1024 * 1024;
-  }
-  else
-  {
-    size = strtoull (parsestr, NULL, 10);
-    if (!size)
-    {
-      ms_log (1, "calcsize(): Error converting %s to integer", parsestr);
-      return 0;
-    }
-  }
-
-  if (parsestr)
-    free (parsestr);
-
-  return size;
-} /* End of calcsize() */
-
-/***************************************************************************
  * usage():
  * Print the usage message.
  ***************************************************************************/
@@ -3322,7 +3174,6 @@ usage (int level)
            " -tt secs     Specify a time tolerance for continuous traces\n"
            " -rt diff     Specify a sample rate tolerance for continuous traces\n"
            " -E           Consider all qualities equal instead of 'best' prioritization\n"
-           " -sb size     Use a record staging buffer of specified size for speed\n"
            "\n"
            " ## Data selection options ##\n"
            " -s file      Specify a file containing selection criteria\n"
