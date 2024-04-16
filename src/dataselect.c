@@ -110,7 +110,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
-#include <unistd.h>  /* For unlink(), TODO this can go when replacing input files goes */
+#include <unistd.h> /* For unlink(), TODO this can go when replacing input files goes */
 
 #include <libmseed.h>
 
@@ -203,9 +203,6 @@ static int trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid,
                       Coverage *coverage);
 static int reconcile_tracetimes (MS3TraceList *mstl);
 
-static int minsegmentlength (MS3TraceList *mstl, double minseconds);
-static int longestsegmentonly (MS3TraceList *mstl);
-
 static void printmodsummary (flag nomods);
 static void printtracemap (MS3TraceList *mstl);
 static void printrecordmap (RecordMap *recmap, flag details);
@@ -256,10 +253,6 @@ samprate_callback (const MS3Record *msr)
 
 static regex_t *match = NULL;  /* Compiled match regex */
 static regex_t *reject = NULL; /* Compiled reject regex */
-
-static flag skipzerosamps = 0;    /* Controls skipping of records with zero samples */
-static flag longestonly = 0;      /* Controls output of longest segment/channel only */
-static double minseglength = 0.0; /* Minimum segment length in seconds */
 
 static flag replaceinput = 0;    /* Replace input files */
 static flag nobackups = 0;       /* Remove re-named original files when done with them */
@@ -441,7 +434,7 @@ readfiles (MS3TraceList **ppmstl)
       }
       else
       {
-        //TODO make this an if (strcmp(flp->infilename, flp->infilename_raw))), print both, otherwise one
+        // TODO make this an if (strcmp(flp->infilename, flp->infilename_raw))), print both, otherwise one
         ms_log (1, "Reading: %s\n", flp->infilename);
         ms_log (1, "Reading RAW: %s\n", flp->infilename_raw);
       }
@@ -457,17 +450,6 @@ readfiles (MS3TraceList **ppmstl)
     {
       recstarttime = msr->starttime;
       recendtime = msr3_endtime (msr);
-
-      /* Check if record should be skipped due to zero samples */
-      if (skipzerosamps && msr->samplecnt == 0)
-      {
-        if (verbose >= 3)
-        {
-          ms_nstime2timestr (recstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-          ms_log (1, "Skipping (zero samples) %s, %s\n", msr->sid, stime);
-        }
-        continue;
-      }
 
       /* Check if record matches start time criteria: starts after or contains starttime */
       if ((starttime != NSTUNSET) && (recstarttime < starttime && !(recstarttime <= starttime && recendtime >= starttime)))
@@ -841,20 +823,6 @@ processtraces (MS3TraceList *mstl)
 
     /* Reconcile MS3TraceID times with associated record maps */
     if (reconcile_tracetimes (mstl))
-      return -1;
-  }
-
-  /* Enforce minimum segment length by removing shorter */
-  if (minseglength)
-  {
-    if (minsegmentlength (mstl, minseglength))
-      return -1;
-  }
-
-  /* Trim segment list to longest segment */
-  if (longestonly)
-  {
-    if (longestsegmentonly (mstl))
       return -1;
   }
 
@@ -1428,7 +1396,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   packedrecords = msr3_pack (msr, &writerecord, writerdata,
                              &packedsamples, MSF_FLUSHDATA, verbose - 1);
 
-  //TODO fix below logic, wasted time when packed records > 1
+  // TODO fix below logic, wasted time when packed records > 1
   if (packedrecords != 1)
   {
     ms_nstime2timestr (ostarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
@@ -2093,193 +2061,6 @@ reconcile_tracetimes (MS3TraceList *mstl)
 } /* End of reconcile_tracetimes() */
 
 /***************************************************************************
- * minsegmentlength:
- *
- * Enforce a minimum segment length by removing segments shorter than
- * minseconds from the collection.
- *
- * Returns 0 on success and -1 otherwise.
- ***************************************************************************/
-static int
-minsegmentlength (MS3TraceList *mstl, double minseconds)
-{
-  MS3TraceID *id = NULL;
-  MS3TraceSeg *seg = NULL;
-  MS3TraceSeg *freeseg = NULL;
-  nstime_t nsminimum;
-  nstime_t segmentlength;
-  char timestr[50];
-  RecordMap *recmap = NULL;
-  Record *rec;
-  Record *recnext;
-
-  if (!mstl)
-    return -1;
-
-  nsminimum = minseconds * NSTMODULUS;
-
-  /* Loop through trace list */
-  id = mstl->traces.next[0];
-  while (id)
-  {
-    /* Loop through segment list */
-    seg = id->first;
-    while (seg)
-    {
-      segmentlength = seg->endtime - seg->starttime;
-
-      if (segmentlength < nsminimum)
-      {
-        if (verbose > 2)
-        {
-          ms_nstime2timestr (seg->starttime, timestr, ISOMONTHDAY_Z, NANO_MICRO);
-          ms_log (1, "Removing segment of %g seconds for %s starting at %s\n",
-                  (double)segmentlength / NSTMODULUS, id->sid, timestr);
-        }
-
-        /* Relink segment list to remove MS3TraceSeg */
-        if (id->first == seg)
-          id->first = seg->next;
-
-        if (id->last == seg)
-          id->last = seg->prev;
-
-        if (seg->prev)
-          seg->prev->next = seg->next;
-
-        if (seg->next)
-          seg->next->prev = seg->prev;
-
-        id->numsegments--;
-
-        if (seg->prvtptr)
-        {
-          recmap = (RecordMap *)seg->prvtptr;
-          rec = recmap->first;
-          while (rec)
-          {
-            recnext = rec->next;
-            free (rec);
-            rec = recnext;
-          }
-          free (recmap);
-        }
-
-        freeseg = seg;
-        seg = seg->next;
-        free (freeseg);
-      }
-      else
-      {
-        seg = seg->next;
-      }
-    }
-
-    id = id->next[0];
-  }
-
-  return 0;
-} /* End of minsegmentlength() */
-
-/***************************************************************************
- * longestsegmentonly:
- *
- * Determine the longest trace segment for each channel and remove all
- * others.
- *
- * Returns 0 on success and -1 otherwise.
- ***************************************************************************/
-static int
-longestsegmentonly (MS3TraceList *mstl)
-{
-  MS3TraceID *id = NULL;
-  MS3TraceSeg *seg = NULL;
-  MS3TraceSeg *longestseg = NULL;
-  nstime_t longestsegment;
-  nstime_t segmentlength;
-  char timestr[50];
-  RecordMap *recmap = NULL;
-  Record *rec;
-  Record *recnext;
-
-  if (!mstl)
-    return -1;
-
-  /* Loop through trace list */
-  id = mstl->traces.next[0];
-  while (id)
-  {
-    /* Shortcut when not multiple segments */
-    if (id->numsegments <= 1)
-    {
-      id = id->next[0];
-      continue;
-    }
-
-    longestsegment = 0;
-    longestseg = id->first;
-
-    /* 1st pass: identify longest segment */
-    seg = id->first;
-    while (seg)
-    {
-      segmentlength = seg->endtime - seg->starttime;
-
-      if (segmentlength > longestsegment)
-      {
-        longestseg = seg;
-        longestsegment = segmentlength;
-      }
-
-      seg = seg->next;
-    }
-
-    if (verbose > 2)
-    {
-      ms_nstime2timestr (longestseg->starttime, timestr, ISOMONTHDAY_Z, NANO_MICRO);
-      ms_log (1, "Removing all but segment of %g seconds for %s starting at %s\n",
-              (double)longestsegment / NSTMODULUS, id->sid, timestr);
-    }
-
-    /* 2nd pass: remove all but the longest segment */
-    seg = id->first;
-    while (seg)
-    {
-      if (seg != longestseg)
-      {
-        if (seg->prvtptr)
-        {
-          recmap = (RecordMap *)seg->prvtptr;
-          rec = recmap->first;
-          while (rec)
-          {
-            recnext = rec->next;
-            free (rec);
-            rec = recnext;
-          }
-          free (recmap);
-        }
-
-        free (seg);
-      }
-
-      seg = seg->next;
-    }
-
-    /* Longest segment is the only segment */
-    id->first = longestseg;
-    id->last = longestseg;
-    id->numsegments = 1;
-    longestseg->prev = NULL;
-    longestseg->next = NULL;
-
-    id = id->next[0];
-  }
-
-  return 0;
-} /* End of longestsegmentonly() */
-
-/***************************************************************************
  * printmodsummary():
  *
  * Print a summary of modifications to stdout.  If 'nomods' is true
@@ -2783,18 +2564,6 @@ processparam (int argcount, char **argvec)
     else if (strcmp (argvec[optind], "-R") == 0)
     {
       rejectpattern = strdup (getoptval (argcount, argvec, optind++));
-    }
-    else if (strcmp (argvec[optind], "-szs") == 0)
-    {
-      skipzerosamps = 1;
-    }
-    else if (strcmp (argvec[optind], "-lso") == 0)
-    {
-      longestonly = 1;
-    }
-    else if (strcmp (argvec[optind], "-msl") == 0)
-    {
-      minseglength = strtod (getoptval (argcount, argvec, optind++), NULL);
     }
     else if (strcmp (argvec[optind], "-m") == 0)
     {
@@ -3563,9 +3332,6 @@ usage (int level)
            " -M match     Limit to records matching the specified regular expression\n"
            " -R reject    Limit to records not matching the specfied regular expression\n"
            "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
-           " -szs         Skip input records that contain zero samples\n"
-           " -lso         Longest segment only, output only longest segment per channel\n"
-           " -msl secs    Minimum segment length, skip any shorter segments\n"
            "\n"
            " ## Output options ##\n"
            " -rep         Replace input files, creating backup (.orig) files\n"
