@@ -7,6 +7,7 @@
 	- Remove the -lso (longest segment only) option
 	- Remove the -msl (minimum segment length) option
 	- Remove the -sb (staging buffer) option
+	- Remove capability to replace input files and the -rep and -nb options
 
 2023.054: 3.24
 	- Fix heap corruption fault due to free'ing just-allocated archive

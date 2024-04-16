@@ -82,9 +82,7 @@
  * data is written to the new output files.
  *
  * 3) Write all contributing data records in the data map out to the
- * output files.  If the original files are to be replaced they will
- * be renamed by adding a ".orig" prefix before the writing process
- * begins.  After each record is read into memory it's associated
+ * output files.  After each record is read into memory it's associated
  * Record structure is checked to see if the record needs to be
  * trimmed due either to sample level pruning or time boundary
  * splitting.  Trimming a data record involves unpacking, sample
@@ -110,7 +108,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
-#include <unistd.h> /* For unlink(), TODO this can go when replacing input files goes */
 
 #include <libmseed.h>
 
@@ -125,8 +122,6 @@ typedef struct Filelink_s
   char *infilename_raw;   /* Input file name with potential annotation (byte range) */
   char *infilename;       /* Input file name without annotation (byte range) */
   FILE *infp;             /* Input file descriptor */
-  char *outfilename;      /* Output file name */
-  FILE *outfp;            /* Output file descriptor */
   uint64_t reordercount;  /* Number of records re-ordered */
   uint64_t recsplitcount; /* Number of records split */
   uint64_t recrmcount;    /* Number of records removed */
@@ -252,8 +247,6 @@ samprate_callback (const MS3Record *msr)
 static regex_t *match = NULL;  /* Compiled match regex */
 static regex_t *reject = NULL; /* Compiled reject regex */
 
-static flag replaceinput = 0;    /* Replace input files */
-static flag nobackups = 0;       /* Remove re-named original files when done with them */
 static char *outputfile = NULL;  /* Single output file */
 static flag outputmode = 0;      /* Mode for single output file: 0=overwrite, 1=append */
 static Archive *archiveroot = 0; /* Output file structures */
@@ -366,7 +359,6 @@ readfiles (MS3TraceList **ppmstl)
 
   char stime[30] = {0};
 
-  int infilenamelen = 0;
   uint32_t flags = 0;
   int retcode;
   flag whence;
@@ -395,43 +387,12 @@ readfiles (MS3TraceList **ppmstl)
 
   while (flp)
   {
-    /* Add '.orig' suffix to input file if it will be replaced */
-    if (replaceinput)
-    {
-      /* The output file name is the original input file name */
-      flp->outfilename = flp->infilename;
-
-      infilenamelen = strlen (flp->outfilename) + 6;
-
-      if (!(flp->infilename = (char *)malloc (infilenamelen)))
-      {
-        ms_log (2, "Cannot allocate memory for input file name\n");
-        return -1;
-      }
-
-      snprintf (flp->infilename, infilenamelen, "%s.orig", flp->outfilename);
-
-      if (rename (flp->outfilename, flp->infilename))
-      {
-        ms_log (2, "Cannot rename %s -> %s : '%s'\n",
-                flp->outfilename, flp->infilename, strerror (errno));
-        return -1;
-      }
-    }
-
     if (verbose)
     {
-      if (replaceinput)
-      {
-        ms_log (1, "Reading: %s (was %s)\n",
-                flp->infilename, flp->outfilename);
-      }
-      else
-      {
-        // TODO make this an if (strcmp(flp->infilename, flp->infilename_raw))), print both, otherwise one
+      if (strcmp (flp->infilename, flp->infilename_raw) == 0)
         ms_log (1, "Reading: %s\n", flp->infilename);
-        ms_log (1, "Reading RAW: %s\n", flp->infilename_raw);
-      }
+      else
+        ms_log (1, "Reading: %s (specified as %s)\n", flp->infilename, flp->infilename_raw);
     }
 
     /* Set bit flags to validate CRC and extrace start-stop range from file names */
@@ -1120,12 +1081,8 @@ writetraces (MS3TraceList *mstl)
   {
     if (!ofp && verbose)
     {
-      if (replaceinput)
-        ms_log (1, "Wrote %" PRId64 " bytes from file %s (was %s)\n",
-                flp->byteswritten, flp->infilename, flp->outfilename);
-      else
-        ms_log (1, "Wrote %" PRId64 " bytes from file %s\n",
-                flp->byteswritten, flp->infilename);
+      ms_log (1, "Wrote %" PRId64 " bytes from file %s\n",
+              flp->byteswritten, flp->infilename);
     }
 
     if (flp->infp)
@@ -1133,20 +1090,6 @@ writetraces (MS3TraceList *mstl)
       fclose (flp->infp);
       flp->infp = NULL;
     }
-
-    if (flp->outfp)
-    {
-      fclose (flp->outfp);
-      flp->outfp = NULL;
-    }
-
-    if (nobackups && !ofp)
-      if (unlink (flp->infilename))
-      {
-        ms_log (2, "Cannot remove '%s': %s\n",
-                flp->infilename, strerror (errno));
-        errflag = 1;
-      }
 
     flp = flp->next;
   }
@@ -1462,24 +1405,6 @@ writerecord (char *record, int reclen, void *handlerdata)
     }
 
     msr3_free (&msr);
-  }
-
-  /* Open original file for output if replacing input and write */
-  if (replaceinput)
-  {
-    if (!writerdata->rec->flp->outfp)
-      if (!(writerdata->rec->flp->outfp = fopen (writerdata->rec->flp->outfilename, "wb")))
-      {
-        ms_log (2, "Cannot open '%s' for writing: %s\n",
-                writerdata->rec->flp->outfilename, strerror (errno));
-        *writerdata->errflagp = 1;
-      }
-
-    if (fwrite (record, reclen, 1, writerdata->rec->flp->outfp) != 1)
-    {
-      ms_log (2, "Cannot write to '%s'\n", writerdata->rec->flp->outfilename);
-      *writerdata->errflagp = 1;
-    }
   }
 } /* End of writerecord() */
 
@@ -2046,12 +1971,8 @@ printmodsummary (flag nomods)
       continue;
     }
 
-    if (replaceinput)
-      ms_log (0, " Records split: %" PRId64 " trimmed: %" PRId64 " removed: %" PRId64 ", Segments reordered: %" PRId64 " :: %s\n",
-              flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->outfilename);
-    else
-      ms_log (0, " Records split: %" PRId64 " trimmed: %" PRId64 " removed: %" PRId64 ", Segments reordered: %" PRId64 " :: %s\n",
-              flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->infilename);
+    ms_log (0, " Records split: %" PRId64 " trimmed: %" PRId64 " removed: %" PRId64 ", Segments reordered: %" PRId64 " :: %s\n",
+            flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->infilename);
 
     flp = flp->next;
   }
@@ -2533,14 +2454,6 @@ processparam (int argcount, char **argvec)
         return -1;
       }
     }
-    else if (strcmp (argvec[optind], "-rep") == 0)
-    {
-      replaceinput = 1;
-    }
-    else if (strcmp (argvec[optind], "-nb") == 0)
-    {
-      nobackups = 1;
-    }
     else if (strcmp (argvec[optind], "-o") == 0)
     {
       outputfile = getoptval (argcount, argvec, optind++);
@@ -2689,17 +2602,13 @@ processparam (int argcount, char **argvec)
   }
 
   /* Make sure output file(s) were specified or replacing originals */
-  if (!archiveroot && !outputfile && !replaceinput)
+  if (!archiveroot && !outputfile)
   {
     ms_log (2, "No output files were specified\n\n");
     ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
     ms_log (1, "Try %s -h for usage\n", PACKAGE);
     exit (0);
   }
-
-  /* The no backups option cannot be used when not replacing the originals */
-  if (nobackups && !replaceinput)
-    nobackups = 0;
 
   /* Read data selection file */
   if (selectfile)
@@ -3185,8 +3094,6 @@ usage (int level)
            "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
            "\n"
            " ## Output options ##\n"
-           " -rep         Replace input files, creating backup (.orig) files\n"
-           " -nb          Do not keep backups of original input files if replacing them\n"
            " -o file      Specify a single output file, use +o file to append\n"
            " -A format    Write all records in a custom directory/file layout (try -H)\n"
            " -Pr          Prune data at the record level using 'best' version priority\n"
