@@ -232,8 +232,8 @@ static flag bestversion = 1;          /* Use publication version to retain the "
 static flag prunedata = 0;            /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
 static char restampqind = 0;          /* Re-stamp data record/quality indicator */
 static flag modsummary = 0;           /* Print modification summary after all processing */
-static nstime_t starttime = NSTERROR; /* Limit to records containing or after starttime */
-static nstime_t endtime = NSTERROR;   /* Limit to records containing or before endtime */
+static nstime_t starttime = NSTUNSET; /* Limit to records containing or after starttime */
+static nstime_t endtime = NSTUNSET;   /* Limit to records containing or before endtime */
 static char splitboundary = 0;        /* Split records on day 'd', hour 'h' or minute 'm' boundaries */
 static char splitreclen = 0;          /* Split output files on record length changes */
 static double timetol = -1.0;         /* Time tolerance for continuous traces */
@@ -441,6 +441,7 @@ readfiles (MS3TraceList **ppmstl)
       }
       else
       {
+        //TODO make this an if (strcmp(flp->infilename, flp->infilename_raw))), print both, otherwise one
         ms_log (1, "Reading: %s\n", flp->infilename);
         ms_log (1, "Reading RAW: %s\n", flp->infilename_raw);
       }
@@ -469,7 +470,7 @@ readfiles (MS3TraceList **ppmstl)
       }
 
       /* Check if record matches start time criteria: starts after or contains starttime */
-      if ((starttime != NSTERROR) && (recstarttime < starttime && !(recstarttime <= starttime && recendtime >= starttime)))
+      if ((starttime != NSTUNSET) && (recstarttime < starttime && !(recstarttime <= starttime && recendtime >= starttime)))
       {
         if (verbose >= 3)
         {
@@ -480,7 +481,7 @@ readfiles (MS3TraceList **ppmstl)
       }
 
       /* Check if record matches end time criteria: ends after or contains endtime */
-      if ((endtime != NSTERROR) && (recendtime > endtime && !(recstarttime <= endtime && recendtime >= endtime)))
+      if ((endtime != NSTUNSET) && (recendtime > endtime && !(recstarttime <= endtime && recendtime >= endtime)))
       {
         if (verbose >= 3)
         {
@@ -587,10 +588,10 @@ readfiles (MS3TraceList **ppmstl)
       rec->starttime = recstarttime;
       rec->endtime = recendtime;
       rec->pubversion = msr->pubversion;
-      rec->selectstart = NSTERROR;
-      rec->selectend = NSTERROR;
-      rec->newstart = NSTERROR;
-      rec->newend = NSTERROR;
+      rec->selectstart = NSTUNSET;
+      rec->selectend = NSTUNSET;
+      rec->newstart = NSTUNSET;
+      rec->newend = NSTUNSET;
       rec->prev = 0;
       rec->next = 0;
 
@@ -614,29 +615,29 @@ readfiles (MS3TraceList **ppmstl)
         nstime_t seltime;
 
         /* Determine strictest start time (selection time or global start time) */
-        if (starttime != NSTERROR && rec->selectstart != NSTERROR)
+        if (starttime != NSTUNSET && rec->selectstart != NSTUNSET)
           seltime = (starttime > rec->selectstart) ? starttime : rec->selectstart;
-        else if (rec->selectstart != NSTERROR)
+        else if (rec->selectstart != NSTUNSET)
           seltime = rec->selectstart;
         else
           seltime = starttime;
 
         /* If the Record crosses the start time */
-        if (seltime != NSTERROR && (seltime > recstarttime) && (seltime <= recendtime))
+        if (seltime != NSTUNSET && (seltime > recstarttime) && (seltime <= recendtime))
         {
           rec->newstart = seltime;
         }
 
         /* Determine strictest end time (selection time or global end time) */
-        if (endtime != NSTERROR && rec->selectend != NSTERROR)
+        if (endtime != NSTUNSET && rec->selectend != NSTUNSET)
           seltime = (endtime < rec->selectend) ? endtime : rec->selectend;
-        else if (rec->selectend != NSTERROR)
+        else if (rec->selectend != NSTUNSET)
           seltime = rec->selectend;
         else
           seltime = endtime;
 
         /* If the Record crosses the end time */
-        if (seltime != NSTERROR && (seltime >= recstarttime) && (seltime < recendtime))
+        if (seltime != NSTUNSET && (seltime >= recstarttime) && (seltime < recendtime))
         {
           rec->newend = seltime;
         }
@@ -651,12 +652,12 @@ readfiles (MS3TraceList **ppmstl)
         uint8_t min;
         uint8_t sec;
         uint32_t nsec;
-        nstime_t boundary = NSTERROR;
+        nstime_t boundary = NSTUNSET;
         nstime_t effstarttime;
 
         for (;;)
         {
-          effstarttime = (rec->newstart != NSTERROR) ? rec->newstart : rec->starttime;
+          effstarttime = (rec->newstart != NSTUNSET) ? rec->newstart : rec->starttime;
           ms_nstime2time (effstarttime, &year, &yday, &hour, &min, &sec, &nsec);
 
           /* Determine next split boundary */
@@ -1129,7 +1130,7 @@ writetraces (MS3TraceList *mstl)
        */
 
       /* Trim data from the record if new start or end times are specifed */
-      if (rec->newstart != NSTERROR || rec->newend != NSTERROR)
+      if (rec->newstart != NSTUNSET || rec->newend != NSTUNSET)
       {
         rv = trimrecord (rec, recordptr, &writerdata);
 
@@ -1268,9 +1269,9 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
     return -1;
 
   /* Sanity check for new start/end times */
-  if ((rec->newstart != NSTERROR && rec->newend != NSTERROR && rec->newstart > rec->newend) ||
-      (rec->newstart != NSTERROR && (rec->newstart < rec->starttime || rec->newstart > rec->endtime)) ||
-      (rec->newend != NSTERROR && (rec->newend > rec->endtime || rec->newend < rec->starttime)))
+  if ((rec->newstart != NSTUNSET && rec->newend != NSTUNSET && rec->newstart > rec->newend) ||
+      (rec->newstart != NSTUNSET && (rec->newstart < rec->starttime || rec->newstart > rec->endtime)) ||
+      (rec->newend != NSTUNSET && (rec->newend > rec->endtime || rec->newend < rec->starttime)))
   {
     ms_log (2, "Problem with new start/end record bound times.\n");
     // TODO, add SourceID to log message if restructured and information is available.
@@ -1279,11 +1280,11 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
     ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, "       Start: %s       End: %s\n", stime, etime);
-    if (rec->newstart == NSTERROR)
+    if (rec->newstart == NSTUNSET)
       strcpy (stime, "NONE");
     else
       ms_nstime2timestr (rec->newstart, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    if (rec->newend == NSTERROR)
+    if (rec->newend == NSTUNSET)
       strcpy (etime, "NONE");
     else
       ms_nstime2timestr (rec->newend, etime, ISOMONTHDAY_Z, NANO_MICRO);
@@ -1334,11 +1335,11 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
     ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (1, "       Start: %s        End: %s\n", stime, etime);
-    if (rec->newstart == NSTERROR)
+    if (rec->newstart == NSTUNSET)
       strcpy (stime, "NONE");
     else
       ms_nstime2timestr (rec->newstart, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    if (rec->newend == NSTERROR)
+    if (rec->newend == NSTUNSET)
       strcpy (etime, "NONE");
     else
       ms_nstime2timestr (rec->newend, etime, ISOMONTHDAY_Z, NANO_MICRO);
@@ -1349,7 +1350,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   nsdelta = (msr->samprate) ? (nstime_t)(NSTMODULUS / msr->samprate) : 0;
 
   /* Remove samples from the beginning of the record */
-  if (rec->newstart != NSTERROR && nsdelta)
+  if (rec->newstart != NSTUNSET && nsdelta)
   {
     nstime_t newstarttime;
 
@@ -1389,7 +1390,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   }
 
   /* Remove samples from the end of the record */
-  if (rec->newend != NSTERROR && nsdelta)
+  if (rec->newend != NSTUNSET && nsdelta)
   {
     nstime_t newendtime;
 
@@ -1427,6 +1428,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   packedrecords = msr3_pack (msr, &writerecord, writerdata,
                              &packedsamples, MSF_FLUSHDATA, verbose - 1);
 
+  //TODO fix below logic, wasted time when packed records > 1
   if (packedrecords != 1)
   {
     ms_nstime2timestr (ostarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
@@ -1775,8 +1777,8 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
             }
 
             /* Determine effective record start and end times */
-            effstarttime = (rec->newstart != NSTERROR) ? rec->newstart : rec->starttime;
-            effendtime = (rec->newend != NSTERROR) ? rec->newend : rec->endtime;
+            effstarttime = (rec->newstart != NSTUNSET) ? rec->newstart : rec->starttime;
+            effendtime = (rec->newend != NSTUNSET) ? rec->newend : rec->endtime;
 
             /* Create a new segment if a break in the time-series is detected */
             if (coverage)
@@ -1871,13 +1873,13 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
         break;
 
       /* Determine effective record start and end times for comparison */
-      effstarttime = (rec->newstart != NSTERROR) ? rec->newstart : rec->starttime;
-      effendtime = (rec->newend != NSTERROR) ? rec->newend : rec->endtime;
+      effstarttime = (rec->newstart != NSTUNSET) ? rec->newstart : rec->starttime;
+      effendtime = (rec->newend != NSTUNSET) ? rec->newend : rec->endtime;
 
       /* Use selection start and end for pruning if they are stricter */
-      if (rec->selectstart != NSTERROR && rec->selectstart > effstarttime)
+      if (rec->selectstart != NSTUNSET && rec->selectstart > effstarttime)
         effstarttime = rec->selectstart;
-      if (rec->selectend != NSTERROR && rec->selectend < effendtime)
+      if (rec->selectend != NSTUNSET && rec->selectend < effendtime)
         effendtime = rec->selectend;
 
       /* Mark Record if it is completely overlapped by the coverage including tolerance */
@@ -1908,7 +1910,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
           /* Set Record new end time boundary including specified time tolerance */
           rec->newend = coverage->starttime - nsdelta + nstimetol;
 
-          if ((starttime != NSTERROR) && (rec->newend < starttime))
+          if ((starttime != NSTUNSET) && (rec->newend < starttime))
           {
             if (verbose > 1)
             {
@@ -1937,7 +1939,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
           /* Set Record new start time boundary including specified time tolerance */
           rec->newstart = coverage->endtime + nsdelta - nstimetol;
 
-          if ((endtime != NSTERROR) && (rec->newstart > endtime))
+          if ((endtime != NSTUNSET) && (rec->newstart > endtime))
           {
             if (verbose > 1)
             {
@@ -2061,7 +2063,7 @@ reconcile_tracetimes (MS3TraceList *mstl)
       if (first)
       {
         /* Use the new boundary start time if set and sane */
-        if (first->newstart != NSTERROR && first->newstart > first->starttime)
+        if (first->newstart != NSTUNSET && first->newstart > first->starttime)
           seg->starttime = first->newstart;
         /* Otherwise use the record start time */
         else
@@ -2072,7 +2074,7 @@ reconcile_tracetimes (MS3TraceList *mstl)
       if (last)
       {
         /* Use the new boundary end time if set and sane */
-        if (last->newend != NSTERROR && last->newend < last->endtime)
+        if (last->newend != NSTUNSET && last->newend < last->endtime)
           seg->endtime = last->newend;
         /* Otherwise use the record end time */
         else
@@ -2403,21 +2405,21 @@ printrecordmap (RecordMap *recmap, flag details)
 
     if (details)
     {
-      if (rec->newstart == NSTERROR)
+      if (rec->newstart == NSTUNSET)
         strcpy (stime, "NONE");
       else
         ms_nstime2timestr (rec->newstart, stime, ISOMONTHDAY_Z, NANO_MICRO);
-      if (rec->newend == NSTERROR)
+      if (rec->newend == NSTUNSET)
         strcpy (etime, "NONE");
       else
         ms_nstime2timestr (rec->newend, etime, ISOMONTHDAY_Z, NANO_MICRO);
       ms_log (0, "  Start bound: %-24s  End bound: %-24s\n", stime, etime);
 
-      if (rec->selectstart == NSTERROR)
+      if (rec->selectstart == NSTUNSET)
         strcpy (stime, "NONE");
       else
         ms_nstime2timestr (rec->selectstart, stime, ISOMONTHDAY_Z, NANO_MICRO);
-      if (rec->selectend == NSTERROR)
+      if (rec->selectend == NSTUNSET)
         strcpy (etime, "NONE");
       else
         ms_nstime2timestr (rec->selectend, etime, ISOMONTHDAY_Z, NANO_MICRO);
@@ -2528,23 +2530,23 @@ findselectlimits (const MS3Selections *select, const char *sid, nstime_t startti
 
       /* Check that the selection intersects previous selection range if set,
        * otherwise the combined selection is not possible. */
-      if (rec->selectstart != NSTERROR && rec->selectend != NSTERROR &&
+      if (rec->selectstart != NSTUNSET && rec->selectend != NSTUNSET &&
           !(rec->selectstart <= selecttime->endtime && rec->selectend >= selecttime->starttime))
       {
         ms_nstime2timestr (starttime, timestring, ISOMONTHDAY_Z, NANO_MICRO);
         ms_log (1, "Warning: impossible combination of selections for record (%s, %s), not pruning.\n",
                 sid, timestring);
-        rec->selectstart = NSTERROR;
-        rec->selectend = NSTERROR;
+        rec->selectstart = NSTUNSET;
+        rec->selectend = NSTUNSET;
         return 0;
       }
 
-      if (rec->selectstart == NSTERROR || rec->selectstart > selecttime->starttime)
+      if (rec->selectstart == NSTUNSET || rec->selectstart > selecttime->starttime)
       {
         rec->selectstart = selecttime->starttime;
       }
 
-      if (rec->selectend == NSTERROR || rec->selectend < selecttime->endtime)
+      if (rec->selectend == NSTUNSET || rec->selectend < selecttime->endtime)
       {
         rec->selectend = selecttime->endtime;
       }
@@ -2691,8 +2693,8 @@ recordcmp (Record *rec1, Record *rec2)
     return -1;
 
   /* Determine effective start times */
-  start1 = (rec1->newstart != NSTERROR) ? &(rec1->newstart) : &(rec1->starttime);
-  start2 = (rec2->newstart != NSTERROR) ? &(rec2->newstart) : &(rec2->starttime);
+  start1 = (rec1->newstart != NSTUNSET) ? &(rec1->newstart) : &(rec1->starttime);
+  start2 = (rec2->newstart != NSTUNSET) ? &(rec2->newstart) : &(rec2->starttime);
 
   if (*start1 > *start2)
   {
