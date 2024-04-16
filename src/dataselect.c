@@ -254,8 +254,8 @@ samprate_callback (const MS3Record *msr)
   return sampratetol;
 }
 
-static regex_t *match = 0;  /* Compiled match regex */
-static regex_t *reject = 0; /* Compiled reject regex */
+static regex_t *match = NULL;  /* Compiled match regex */
+static regex_t *reject = NULL; /* Compiled reject regex */
 
 static flag skipzerosamps = 0;    /* Controls skipping of records with zero samples */
 static flag longestonly = 0;      /* Controls output of longest segment/channel only */
@@ -263,28 +263,28 @@ static double minseglength = 0.0; /* Minimum segment length in seconds */
 
 static flag replaceinput = 0;    /* Replace input files */
 static flag nobackups = 0;       /* Remove re-named original files when done with them */
-static char *outputfile = 0;     /* Single output file */
+static char *outputfile = NULL;  /* Single output file */
 static flag outputmode = 0;      /* Mode for single output file: 0=overwrite, 1=append */
 static Archive *archiveroot = 0; /* Output file structures */
 
-static char recordbuf[16384]; /* Global record buffer */
-static char *stagebuffer = 0; /* Global record staging buffer */
-static off_t stagelength = 0; /* Global record staging buffer length */
-static off_t stageoffset = 0; /* Global record staging buffer end offset */
-static flag stagefull = 0;    /* Global record staging buffer full flag */
+static char recordbuf[16384];    /* Global record buffer */
+static char *stagebuffer = NULL; /* Global record staging buffer */
+static off_t stagelength = 0;    /* Global record staging buffer length */
+static off_t stageoffset = 0;    /* Global record staging buffer end offset */
+static flag stagefull = 0;       /* Global record staging buffer full flag */
 
-static Filelink *filelist = 0;        /* List of input files */
-static Filelink *filelisttail = 0;    /* Tail of list of input files */
-static MS3Selections *selections = 0; /* List of data selections */
+static Filelink *filelist = NULL;        /* List of input files */
+static Filelink *filelisttail = NULL;    /* Tail of list of input files */
+static MS3Selections *selections = NULL; /* List of data selections */
 
-static char *writtenfile = 0;       /* File to write summary of output records */
-static char *writtenprefix = 0;     /* Prefix for summary of output records */
-static MS3TraceList *writtentl = 0; /* TraceList of output records */
+static char *writtenfile = NULL;       /* File to write summary of output records */
+static char *writtenprefix = NULL;     /* Prefix for summary of output records */
+static MS3TraceList *writtentl = NULL; /* TraceList of output records */
 
 int
 main (int argc, char **argv)
 {
-  MS3TraceList *mstl = 0;
+  MS3TraceList *mstl = NULL;
   char *leapsecondfile = NULL;
 
   /* Set default error message prefix */
@@ -358,21 +358,21 @@ readfiles (MS3TraceList **ppmstl)
 {
   MS3FileParam *msfp = NULL;
   Filelink *flp;
-  MS3Record *msr = 0;
-  MS3TraceSeg *seg = 0;
+  MS3Record *msr = NULL;
+  MS3TraceSeg *seg = NULL;
 
   int totalrecs = 0;
   int totalsamps = 0;
   int totalfiles = 0;
 
-  const MS3Selections *matchsp = 0;
-  const MS3SelectTime *matchstp = 0;
+  const MS3Selections *matchsp = NULL;
+  const MS3SelectTime *matchstp = NULL;
 
-  RecordMap *recmap = 0;
-  Record *rec = 0;
+  RecordMap *recmap = NULL;
+  Record *rec = NULL;
 
   RecordMap newrecmap;
-  Record *newrec = 0;
+  Record *newrec = NULL;
 
   nstime_t recstarttime;
   nstime_t recendtime;
@@ -406,7 +406,7 @@ readfiles (MS3TraceList **ppmstl)
 
   flp = filelist;
 
-  while (flp != 0)
+  while (flp)
   {
     /* Add '.orig' suffix to input file if it will be replaced */
     if (replaceinput)
@@ -592,8 +592,8 @@ readfiles (MS3TraceList **ppmstl)
       rec->selectend = NSTUNSET;
       rec->newstart = NSTUNSET;
       rec->newend = NSTUNSET;
-      rec->prev = 0;
-      rec->next = 0;
+      rec->prev = NULL;
+      rec->next = NULL;
 
       /* Populate a new record map */
       newrecmap.recordcnt = 1;
@@ -899,13 +899,13 @@ writetraces (MS3TraceList *mstl)
   MS3TraceID *groupid;
   MS3TraceSeg *seg;
 
-  RecordMap *groupmap = 0;
-  RecordMap *recmap = 0;
+  RecordMap *groupmap = NULL;
+  RecordMap *recmap = NULL;
   Record *rec;
   Record *recnext;
   Filelink *flp;
 
-  FILE *ofp = 0;
+  FILE *ofp = NULL;
   WriterData writerdata;
 
   writerdata.errflagp = &errflag;
@@ -998,8 +998,8 @@ writetraces (MS3TraceList *mstl)
           if (!groupmap->first)
           {
             groupmap->first = rec;
-            rec->prev = 0;
-            rec->next = 0;
+            rec->prev = NULL;
+            rec->next = NULL;
             groupmap->last = rec;
             groupmap->recordcnt = 1;
           }
@@ -1007,7 +1007,7 @@ writetraces (MS3TraceList *mstl)
           {
             groupmap->last->next = rec;
             rec->prev = groupmap->last;
-            rec->next = 0;
+            rec->next = NULL;
             groupmap->last = rec;
             groupmap->recordcnt++;
           }
@@ -1018,7 +1018,7 @@ writetraces (MS3TraceList *mstl)
         /* Free segment RecordMap and cauterize */
         if (seg->prvtptr)
           free (seg->prvtptr);
-        seg->prvtptr = 0;
+        seg->prvtptr = NULL;
 
         seg = seg->next;
       } /* Done looping through MS3TraceSegs in the MS3TraceID */
@@ -1032,7 +1032,7 @@ writetraces (MS3TraceList *mstl)
   while (id && errflag != 1)
   {
     /* Skip when no write list is present */
-    if (id->prvtptr == 0)
+    if (id->prvtptr == NULL)
     {
       id = id->next[0];
       continue;
@@ -1200,13 +1200,13 @@ writetraces (MS3TraceList *mstl)
     if (flp->infp)
     {
       fclose (flp->infp);
-      flp->infp = 0;
+      flp->infp = NULL;
     }
 
     if (flp->outfp)
     {
       fclose (flp->outfp);
-      flp->outfp = 0;
+      flp->outfp = NULL;
     }
 
     if (nobackups && !ofp)
@@ -1224,7 +1224,7 @@ writetraces (MS3TraceList *mstl)
   if (ofp)
   {
     fclose (ofp);
-    ofp = 0;
+    ofp = NULL;
   }
 
   if (verbose)
@@ -1251,7 +1251,7 @@ writetraces (MS3TraceList *mstl)
 static int
 trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
 {
-  MS3Record *msr = 0;
+  MS3Record *msr = NULL;
   nstime_t nsdelta;
   nstime_t ostarttime = rec->starttime;
 
@@ -1458,7 +1458,7 @@ static void
 writerecord (char *record, int reclen, void *handlerdata)
 {
   WriterData *writerdata = handlerdata;
-  MS3Record *msr = 0;
+  MS3Record *msr = NULL;
   Archive *arch;
   int retcode;
 
@@ -1569,8 +1569,8 @@ writerecord (char *record, int reclen, void *handlerdata)
 static int
 prunetraces (MS3TraceList *mstl)
 {
-  MS3TraceID *id = 0;
-  MS3TraceSeg *seg = 0;
+  MS3TraceID *id = NULL;
+  MS3TraceSeg *seg = NULL;
   Coverage *coverage = NULL;
   int retval;
 
@@ -1651,8 +1651,8 @@ static int
 findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
               Coverage **ppcoverage)
 {
-  MS3TraceID *id = 0;
-  MS3TraceSeg *seg = 0;
+  MS3TraceID *id = NULL;
+  MS3TraceSeg *seg = NULL;
   Coverage *coverage = NULL;
   Coverage *prevcoverage = NULL;
   RecordMap *recmap;
@@ -2016,8 +2016,8 @@ reconcile_tracetimes (MS3TraceList *mstl)
   MS3TraceSeg *seg;
   RecordMap *recmap;
   Record *rec;
-  Record *first = 0;
-  Record *last = 0;
+  Record *first = NULL;
+  Record *last = NULL;
 
   if (!mstl)
     return -1;
@@ -2081,8 +2081,8 @@ reconcile_tracetimes (MS3TraceList *mstl)
           seg->endtime = last->endtime;
       }
 
-      first = 0;
-      last = 0;
+      first = NULL;
+      last = NULL;
       seg = seg->next;
     }
 
@@ -2103,13 +2103,13 @@ reconcile_tracetimes (MS3TraceList *mstl)
 static int
 minsegmentlength (MS3TraceList *mstl, double minseconds)
 {
-  MS3TraceID *id = 0;
-  MS3TraceSeg *seg = 0;
-  MS3TraceSeg *freeseg = 0;
+  MS3TraceID *id = NULL;
+  MS3TraceSeg *seg = NULL;
+  MS3TraceSeg *freeseg = NULL;
   nstime_t nsminimum;
   nstime_t segmentlength;
   char timestr[50];
-  RecordMap *recmap = 0;
+  RecordMap *recmap = NULL;
   Record *rec;
   Record *recnext;
 
@@ -2192,13 +2192,13 @@ minsegmentlength (MS3TraceList *mstl, double minseconds)
 static int
 longestsegmentonly (MS3TraceList *mstl)
 {
-  MS3TraceID *id = 0;
-  MS3TraceSeg *seg = 0;
-  MS3TraceSeg *longestseg = 0;
+  MS3TraceID *id = NULL;
+  MS3TraceSeg *seg = NULL;
+  MS3TraceSeg *longestseg = NULL;
   nstime_t longestsegment;
   nstime_t segmentlength;
   char timestr[50];
-  RecordMap *recmap = 0;
+  RecordMap *recmap = NULL;
   Record *rec;
   Record *recnext;
 
@@ -2294,7 +2294,7 @@ printmodsummary (flag nomods)
 
   flp = filelist;
 
-  while (flp != 0)
+  while (flp)
   {
     if (!nomods && !flp->reordercount && !flp->recrmcount && !flp->rectrimcount)
     {
@@ -2323,8 +2323,8 @@ printmodsummary (flag nomods)
 static void
 printtracemap (MS3TraceList *mstl)
 {
-  MS3TraceID *id = 0;
-  MS3TraceSeg *seg = 0;
+  MS3TraceID *id = NULL;
+  MS3TraceSeg *seg = NULL;
   char stime[30] = {0};
   char etime[30] = {0};
   int segcnt = 0;
@@ -2438,8 +2438,8 @@ printrecordmap (RecordMap *recmap, flag details)
 static void
 printwritten (MS3TraceList *mstl)
 {
-  MS3TraceID *id = 0;
-  MS3TraceSeg *seg = 0;
+  MS3TraceID *id = NULL;
+  MS3TraceSeg *seg = NULL;
   char stime[30] = {0};
   char etime[30] = {0};
   FILE *ofp;
@@ -2714,10 +2714,10 @@ static int
 processparam (int argcount, char **argvec)
 {
   int optind;
-  char *stagelengthstr = 0;
-  char *selectfile = 0;
-  char *matchpattern = 0;
-  char *rejectpattern = 0;
+  char *stagelengthstr = NULL;
+  char *selectfile = NULL;
+  char *matchpattern = NULL;
+  char *rejectpattern = NULL;
   char *tptr;
 
   /* Process all command line arguments */
@@ -2953,7 +2953,7 @@ processparam (int argcount, char **argvec)
   }
 
   /* Make sure input file(s) were specified */
-  if (filelist == 0)
+  if (!filelist)
   {
     ms_log (2, "No input files were specified\n\n");
     ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
@@ -2962,7 +2962,7 @@ processparam (int argcount, char **argvec)
   }
 
   /* Make sure output file(s) were specified or replacing originals */
-  if (archiveroot == 0 && outputfile == 0 && replaceinput == 0)
+  if (!archiveroot && !outputfile && !replaceinput)
   {
     ms_log (2, "No output files were specified\n\n");
     ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
@@ -2991,7 +2991,7 @@ processparam (int argcount, char **argvec)
     {
       tptr = strdup (matchpattern + 1); /* Skip the @ sign */
       free (matchpattern);
-      matchpattern = 0;
+      matchpattern = NULL;
 
       if (readregexfile (tptr, &matchpattern) <= 0)
       {
@@ -3010,7 +3010,7 @@ processparam (int argcount, char **argvec)
     {
       tptr = strdup (rejectpattern + 1); /* Skip the @ sign */
       free (rejectpattern);
-      rejectpattern = 0;
+      rejectpattern = NULL;
 
       if (readregexfile (tptr, &rejectpattern) <= 0)
       {
@@ -3234,7 +3234,7 @@ addfile (char *filename)
   }
 
   /* Add new file to the end of the list */
-  if (filelisttail == 0)
+  if (filelisttail == NULL)
   {
     filelist = newlp;
     filelisttail = newlp;
