@@ -67,8 +67,8 @@
  * internal data structures and cannot be turned off.
  *
  * As each record is read the input data selection criteria are
- * applied.  For example, start/end time selections and regular
- * expression matching/rejecting selections are applied.
+ * applied.  For example, start/end time selections and data source
+ * selections are applied.
  *
  * 2) If data pruning (removing overlap data) has been selected the
  * data map will be processed to identify all overlapping data and to
@@ -245,7 +245,6 @@ samprate_callback (const MS3Record *msr)
 }
 
 static regex_t *match = NULL;  /* Compiled match regex */
-static regex_t *reject = NULL; /* Compiled reject regex */
 
 static char *outputfile = NULL;  /* Single output file */
 static flag outputmode = 0;      /* Mode for single output file: 0=overwrite, 1=append */
@@ -437,20 +436,6 @@ readfiles (MS3TraceList **ppmstl)
           {
             ms_nstime2timestr (recstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
             ms_log (1, "Skipping (match) %s, %s\n", msr->sid, stime);
-          }
-          continue;
-        }
-      }
-
-      /* Check if record is rejected by the reject regex */
-      if (reject)
-      {
-        if (regexec (reject, msr->sid, 0, 0, 0) == 0)
-        {
-          if (verbose >= 3)
-          {
-            ms_nstime2timestr (recstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-            ms_log (1, "Skipping (reject) %s, %s\n", msr->sid, stime);
           }
           continue;
         }
@@ -2381,7 +2366,6 @@ processparam (int argcount, char **argvec)
   int optind;
   char *selectfile = NULL;
   char *matchpattern = NULL;
-  char *rejectpattern = NULL;
   char *tptr;
 
   /* Process all command line arguments */
@@ -2439,10 +2423,6 @@ processparam (int argcount, char **argvec)
     else if (strcmp (argvec[optind], "-M") == 0)
     {
       matchpattern = strdup (getoptval (argcount, argvec, optind++));
-    }
-    else if (strcmp (argvec[optind], "-R") == 0)
-    {
-      rejectpattern = strdup (getoptval (argcount, argvec, optind++));
     }
     else if (strcmp (argvec[optind], "-m") == 0)
     {
@@ -2639,26 +2619,7 @@ processparam (int argcount, char **argvec)
     }
   }
 
-  /* Expand reject pattern from a file if prefixed by '@' */
-  if (rejectpattern)
-  {
-    if (*rejectpattern == '@')
-    {
-      tptr = strdup (rejectpattern + 1); /* Skip the @ sign */
-      free (rejectpattern);
-      rejectpattern = NULL;
-
-      if (readregexfile (tptr, &rejectpattern) <= 0)
-      {
-        ms_log (2, "Cannot read reject pattern regex file\n");
-        exit (1);
-      }
-
-      free (tptr);
-    }
-  }
-
-  /* Compile match and reject patterns */
+  /* Compile match pattern */
   if (matchpattern)
   {
     if (!(match = (regex_t *)malloc (sizeof (regex_t))))
@@ -2673,22 +2634,6 @@ processparam (int argcount, char **argvec)
     }
 
     free (matchpattern);
-  }
-
-  if (rejectpattern)
-  {
-    if (!(reject = (regex_t *)malloc (sizeof (regex_t))))
-    {
-      ms_log (2, "Cannot allocate memory for reject expression\n");
-      exit (1);
-    }
-
-    if (regcomp (reject, rejectpattern, REG_EXTENDED) != 0)
-    {
-      ms_log (2, "Cannot compile reject regex: '%s'\n", rejectpattern);
-    }
-
-    free (rejectpattern);
   }
 
   /* Report the program version */
@@ -3090,7 +3035,6 @@ usage (int level)
            " -te time     Limit to records that contain or end before time\n"
            "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
            " -M match     Limit to records matching the specified regular expression\n"
-           " -R reject    Limit to records not matching the specfied regular expression\n"
            "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
            "\n"
            " ## Output options ##\n"
