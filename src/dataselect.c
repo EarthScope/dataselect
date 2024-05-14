@@ -1454,7 +1454,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
           /* Set Record new start time boundary including specified time tolerance */
           newrange->starttime = cov->endtime + nsdelta - nstimetol;
 
-          if (newrange->endtime != NSTUNSET && newrange->starttime > newrange->endtime)[]
+          if (newrange->endtime != NSTUNSET && newrange->starttime > newrange->endtime)
           {
             if (verbose > 1)
             {
