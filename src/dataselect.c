@@ -17,46 +17,29 @@
  *
  * Data structures and operational overview
  *
- * The data map (using actual structure names):
+ * The data structure (using actual structure names):
  *
  * MS3TraceList
  *   |-MS3TraceID
  *   |   |-MS3TraceSeg
- *   |        |-RecordMap
- *   |            |-Record
- *   |            |-Record
+ *   |        |-MS3RecordList
+ *   |            |-MS3RecordPtr
+ *   |            |-MS3RecordPtr
  *   |            |-...
  *   |
  *   |-MS3TraceID
  *   |   |-MS3TraceSeg
- *   |        |-RecordMap
- *   |            |-Record
- *   |            |-Record
+ *   |        |-MS3RecordList
+ *   |            |-MS3RecordPtr
+ *   |            |-MS3RecordPtr
  *   |            |-...
  *   |
  *   |-...
  *
  * The program goes through the following stages:
  *
- * 1) Read all input files constructing a data map of contiguous trace
- * segments and the data records that comprise them.  This operation
- * is done by reading each file record-by-record and as each record is
- * read, search the MS3TraceList for an MS3TraceSeg that the record "fits"
- * with (same channel and adjacent in time).  If the record is found
- * to fit with a specific MS3TraceSeg its coverage will be added to the
- * MS3TraceSeg information otherwise a new MS3TraceSeg is created and
- * added to the MS3TraceList.
- *
- * Each MS3TraceSeg has an associated RecordMap which includes a list of
- * Records.  A Record structure is meta information about the record
- * coverage and location (file and offset).  The list of Records is
- * always in time order.
- *
- * When splitting on a time boundary and an input record crosses the
- * specified boundary, two Record structures will be created for the
- * two sides of the boundary and the new start and end time will be
- * set accordingly.  When writing this data out the data record will
- * effectively be split in two.
+ * 1) Read all input files constructing a view of contiguous trace
+ * segments and the data records that comprise them.
  *
  * There is no relationship between the location of input records in
  * specific files or offsets into files.  In other words, the program
@@ -64,14 +47,10 @@
  * possible from all the input records regardless of how they are
  * organized in the input files.  The resulting time-ordering of the
  * data records and contiguous segments is a characteristic of the
- * internal data structures and cannot be turned off.
- *
- * As each record is read the input data selection criteria are
- * applied.  For example, start/end time selections and data source
- * selections are applied.
+ * internal data structures and cannot be disabled.
  *
  * 2) If data pruning (removing overlap data) has been selected the
- * data map will be processed to identify all overlapping data and to
+ * data view will be processed to identify all overlapping data and to
  * mark individual Record structures either for complete removal or
  * for partial record trimming (when pruning at the sample level).
  * When a complete record is pruned from the ouput its record length
@@ -81,15 +60,14 @@
  * in this operation, modification of the data records occurs when the
  * data is written to the new output files.
  *
- * 3) Write all contributing data records in the data map out to the
+ * 3) Write all contributing data records in the data list out to the
  * output files.  After each record is read into memory it's associated
- * Record structure is checked to see if the record needs to be
- * trimmed due either to sample level pruning or time boundary
- * splitting.  Trimming a data record involves unpacking, sample
- * removal and repacking.  After trimming or if no trimming is
- * required the data record is written to the appropriate output file.
- * In this way only the minimal number of records needing modification
- * (trimming) are repacked.
+ * structure is checked to see if the record needs to be
+ * trimmed due to sample level pruning.  Trimming a data record involves
+ * unpacking, sample removal and repacking.  After trimming or if no
+ * trimming is required the data record is written to the appropriate
+ * output file. In this way only the minimal number of records needing
+ * modification (trimming) are repacked.
  *
  ***************************************************************************/
 
@@ -139,30 +117,12 @@ typedef struct Archive_s
   struct Archive_s *next;
 } Archive;
 
-/* miniSEED record information structures */
-typedef struct Record_s
+/* Container for coverage entries used to prune data */
+typedef struct TimeRange_s
 {
-  struct Filelink_s *flp;
-  off_t offset;
-  int reclen;
   nstime_t starttime;
   nstime_t endtime;
-  uint8_t pubversion;
-  nstime_t selectstart;
-  nstime_t selectend;
-  nstime_t newstart;
-  nstime_t newend;
-  struct Record_s *prev;
-  struct Record_s *next;
-} Record;
-
-/* Record map, holds Record structures for a given MS3Trace */
-typedef struct RecordMap_s
-{
-  long long int recordcnt;
-  struct Record_s *first;
-  struct Record_s *last;
-} RecordMap;
+} TimeRange;
 
 /* Container for coverage entries used to prune data */
 typedef struct Coverage_s
@@ -178,16 +138,16 @@ typedef struct Coverage_s
 typedef struct WriterData_s
 {
   FILE *ofp;
-  Record *rec;
-  MS3TraceID *id;
+  MS3RecordPtr *recptr;
+  Filelink *flp;
   long *suffixp;
   int8_t *errflagp;
 } WriterData;
 
-static int readfiles (MS3TraceList **ppmstl);
-static int processtraces (MS3TraceList *mstl);
+static int setselectionlimits (MS3TraceList *mstl);
+
 static int writetraces (MS3TraceList *mstl);
-static int trimrecord (Record *rec, char *recbuf, WriterData *writerdata);
+static int trimrecord (MS3RecordPtr *rec, char *recbuf, WriterData *writerdata);
 static void writerecord (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MS3TraceList *mstl);
@@ -198,14 +158,11 @@ static int trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid,
 static int reconcile_tracetimes (MS3TraceList *mstl);
 
 static void printmodsummary (flag nomods);
-static void printtracemap (MS3TraceList *mstl);
-static void printrecordmap (RecordMap *recmap, flag details);
+static void printtracelist (MS3TraceList *mstl, uint8_t details);
 static void printwritten (MS3TraceList *mstl);
 
-static int findselectlimits (const MS3Selections *select, const char *sourceid,
-                             nstime_t starttime, nstime_t endtime, Record *rec);
-static int sortrecmap (RecordMap *recmap);
-static int recordcmp (Record *rec1, Record *rec2);
+static int sortrecordlist (MS3RecordList **ppreclist);
+static int recordcmp (MS3RecordPtr *rec1, MS3RecordPtr *rec2);
 
 static int processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
@@ -213,22 +170,17 @@ static int setofilelimit (int limit);
 static int addfile (char *filename);
 static int addlistfile (char *filename);
 static int addarchive (const char *path, const char *layout);
-static int readregexfile (char *regexfile, char **pppattern);
 static void usage (int level);
 
 static int8_t verbose = 0;
-static int8_t basicsum = 0;           /* Controls printing of basic summary */
-static int8_t skipnotdata = 0;        /* Controls skipping of non-miniSEED data */
-static int8_t bestversion = 1;        /* Use publication version to retain the "best" data when pruning */
-static int8_t prunedata = 0;          /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
-static char restampqind = 0;          /* Re-stamp data record/quality indicator */
-static int8_t modsummary = 0;         /* Print modification summary after all processing */
-static nstime_t starttime = NSTUNSET; /* Limit to records containing or after starttime */
-static nstime_t endtime = NSTUNSET;   /* Limit to records containing or before endtime */
-static char splitboundary = 0;        /* Split records on day 'd', hour 'h' or minute 'm' boundaries */
-static char splitreclen = 0;          /* Split output files on record length changes */
-static double timetol = -1.0;         /* Time tolerance for continuous traces */
-static double sampratetol = -1.0;     /* Sample rate tolerance for continuous traces */
+static int8_t skipnotdata = 0;    /* Controls skipping of non-miniSEED data */
+static int8_t bestversion = 1;    /* Use publication version to retain the "best" data when pruning */
+static int8_t prunedata = 0;      /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
+static char restampqind = 0;      /* Re-stamp data record/quality indicator */
+static int8_t modsummary = 0;     /* Print modification summary after all processing */
+static char splitreclen = 0;      /* Split output files on record length changes */
+static double timetol = -1.0;     /* Time tolerance for continuous traces */
+static double sampratetol = -1.0; /* Sample rate tolerance for continuous traces */
 static MS3Tolerance tolerance = {.time = NULL, .samprate = NULL};
 
 /* Trivial callback functions for fixed time and sample rate tolerances */
@@ -245,8 +197,6 @@ samprate_callback (const MS3Record *msr)
   return sampratetol;
 }
 
-static regex_t *match = NULL;  /* Compiled match regex */
-
 static char *outputfile = NULL;  /* Single output file */
 static int8_t outputmode = 0;    /* Mode for single output file: 0=overwrite, 1=append */
 static Archive *archiveroot = 0; /* Output file structures */
@@ -255,7 +205,7 @@ static char recordbuf[16384]; /* Global record buffer */
 
 static Filelink *filelist = NULL;        /* List of input files */
 static Filelink *filelisttail = NULL;    /* Tail of list of input files */
-static MS3Selections *selections = NULL; /* List of data selections */
+static MS3Selections *selections = NULL; /* Data selection criteria, SIDs and time ranges */
 
 static char *writtenfile = NULL;       /* File to write summary of output records */
 static char *writtenprefix = NULL;     /* Prefix for summary of output records */
@@ -264,7 +214,12 @@ static MS3TraceList *writtentl = NULL; /* TraceList of output records */
 int
 main (int argc, char **argv)
 {
+  Filelink *flp;
   MS3TraceList *mstl = NULL;
+
+  uint32_t flags = 0;
+  int totalfiles = 0;
+  int retcode;
 
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
@@ -280,102 +235,18 @@ main (int argc, char **argv)
   if (archiveroot)
     ds_maxopenfiles = 50;
 
-  /* Init written MS3TraceList */
+  /* Initialize written MS3TraceList */
   if (writtenfile)
     if ((writtentl = mstl3_init (writtentl)) == NULL)
       return 1;
 
-  if (verbose > 2)
-    ms_log (1, "Processing input files\n");
-
-  /* Read and process all files specified on the command line */
-  if (readfiles (&mstl))
-    return 1;
-
-  /* Processes traces */
-  if (mstl->numtraceids > 0 && processtraces (mstl))
-    return 1;
-
-  if (modsummary)
-    printmodsummary (verbose);
-
-  if (writtenfile)
-  {
-    printwritten (writtentl);
-    mstl3_free (&writtentl, 1);
-  }
-
-  /* The main MS3TraceList (mstl) is not freed on purpose: the structure has a
-   * potentially huge number of sub-structures (Records in the RecordMap of
-   * each ID) which would take a long time to iterate through.  This would be a
-   * waste of time given that the program is now done.
-   * Mind that this may show up as a memory leak for some profilers. */
-
-  return 0;
-} /* End of main() */
-
-/***************************************************************************
- * readfiles:
- *
- * Read input files specified as a Filelink list and populate an
- * MS3TraceList and record maps for each trace.  All input files are
- * renamed with a ".orig" suffix before being read.
- *
- * Returns 0 on success and -1 otherwise.
- ***************************************************************************/
-static int
-readfiles (MS3TraceList **ppmstl)
-{
-  MS3FileParam *msfp = NULL;
-  Filelink *flp;
-  MS3Record *msr = NULL;
-  MS3TraceSeg *seg = NULL;
-
-  int totalrecs = 0;
-  int totalsamps = 0;
-  int totalfiles = 0;
-
-  const MS3Selections *matchsp = NULL;
-  const MS3SelectTime *matchstp = NULL;
-
-  RecordMap *recmap = NULL;
-  Record *rec = NULL;
-
-  RecordMap newrecmap;
-  Record *newrec = NULL;
-
-  nstime_t recstarttime;
-  nstime_t recendtime;
-
-  char stime[30] = {0};
-
-  uint32_t flags = 0;
-  int retcode;
-  int8_t whence;
-
-  if (!ppmstl)
-    return -1;
-
-  /* Initialize MS3TraceList */
-  *ppmstl = mstl3_init (*ppmstl);
-
-  if (!*ppmstl)
-  {
-    ms_log (2, "readfiles(): cannot (re)initialize MS3TraceList\n");
-    return -1;
-  }
-
-  /* Read all input files and construct continuous traces, using the
-   * libmseed MS3TraceList.  For each trace maintain a list of each
-   * data record that contributed to the trace, implemented as a
-   * RecordMap struct (MS3TraceSeg->prvtptr) where a linked list of
-   * Record structs is maintained.  The records are always listed in
-   * time order.
-   */
-
-  /* Set bit flags to validate CRC and extrace start-stop range from file names */
+  /* Set flags to:
+   * - validate CRCs (if present)
+   * - extract start-stop range from file names
+   * - construct a record-list for each segment */
   flags |= MSF_VALIDATECRC;
   flags |= MSF_PNAMERANGE;
+  flags |= MSF_RECORDLIST;
 
   if (skipnotdata)
     flags |= MSF_SKIPNOTDATA;
@@ -391,309 +262,16 @@ readfiles (MS3TraceList **ppmstl)
         ms_log (1, "Reading: %s (specified as %s)\n", flp->infilename, flp->infilename_raw);
     }
 
-    /* Loop over the input file */
-    while ((retcode = ms3_readmsr_selection (&msfp, &msr, flp->infilename_raw, flags,
-                                             selections, verbose - 2)) == MS_NOERROR)
-    {
-      recstarttime = msr->starttime;
-      recendtime = msr3_endtime (msr);
-
-      /* Check if record matches start time criteria: starts after or contains starttime */
-      if ((starttime != NSTUNSET) && (recstarttime < starttime && !(recstarttime <= starttime && recendtime >= starttime)))
-      {
-        if (verbose >= 3)
-        {
-          ms_nstime2timestr (recstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-          ms_log (1, "Skipping (starttime) %s, %s\n", msr->sid, stime);
-        }
-        continue;
-      }
-
-      /* Check if record matches end time criteria: ends after or contains endtime */
-      if ((endtime != NSTUNSET) && (recendtime > endtime && !(recstarttime <= endtime && recendtime >= endtime)))
-      {
-        if (verbose >= 3)
-        {
-          ms_nstime2timestr (recstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-          ms_log (1, "Skipping (endtime) %s, %s\n", msr->sid, stime);
-        }
-        continue;
-      }
-
-      /* Check if record is matched by the match regex */
-      if (match)
-      {
-        if (regexec (match, msr->sid, 0, 0, 0) != 0)
-        {
-          if (verbose >= 3)
-          {
-            ms_nstime2timestr (recstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-            ms_log (1, "Skipping (match) %s, %s\n", msr->sid, stime);
-          }
-          continue;
-        }
-      }
-
-      /* Check if record is matched by selection */
-      if (selections)
-      {
-        if (!(matchsp = ms3_matchselect (selections, msr->sid, recstarttime,
-                                         recendtime, msr->pubversion, &matchstp)))
-        {
-          if (verbose >= 3)
-          {
-            ms_nstime2timestr (recstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-            ms_log (1, "Skipping (selection) %s, %s\n", msr->sid, stime);
-          }
-          continue;
-        }
-      }
-
-      if (verbose > 2)
-        msr3_print (msr, verbose - 3);
-
-      /* Add record to the MS3TraceList */
-      if (!(seg = mstl3_addmsr (*ppmstl, msr, bestversion, 0, 0, &tolerance)))
-      {
-        ms_nstime2timestr (recstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-        ms_log (2, "Cannot add record to trace list, %s, %s\n", msr->sid, stime);
-        continue;
-      }
-
-      /* Determine where the record fit with this MS3TraceSeg
-       * whence:
-       *   0 = New MS3Trace
-       *   1 = End of MS3Trace
-       *   2 = Beginning of MS3Trace
-       */
-      whence = 0;
-      if (seg->prvtptr)
-      {
-        if (seg->endtime == recendtime)
-          whence = 1;
-        else if (seg->starttime == recstarttime)
-          whence = 2;
-        else if (recendtime == recstarttime)
-        {
-          /* Determine best fit for records with no span */
-          if (llabs (recstarttime - seg->endtime) < llabs (recstarttime - seg->starttime))
-            whence = 1;
-          else
-            whence = 2;
-        }
-        else
-        {
-          ms_log (2, "Cannot determine where record fit relative to trace segment\n");
-          msr3_print (msr, 1);
-          continue;
-        }
-      }
-
-      /* Create and populate new Record structure */
-      if (!(rec = (Record *)malloc (sizeof (Record))))
-      {
-        ms_log (2, "Cannot allocate memory for Record entry\n");
-        return -1;
-      }
-
-      rec->flp = flp;
-      rec->offset = (msfp->streampos - msr->reclen);
-      rec->reclen = msr->reclen;
-      rec->starttime = recstarttime;
-      rec->endtime = recendtime;
-      rec->pubversion = msr->pubversion;
-      rec->selectstart = NSTUNSET;
-      rec->selectend = NSTUNSET;
-      rec->newstart = NSTUNSET;
-      rec->newend = NSTUNSET;
-      rec->prev = NULL;
-      rec->next = NULL;
-
-      /* Populate a new record map */
-      newrecmap.recordcnt = 1;
-      newrecmap.first = rec;
-      newrecmap.last = rec;
-
-      /* If record is not completely selected search for joint selection limits */
-      if (matchstp && !(matchstp->starttime <= recstarttime && matchstp->endtime >= recendtime))
-      {
-        if (findselectlimits (matchsp, msr->sid, recstarttime, recendtime, rec))
-        {
-          ms_log (2, "Problem in findselectlimits(), please report\n");
-        }
-      }
-
-      /* If pruning at the sample level trim right at the start/end times */
-      if (prunedata == 's' || prunedata == 'e')
-      {
-        nstime_t seltime;
-
-        /* Determine strictest start time (selection time or global start time) */
-        if (starttime != NSTUNSET && rec->selectstart != NSTUNSET)
-          seltime = (starttime > rec->selectstart) ? starttime : rec->selectstart;
-        else if (rec->selectstart != NSTUNSET)
-          seltime = rec->selectstart;
-        else
-          seltime = starttime;
-
-        /* If the Record crosses the start time */
-        if (seltime != NSTUNSET && (seltime > recstarttime) && (seltime <= recendtime))
-        {
-          rec->newstart = seltime;
-        }
-
-        /* Determine strictest end time (selection time or global end time) */
-        if (endtime != NSTUNSET && rec->selectend != NSTUNSET)
-          seltime = (endtime < rec->selectend) ? endtime : rec->selectend;
-        else if (rec->selectend != NSTUNSET)
-          seltime = rec->selectend;
-        else
-          seltime = endtime;
-
-        /* If the Record crosses the end time */
-        if (seltime != NSTUNSET && (seltime >= recstarttime) && (seltime < recendtime))
-        {
-          rec->newend = seltime;
-        }
-      }
-
-      /* Create extra Record structures if splitting on a time boundary */
-      if (splitboundary)
-      {
-        uint16_t year;
-        uint16_t yday;
-        uint8_t hour;
-        uint8_t min;
-        uint8_t sec;
-        uint32_t nsec;
-        nstime_t boundary = NSTUNSET;
-        nstime_t effstarttime;
-
-        for (;;)
-        {
-          effstarttime = (rec->newstart != NSTUNSET) ? rec->newstart : rec->starttime;
-          ms_nstime2time (effstarttime, &year, &yday, &hour, &min, &sec, &nsec);
-
-          /* Determine next split boundary */
-          if (splitboundary == 'd') /* Days */
-          {
-            yday += 1;
-            hour = min = sec = nsec = 0;
-            boundary = ms_time2nstime (year, yday, hour, min, sec, nsec);
-          }
-          else if (splitboundary == 'h') /* Hours */
-          {
-            hour += 1;
-            min = sec = nsec = 0;
-            boundary = ms_time2nstime (year, yday, hour, min, sec, nsec);
-          }
-          else if (splitboundary == 'm') /* Minutes */
-          {
-            min += 1;
-            sec = nsec = 0;
-            boundary = ms_time2nstime (year, yday, hour, min, sec, nsec);
-          }
-          else
-          {
-            ms_log (2, "Split boundary code unrecognized: '%c'\n", splitboundary);
-            break;
-          }
-
-          /* If end time is beyond the boundary create a new Record */
-          if (rec->endtime >= boundary)
-          {
-            if (!(newrec = (Record *)malloc (sizeof (Record))))
-            {
-              ms_log (2, "Cannot allocate memory for Record entry");
-              return -1;
-            }
-
-            memcpy (newrec, rec, sizeof (Record));
-
-            /* Set current Record and next Record new boundary times */
-            rec->newend = boundary - 1;
-            newrec->newstart = boundary;
-
-            /* Update new record map */
-            newrecmap.recordcnt++;
-            newrecmap.last = newrec;
-
-            /* Insert the new Record in chain and set as current */
-            rec->next = newrec;
-            newrec->prev = rec;
-            rec = newrec;
-
-            flp->recsplitcount++;
-          }
-          /* Otherwise we are done */
-          else
-          {
-            break;
-          }
-        }
-      } /* Done splitting on time boundary */
-
-      /* Add the new Record(s) to the RecordMap associated with the MS3TraceSeg */
-
-      /* Add new Record(s) to end of the RecordMap */
-      if (whence == 1)
-      {
-        recmap = (RecordMap *)seg->prvtptr;
-
-        recmap->last->next = newrecmap.first;
-        newrecmap.first->prev = recmap->last;
-
-        recmap->last = newrecmap.last;
-
-        recmap->recordcnt += newrecmap.recordcnt;
-      }
-      /* Add new Record(s) to beginning of the RecordMap */
-      else if (whence == 2)
-      {
-        recmap = (RecordMap *)seg->prvtptr;
-
-        recmap->first->prev = newrecmap.last;
-        newrecmap.last->next = recmap->first;
-
-        recmap->first = newrecmap.first;
-
-        recmap->recordcnt += newrecmap.recordcnt;
-
-        /* Increment reordered count */
-        flp->reordercount++;
-      }
-      /* First Record(s) for this MS3TraceSeg, allocate RecordMap */
-      else
-      {
-        if (seg->prvtptr)
-          ms_log (2, "Supposedly first record, but RecordMap not empty, report this\n");
-
-        if (!(recmap = (RecordMap *)malloc (sizeof (RecordMap))))
-        {
-          ms_log (2, "Cannot allocate memory for new RecordMap\n");
-          return -1;
-        }
-        recmap->first = newrecmap.first;
-        recmap->last = newrecmap.last;
-        recmap->recordcnt = newrecmap.recordcnt;
-
-        seg->prvtptr = recmap;
-      }
-
-      totalrecs++;
-      totalsamps += msr->samplecnt;
-    } /* End of looping through records in file */
+    /* Read all miniSEED into a trace list, limiting to selections */
+    retcode = ms3_readtracelist_selection (&mstl, flp->infilename_raw, &tolerance,
+                                           selections, bestversion, flags, verbose);
 
     /* Critical error if file was not read properly */
-    if (retcode != MS_ENDOFFILE)
+    if (retcode != MS_NOERROR)
     {
       ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr (retcode));
-      ms3_readmsr_selection (&msfp, &msr, NULL, flags, NULL, 0);
       return -1;
     }
-
-    /* Make sure everything is cleaned up */
-    ms3_readmsr_selection (&msfp, &msr, NULL, flags, NULL, 0);
 
     totalfiles++;
     flp = flp->next;
@@ -703,25 +281,24 @@ readfiles (MS3TraceList **ppmstl)
    * filecount + ds_maxopenfiles and some wiggle room. */
   setofilelimit (totalfiles + ds_maxopenfiles + 20);
 
-  if (basicsum)
-    ms_log (0, "Files: %d, Records: %d, Samples: %d\n", totalfiles, totalrecs, totalsamps);
+  /* Set time limits based on selections when pruning to specific time limits */
+  if ((prunedata == 's' || prunedata == 'e') &&
+      selections && setselectionlimits (mstl))
+    return 1;
 
-  return 0;
-} /* End of readfiles() */
-
-/***************************************************************************
- * processtraces:
- *
- * Process all data represented by the MS3TraceList by first pruning
- * them and then writing out the remaining data.
- *
- * Returns 0 on success and -1 on error.
- ***************************************************************************/
-static int
-processtraces (MS3TraceList *mstl)
-{
   if (verbose > 2)
-    printtracemap (mstl);
+  {
+    ms_log (1, "== Input data ==\n");
+    printtracelist (mstl, 1);
+  }
+
+  if (mstl->numtraceids == 0)
+  {
+    if (verbose)
+      ms_log (1, "No data selected\n");
+
+    return 0;
+  }
 
   /* Prune data */
   if (prunedata)
@@ -729,34 +306,156 @@ processtraces (MS3TraceList *mstl)
     /* Prune overlaps */
     if (prunedata == 'r' || prunedata == 's')
       if (prunetraces (mstl))
-        return -1;
+        return 1;
 
-    /* Reconcile MS3TraceID times with associated record maps */
+    /* Reconcile MS3TraceID times with associated record times */
     if (reconcile_tracetimes (mstl))
-      return -1;
+      return 1;
+  }
+
+  if (verbose > 2)
+  {
+    ms_log (1, "== Pruned data ==\n");
+    printtracelist (mstl, 1);
   }
 
   /* Write all MS3TraceSeg associated records to output file(s) */
   if (writetraces (mstl))
-    return -1;
+    return 1;
+
+  if (modsummary)
+    printmodsummary (verbose);
+
+  if (writtenfile)
+  {
+    printwritten (writtentl);
+    mstl3_free (&writtentl, 1);
+  }
+
+  /* The main MS3TraceList (mstl) is not freed on purpose: the structure has a
+   * potentially huge number of sub-structures which would take a long time to
+   * iterate through.  This would be a waste of time given the program is now done.
+   *
+   * This may show up as a memory leak for some profilers. */
 
   return 0;
-} /* End of processtraces() */
+} /* End of main() */
 
 /***************************************************************************
- * writetraces():
+ * Determine selection limits for each record based on all
+ * matching selection entries.
  *
+ * At this point data selection has already been performed at the record
+ * level by the libmseed logic.  This routine will set new record start
+ * and end times when they intersect the record coverage.
+ *
+ * Return 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+setselectionlimits (MS3TraceList *mstl)
+{
+  const MS3Selections *select = NULL;
+  const MS3SelectTime *selecttime = NULL;
+  MS3TraceID *id = NULL;
+  MS3TraceSeg *seg = NULL;
+  MS3RecordPtr *recptr = NULL;
+  TimeRange *timerange = NULL;
+  nstime_t newstart;
+  nstime_t newend;
+
+  if (!mstl)
+    return -1;
+
+  /* Set new record times based on selection times */
+  id = mstl->traces.next[0];
+  while (id)
+  {
+    seg = id->first;
+    while (seg)
+    {
+      recptr = seg->recordlist->first;
+      while (recptr)
+      {
+        select = selections;
+        while ((select = ms3_matchselect (select,
+                                          recptr->msr->sid,
+                                          recptr->msr->starttime,
+                                          recptr->endtime,
+                                          0,
+                                          &selecttime)))
+        {
+          while (selecttime)
+          {
+            /* Records are either completely or partially selected by time limits */
+            newstart = NSTUNSET;
+            newend = NSTUNSET;
+
+            if (selecttime->starttime != NSTUNSET &&
+                selecttime->starttime > recptr->msr->starttime &&
+                selecttime->starttime < recptr->endtime)
+            {
+              newstart = selecttime->starttime;
+            }
+
+            if (selecttime->endtime != NSTUNSET &&
+                selecttime->endtime > recptr->msr->starttime &&
+                selecttime->endtime < recptr->endtime)
+            {
+              newend = selecttime->endtime;
+            }
+
+            if (newstart == NSTUNSET && newend == NSTUNSET)
+            {
+              selecttime = selecttime->next;
+              continue;
+            }
+
+            /* Allocate TimeRange for new time boundaries */
+            if (recptr->prvtptr == NULL)
+            {
+              if ((recptr->prvtptr = (TimeRange *)malloc (sizeof (TimeRange))) == NULL)
+              {
+                ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+                return -1;
+              }
+
+              ((TimeRange *)recptr->prvtptr)->starttime = NSTUNSET;
+              ((TimeRange *)recptr->prvtptr)->endtime = NSTUNSET;
+            }
+
+            timerange = (TimeRange *)recptr->prvtptr;
+
+            if (newstart != NSTUNSET &&
+                (timerange->starttime == NSTUNSET || newstart < timerange->starttime))
+              timerange->starttime = newstart;
+
+            if (newend != NSTUNSET &&
+                (timerange->endtime == NSTUNSET || newend > timerange->endtime))
+              timerange->endtime = newend;
+
+            selecttime = selecttime->next;
+          }
+          select = select->next;
+        }
+        recptr = recptr->next;
+      }
+      seg = seg->next;
+    }
+    id = id->next[0];
+  }
+
+  return 0;
+} /* End of setselectionlimits() */
+
+/***************************************************************************
  * Write all MS3TraceSeg associated records to output file(s).  If an
  * output file is specified all records will be written to it,
- * otherwise records will be written to the original files and
- * (optionally) backups of the original files will remain.
+ * otherwise records will be written to specified archive layouts.
  *
- * This routine will also call trimrecord() to trim a record when data
- * suturing is requested.  Record trimming is triggered when
- * Record.newstart or Record.newend are set for any output records.
- *
- * TODO allow setting quality somewhere before here?  Not sure how
- * The quality flag is optionally set for all output records.
+ * This routine will also call trimrecord() to trim a record when new
+ * start and end times have been identified in earlier processing.
+ * Record trimming is triggered when the RecordPtr.prvtptr has new
+ * TimeRange.starttime or TimeRange.endtime values.
  *
  * Returns 0 on success and 1 on error.
  ***************************************************************************/
@@ -765,7 +464,6 @@ writetraces (MS3TraceList *mstl)
 {
   static uint64_t totalrecsout = 0;
   static uint64_t totalbytesout = 0;
-  char *recordptr = NULL;
   char *wb = "wb";
   char *ab = "ab";
   char *mode;
@@ -776,11 +474,13 @@ writetraces (MS3TraceList *mstl)
   MS3TraceID *id;
   MS3TraceID *groupid;
   MS3TraceSeg *seg;
+  MS3TraceSeg *groupseg;
+  MS3RecordPtr *recptr;
+  MS3RecordPtr *recptrprev;
+  MS3RecordPtr *recptrnext;
 
-  RecordMap *groupmap = NULL;
-  RecordMap *recmap = NULL;
-  Record *rec;
-  Record *recnext;
+  TimeRange *newrange;
+  Filelink *flpsearch;
   Filelink *flp;
 
   FILE *ofp = NULL;
@@ -819,103 +519,71 @@ writetraces (MS3TraceList *mstl)
   /* Re-link records into write lists, from per-segment lists to per ID lists.
    * This allows (later) sorting of data records as logical groups regardless
    * from which segment the record was originally associated. */
-  id = mstl->traces.next[0];
-  groupid = id;
-  while (id)
+  if (prunedata)
   {
-    /* Determine if this is a new group */
-    if (groupid != id)
+    id = mstl->traces.next[0];
+    groupid = NULL;
+
+    while (id)
     {
-      /* If data was pruned, group by source ID.
-       * When pruning, data is grouped by source ID and publication version.
-       * This groups the write lists by source ID without verison considered. */
-      if (prunedata)
-      {
-        if (strcmp (id->sid, groupid->sid))
-        {
-          groupid = id;
-        }
-      }
-      else
+      /* Check if a new group ID is needed */
+      if (groupid == NULL || strcmp (id->sid, groupid->sid) != 0)
       {
         groupid = id;
-      }
-    }
-
-    seg = id->first;
-    if (seg)
-    {
-      /* Allocate group ID RecordMap if needed */
-      if (!groupid->prvtptr)
-      {
-        if (!(id->prvtptr = calloc (1, sizeof (RecordMap))))
-        {
-          ms_log (2, "writetraces(): Cannot allocate memory\n");
-          return 1;
-        }
-        groupmap = (RecordMap *)id->prvtptr;
+        groupseg = id->first;
       }
 
+      seg = id->first;
       while (seg)
       {
-        recmap = (RecordMap *)seg->prvtptr;
-        rec = recmap->first;
-        while (rec && !errflag)
+        /* Remove non-contributing records from list denoted with 0 reclen */
+        recptr = seg->recordlist->first;
+        recptrprev = NULL;
+        while (recptr)
         {
-          recnext = rec->next;
+          recptrnext = recptr->next;
 
-          /* Free and skip marked (pre-identified as non-contributing) records */
-          if (rec->reclen == 0)
+          if (recptr->msr->reclen == 0)
           {
-            free (rec);
-            rec = recnext;
-            continue;
-          }
+            if (recptrprev)
+              recptrprev->next = recptr->next;
+            else
+              seg->recordlist->first = recptr->next;
 
-          /* Add record to group ID write list */
-          if (!groupmap->first)
-          {
-            groupmap->first = rec;
-            rec->prev = NULL;
-            rec->next = NULL;
-            groupmap->last = rec;
-            groupmap->recordcnt = 1;
+            free (recptr);
+            seg->recordlist->recordcnt--;
           }
           else
           {
-            groupmap->last->next = rec;
-            rec->prev = groupmap->last;
-            rec->next = NULL;
-            groupmap->last = rec;
-            groupmap->recordcnt++;
+            recptrprev = recptr;
           }
 
-          rec = recnext;
-        } /* Done looping through Records in the RecordMap */
+          recptr = recptrnext;
+        }
 
-        /* Free segment RecordMap and cauterize */
-        if (seg->prvtptr)
-          free (seg->prvtptr);
-        seg->prvtptr = NULL;
+        /* Append record list to group segment list */
+        if (seg != groupseg)
+        {
+          groupseg->recordlist->last->next = seg->recordlist->first;
+          groupseg->recordlist->last = seg->recordlist->last;
+          groupseg->recordlist->recordcnt += seg->recordlist->recordcnt;
+
+          seg->recordlist->first = NULL;
+          seg->recordlist->last = NULL;
+          seg->recordlist->recordcnt = 0;
+        }
 
         seg = seg->next;
-      } /* Done looping through MS3TraceSegs in the MS3TraceID */
+      }
+
+      id = id->next[0];
     }
+  } /* Done combining pruned records into SourceID groups */
 
-    id = id->next[0];
-  } /* Done looping through MS3TraceIDs in the MS3TraceList */
-
-  /* Loop through MS3TraceList and write records in write lists */
+  /* Loop through MS3TraceList and write records */
   id = mstl->traces.next[0];
   while (id && errflag != 1)
   {
-    /* Skip when no write list is present */
-    if (id->prvtptr == NULL)
-    {
-      id = id->next[0];
-      continue;
-    }
-
     /* Reset error flag for continuation errors */
     if (errflag == 2)
       errflag = 0;
@@ -924,131 +592,147 @@ writetraces (MS3TraceList *mstl)
     if (splitreclen)
       suffix = 1;
 
-    recmap = (RecordMap *)id->prvtptr;
-
-    /* Sort record list if overlaps have been pruned, if the data has not been
-     * pruned it is already in time order. */
-    if (prunedata == 'r' || prunedata == 's')
+    seg = id->first;
+    while (seg)
     {
-      sortrecmap (recmap);
-    }
-
-    /* Loop through each Record in the write list RecordMap.
-     * After records are read from the input files, perform any
-     * pre-identified pruning before writing data back out */
-    rec = recmap->first;
-    while (rec && !errflag)
-    {
-      /* Read the record from the input file */
-
-      if (rec->reclen > sizeof (recordbuf))
+      if (seg->recordlist->recordcnt == 0)
       {
-        ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
-                rec->reclen, (long long unsigned int)sizeof (recordbuf));
-        errflag = 1;
-        break;
+        seg = seg->next;
+        continue;
       }
 
-      /* Open file for reading if not already done */
-      if (!rec->flp->infp)
-        if (!(rec->flp->infp = fopen (rec->flp->infilename, "rb")))
+      /* Sort record list if overlaps have been pruned, if the data has not been
+       * pruned it is already in time order. */
+      if (prunedata == 'r' || prunedata == 's')
+      {
+        sortrecordlist (&(seg->recordlist));
+      }
+
+      /* Write each record.
+       * After records are read from the input files, perform any
+       * pre-identified pruning before writing data. */
+      recptr = seg->recordlist->first;
+      while (recptr && !errflag)
+      {
+        if (recptr->msr->reclen > sizeof (recordbuf))
         {
-          ms_log (2, "Cannot open '%s' for reading: %s\n",
-                  rec->flp->infilename, strerror (errno));
+          ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
+                  recptr->msr->reclen, (long long unsigned int)sizeof (recordbuf));
           errflag = 1;
           break;
         }
 
-      /* Seek to record offset */
-      if (lmp_fseek64 (rec->flp->infp, rec->offset, SEEK_SET) == -1)
-      {
-        ms_log (2, "Cannot seek in '%s': %s\n",
-                rec->flp->infilename, strerror (errno));
-        errflag = 1;
-        break;
-      }
-
-      /* Read record into buffer */
-      if (fread (recordbuf, rec->reclen, 1, rec->flp->infp) != 1)
-      {
-        ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
-                rec->reclen, (long long unsigned)rec->offset,
-                rec->flp->infilename);
-        errflag = 1;
-        break;
-      }
-
-      recordptr = recordbuf;
-
-      /* Re-stamp quality indicator if specified */
-      // TODO fix for two versions
-      if (restampqind)
-      {
-        if (verbose > 3)
-          ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
-
-        *(recordptr + 6) = restampqind;
-      }
-
-      /* Setup writer data */
-      writerdata.ofp = ofp;
-      writerdata.rec = rec;
-      writerdata.id = id;
-
-      /* Write out the data, either the record needs to be trimmed (and will be
-       * send to the record writer) or we send it directly to the record writer.
-       */
-
-      /* Trim data from the record if new start or end times are specifed */
-      if (rec->newstart != NSTUNSET || rec->newend != NSTUNSET)
-      {
-        rv = trimrecord (rec, recordptr, &writerdata);
-
-        if (rv == -1)
+        /* Find the matching input file entry */
+        flp = NULL;
+        flpsearch = filelist;
+        while (flpsearch)
         {
-          rec = rec->next;
-          continue;
+          if (flpsearch->infilename_raw == recptr->filename)
+          {
+            flp = flpsearch;
+            break;
+          }
+
+          flpsearch = flpsearch->next;
         }
-        if (rv == -2)
+
+        if (flp == NULL)
         {
-          ms_log (2, "Cannot unpack miniSEED from byte offset %lld in %s\n",
-                  rec->offset, rec->flp->infilename);
-          ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->sid);
+          ms_log (2, "Cannot find input file entry for %s\n", recptr->filename);
           errflag = 2;
           break;
         }
-      }
-      else
-      {
-        writerecord (recordptr, rec->reclen, &writerdata);
-      }
 
-      if (errflag)
-        break;
+        /* Open file for reading if not already done */
+        if (!flp->infp)
+          if (!(flp->infp = fopen (flp->infilename, "rb")))
+          {
+            ms_log (2, "Cannot open '%s' for reading: %s\n",
+                    flp->infilename, strerror (errno));
+            errflag = 1;
+            break;
+          }
 
-      /* Update file entry time stamps and counts */
-      if (!rec->flp->earliest || (rec->flp->earliest > rec->starttime))
-      {
-        rec->flp->earliest = rec->starttime;
-      }
-      if (!rec->flp->latest || (rec->flp->latest < rec->endtime))
-      {
-        rec->flp->latest = rec->endtime;
-      }
+        /* Seek to record offset */
+        if (lmp_fseek64 (flp->infp, recptr->fileoffset, SEEK_SET) == -1)
+        {
+          ms_log (2, "Cannot seek in '%s': %s\n",
+                  flp->infilename, strerror (errno));
+          errflag = 1;
+          break;
+        }
 
-      rec->flp->byteswritten += rec->reclen;
+        /* Read record into buffer */
+        if (fread (recordbuf, recptr->msr->reclen, 1, flp->infp) != 1)
+        {
+          ms_log (2, "Cannot read %d bytes at offset %llu from '%s'\n",
+                  recptr->msr->reclen, (long long unsigned)recptr->fileoffset,
+                  flp->infilename);
+          errflag = 1;
+          break;
+        }
 
-      totalrecsout++;
-      totalbytesout += rec->reclen;
+        /* Re-stamp quality indicator if specified */
+        // TODO fix for two versions, maybe do this in writerecord()?  To avoid parsing again
+        if (restampqind)
+        {
+          if (verbose > 3)
+            ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
 
-      /* Increment suffix if splitting and record length changes */
-      if (splitreclen && rec->next && rec->next->reclen != rec->reclen)
-      {
-        suffix++;
-      }
+          *(recordbuf + 6) = restampqind;
+        }
 
-      rec = rec->next;
-    } /* Done looping through Records in the RecordMap */
+        /* Setup writer data */
+        writerdata.ofp = ofp;
+        writerdata.recptr = recptr;
+        writerdata.flp = flp;
+
+        /* Write out the data, either the record needs to be trimmed (and will be
+         * send to the record writer) or we send it directly to the record writer.
+         */
+        newrange = (TimeRange *)(recptr->prvtptr);
+
+        /* Trim data from the record if new start or end times are specifed */
+        if (newrange && (newrange->starttime != NSTUNSET || newrange->endtime != NSTUNSET))
+        {
+          rv = trimrecord (recptr, recordbuf, &writerdata);
+
+          if (rv == -1)
+          {
+            recptr = recptr->next;
+            continue;
+          }
+          if (rv == -2)
+          {
+            ms_log (2, "Cannot unpack miniSEED from byte offset %lld in %s\n",
+                    recptr->fileoffset, flp->infilename);
+            ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->sid);
+            errflag = 2;
+            break;
+          }
+        }
+        else
+        {
+          writerecord (recordbuf, recptr->msr->reclen, &writerdata);
+        }
+
+        if (errflag)
+          break;
+
+        totalrecsout++;
+        totalbytesout += recptr->msr->reclen;
+
+        /* Increment suffix if splitting and record length changes */
+        if (splitreclen && recptr->next && recptr->next->msr->reclen != recptr->msr->reclen)
+        {
+          suffix++;
+        }
+
+        recptr = recptr->next;
+      } /* Done looping through records for this MS3TraceSeg */
+
+      seg = seg->next;
+    } /* Done looping through MS3TraceSegs */
 
     id = id->next[0];
   } /* Done looping through MS3TraceIDs the MS3TraceList */
@@ -1057,12 +741,6 @@ writetraces (MS3TraceList *mstl)
   flp = filelist;
   while (flp)
   {
-    if (!ofp && verbose)
-    {
-      ms_log (1, "Wrote %" PRId64 " bytes from file %s\n",
-              flp->byteswritten, flp->infilename);
-    }
-
     if (flp->infp)
     {
       fclose (flp->infp);
@@ -1089,26 +767,27 @@ writetraces (MS3TraceList *mstl)
 } /* End of writetraces() */
 
 /***************************************************************************
- * trimrecord():
- *
  * Unpack a data record and trim samples, either from the beginning or
- * the end, to fit the Record.newstart and/or Record.newend boundary
- * times and pack the record.  Record.newstart and Record.newend are
- * treated as arbitrary boundaries, not as explicit new start/end
+ * the end, to fit the TimeRange.starttime and TimeRange.endtime boundary
+ * times and pack the record.
+ *
+ * Data samples times are not modified.  The new start and end times
+ * are treated as arbitrary boundaries, not as explicit new start/end
  * times, this routine calculates which samples fit within the new
  * boundaries.
  *
  * Return 0 on success, -1 on failure or skip and -2 on unpacking errors.
  ***************************************************************************/
 static int
-trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
+trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 {
   MS3Record *msr = NULL;
   nstime_t nsdelta;
-  nstime_t ostarttime = rec->starttime;
+  nstime_t ostarttime;
+  TimeRange *newrange;
 
-  char stime[30] = {0};
-  char etime[30] = {0};
+  char stime[32] = {0};
+  char etime[32] = {0};
 
   int trimsamples;
   uint8_t samplesize;
@@ -1117,36 +796,43 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   int packedrecords;
   int retcode;
 
-  if (!rec || !recordbuf)
+  if (!recptr || !recordbuf)
     return -1;
 
+  ostarttime = recptr->msr->starttime;
+  newrange = (TimeRange *)(recptr->prvtptr);
+
   /* Sanity check for new start/end times */
-  if ((rec->newstart != NSTUNSET && rec->newend != NSTUNSET && rec->newstart > rec->newend) ||
-      (rec->newstart != NSTUNSET && (rec->newstart < rec->starttime || rec->newstart > rec->endtime)) ||
-      (rec->newend != NSTUNSET && (rec->newend > rec->endtime || rec->newend < rec->starttime)))
+  if ((newrange->starttime != NSTUNSET && newrange->endtime != NSTUNSET && newrange->starttime > newrange->endtime) ||
+      (newrange->starttime != NSTUNSET && (newrange->starttime < recptr->msr->starttime || newrange->starttime > recptr->endtime)) ||
+      (newrange->endtime != NSTUNSET && (newrange->endtime > recptr->endtime || newrange->endtime < recptr->msr->starttime)))
   {
     ms_log (2, "Problem with new start/end record bound times.\n");
-    // TODO, add SourceID to log message if restructured and information is available.
     ms_log (2, "  Original record %s from %s (byte offset: %llu)\n",
-            "SourceID", rec->flp->infilename, (unsigned long long)rec->offset);
-    ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+            "SourceID", writerdata->flp->infilename, (unsigned long long)recptr->fileoffset);
+    ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+    ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, "       Start: %s       End: %s\n", stime, etime);
-    if (rec->newstart == NSTUNSET)
+    if (newrange->starttime == NSTUNSET)
       strcpy (stime, "NONE");
     else
-      ms_nstime2timestr (rec->newstart, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    if (rec->newend == NSTUNSET)
+      ms_nstime2timestr (newrange->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+    if (newrange->endtime == NSTUNSET)
       strcpy (etime, "NONE");
     else
-      ms_nstime2timestr (rec->newend, etime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr (newrange->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, " Start bound: %-24s End bound: %-24s\n", stime, etime);
 
     return -1;
   }
 
   /* Parse data record header without decoding samples */
-  if ((retcode = msr3_parse (recordbuf, rec->reclen, &msr, 0, 0)))
+  // TODO consider using msr3_duplicate() to avoid unpacking the record twice
+  // But previously the record was modified in place by quality/version, so this would require a change
+
+  //TODO BETTER Do we need a new MSR for any reason?  Just use the existing after attaching the record buffer.
+  // Still need to do record quality/version changes somewhere, but maybe that can be done in writerecord()?
+  if ((retcode = msr3_parse (recordbuf, recptr->msr->reclen, &msr, 0, 0)))
   {
     ms_log (2, "Cannot unpack miniSEED record: %s\n", ms_errorstr (retcode));
     return -2;
@@ -1164,7 +850,7 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   {
     if (verbose)
     {
-      ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
       ms_log (1, "Skipping trim of %s (%s), unsupported encoding (%d: %s)\n",
               msr->sid, stime, msr->encoding, ms_encodingstr (msr->encoding));
     }
@@ -1184,17 +870,17 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   if (verbose > 1)
   {
     ms_log (1, "Triming record: %s (%u)\n", msr->sid, msr->pubversion);
-    ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+    ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+    ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (1, "       Start: %s        End: %s\n", stime, etime);
-    if (rec->newstart == NSTUNSET)
+    if (newrange->starttime == NSTUNSET)
       strcpy (stime, "NONE");
     else
-      ms_nstime2timestr (rec->newstart, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    if (rec->newend == NSTUNSET)
+      ms_nstime2timestr (newrange->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+    if (newrange->endtime == NSTUNSET)
       strcpy (etime, "NONE");
     else
-      ms_nstime2timestr (rec->newend, etime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr (newrange->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (1, " Start bound: %-24s  End bound: %-24s\n", stime, etime);
   }
 
@@ -1202,15 +888,15 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
   nsdelta = (msr->samprate) ? (nstime_t)(NSTMODULUS / msr->samprate) : 0;
 
   /* Remove samples from the beginning of the record */
-  if (rec->newstart != NSTUNSET && nsdelta)
+  if (newrange->starttime != NSTUNSET && nsdelta)
   {
     nstime_t newstarttime;
 
     /* Determine new start time and the number of samples to trim */
     trimsamples = 0;
-    newstarttime = rec->starttime;
+    newstarttime = recptr->msr->starttime;
 
-    while (newstarttime < rec->newstart && trimsamples < msr->samplecnt)
+    while (newstarttime < newrange->starttime && trimsamples < msr->samplecnt)
     {
       newstarttime += nsdelta;
       trimsamples++;
@@ -1238,19 +924,19 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
     msr->numsamples -= trimsamples;
     msr->samplecnt -= trimsamples;
     msr->starttime = newstarttime;
-    rec->starttime = newstarttime;
+    newrange->starttime = newstarttime;
   }
 
   /* Remove samples from the end of the record */
-  if (rec->newend != NSTUNSET && nsdelta)
+  if (newrange->endtime != NSTUNSET && nsdelta)
   {
     nstime_t newendtime;
 
     /* Determine new end time and the number of samples to trim */
     trimsamples = 0;
-    newendtime = rec->endtime;
+    newendtime = recptr->endtime;
 
-    while (newendtime > rec->newend && trimsamples < msr->samplecnt)
+    while (newendtime > newrange->endtime && trimsamples < msr->samplecnt)
     {
       newendtime -= nsdelta;
       trimsamples++;
@@ -1273,25 +959,20 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
 
     msr->numsamples -= trimsamples;
     msr->samplecnt -= trimsamples;
-    rec->endtime = newendtime;
+    newrange->endtime = newendtime;
   }
 
   /* Pack the data record into the global record buffer used by writetraces() */
   packedrecords = msr3_pack (msr, &writerecord, writerdata,
                              &packedsamples, MSF_FLUSHDATA, verbose - 1);
 
-  // TODO fix below logic, wasted time when packed records > 1
-  if (packedrecords != 1)
+  if (packedrecords <= 0)
   {
     ms_nstime2timestr (ostarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-
-    if (packedrecords <= 0)
-    {
-      ms_log (2, "%s(): Cannot pack miniSEED record for %s %s\n",
-              __func__, msr->sid, stime);
-      msr3_free (&msr);
-      return -2;
-    }
+    ms_log (2, "%s(): Cannot pack miniSEED record for %s %s\n",
+            __func__, msr->sid, stime);
+    msr3_free (&msr);
+    return -2;
   }
 
   /* Clean up MS3Record */
@@ -1301,8 +982,6 @@ trimrecord (Record *rec, char *recordbuf, WriterData *writerdata)
 } /* End of trimrecord() */
 
 /***************************************************************************
- * writerecord():
- *
  * Used by writetraces() directly, and trimrecord() when called, to save
  * repacked miniSEED to global record buffer.
  ***************************************************************************/
@@ -1310,9 +989,7 @@ static void
 writerecord (char *record, int reclen, void *handlerdata)
 {
   WriterData *writerdata = handlerdata;
-  MS3Record *msr = NULL;
   Archive *arch;
-  int retcode;
 
   if (!record || reclen <= 0 || !handlerdata)
     return;
@@ -1330,23 +1007,15 @@ writerecord (char *record, int reclen, void *handlerdata)
   /* Write to Archive(s) if specified and/or add to written list */
   if (archiveroot || writtenfile)
   {
-    /* Parse data record header without decoding samples */
-    if ((retcode = msr3_parse (record, reclen, &msr, 0, 0)))
-    {
-      ms_log (2, "Cannot unpack miniSEED record: %s\n", ms_errorstr (retcode));
-      ms_log (2, "  From byte offset %lld in %s, file changed?\n",
-              writerdata->rec->offset, writerdata->rec->flp->infilename);
-      ms_log (2, "  Expecting %s, skipping the rest of this channel\n",
-              writerdata->id->sid);
-      *writerdata->errflagp = 2;
-    }
-
     if (archiveroot)
     {
       arch = archiveroot;
       while (arch)
       {
-        if (ds_streamproc (&arch->datastream, msr, *writerdata->suffixp, verbose - 1))
+        if (ds_streamproc (&arch->datastream,
+                           writerdata->recptr->msr,
+                           *writerdata->suffixp,
+                           verbose - 1))
         {
           *writerdata->errflagp = 1;
         }
@@ -1359,7 +1028,7 @@ writerecord (char *record, int reclen, void *handlerdata)
     {
       MS3TraceSeg *seg;
 
-      if ((seg = mstl3_addmsr (writtentl, msr, 0, 0, 0, NULL)) == NULL)
+      if ((seg = mstl3_addmsr (writtentl, writerdata->recptr->msr, 0, 0, 0, NULL)) == NULL)
       {
         ms_log (2, "Error adding MS3Record to MS3TraceList, bah humbug.\n");
       }
@@ -1378,24 +1047,20 @@ writerecord (char *record, int reclen, void *handlerdata)
           }
         }
 
-        *((int64_t *)seg->prvtptr) += msr->reclen;
+        *((int64_t *)seg->prvtptr) += reclen;
       }
     }
-
-    msr3_free (&msr);
   }
 } /* End of writerecord() */
 
 /***************************************************************************
- * prunetraces():
- *
- * Prune all redundant data from the RecordMap entries associated with
+ * Prune all redundant data from the records list entries associated with
  * the specified MS3TraceSegs.
  *
- * For each MS3TraceSeg determine the coverage of the RecordMap associated
+ * For each MS3TraceSeg determine the coverage of the record list associated
  * with each overlapping, higher-priority MS3TraceSeg using findcoverage().
  * If some higher-priority overlap was determined to exist modify the
- * RecordMap of the MS3TraceSeg in question to mark the overlapping data
+ * record list of the MS3TraceSeg in question to mark the overlapping data
  * using trimtrace().
  *
  * Return 0 on success and -1 on failure.
@@ -1418,8 +1083,8 @@ prunetraces (MS3TraceList *mstl)
     ms_log (1, "Pruning trace data\n");
 
   /* For each MS3TraceSeg determine the coverage of the overlapping
-     Records from the other traces with a higher priority and prune
-     the overlap. */
+   * Records from the other traces with a higher priority and prune
+   * the overlap. */
   id = mstl->traces.next[0];
   while (id)
   {
@@ -1461,10 +1126,8 @@ prunetraces (MS3TraceList *mstl)
 } /* End of prunetraces() */
 
 /***************************************************************************
- * findcoverage():
- *
  * Search an MS3TraceList for entries that overlap the target MS3TraceSeg
- * and, from the Record entries of the overlapping MS3TraceSegs, build a
+ * and, from the record entries of the overlapping MS3TraceSegs, build a
  * coverage list.
  *
  * Only data with a higher priority than the target MS3TraceSeg will be
@@ -1475,8 +1138,8 @@ prunetraces (MS3TraceList *mstl)
  * On success a new Coverage will be allocated and returned, it is
  * up to the caller to properly free this memory.
  *
- * When no overlap coverage is found *ppcoverage will be 0, otherwise
- * it will contain a list of MS3Traces representing the overlap
+ * When no overlap coverage is found *ppcoverage will be NULL, otherwise
+ * it will contain a list of representing the higher-priority overlap
  * coverage.
  *
  * Returns 0 on success and -1 on error.
@@ -1487,29 +1150,29 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
 {
   MS3TraceID *id = NULL;
   MS3TraceSeg *seg = NULL;
+  MS3RecordPtr *recptr;
   Coverage *coverage = NULL;
   Coverage *prevcoverage = NULL;
-  RecordMap *recmap;
-  Record *rec;
+  TimeRange *newrange;
   nstime_t nsdelta, nstimetol;
   nstime_t effstarttime, effendtime;
   int priority;
   int newsegment;
 
-  if (!mstl || !targetseg || !ppcoverage)
+  if (!mstl || !targetid || !targetseg || !ppcoverage)
     return -1;
 
   /* Determine sample period in high precision time ticks */
   nsdelta = (targetseg->samprate) ? (nstime_t)(NSTMODULUS / targetseg->samprate) : 0;
 
   /* Determine time tolerance in high precision time ticks */
-  nstimetol = (timetol == -1) ? (nsdelta / 2) : (nstime_t)(NSTMODULUS * timetol);
+  nstimetol = (timetol == -1.0) ? (nsdelta / 2) : (nstime_t)(NSTMODULUS * timetol);
 
   /* Loop through each MS3TraceID in the list */
   id = mstl->traces.next[0];
   while (id)
   {
-    /* Continue with next if source ID is different */
+    /* Continue with next if SourceID is different */
     if (targetid != id)
     {
       if (strcmp (id->sid, targetid->sid))
@@ -1537,7 +1200,7 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
         break;
       }
 
-      /* Skip out-of-band (0 samprate) trace */
+      /* Skip segments with no time coverage (0 samprate) */
       if (seg->samprate == 0.0)
       {
         seg = seg->next;
@@ -1551,10 +1214,10 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
         continue;
       }
 
-      /* Check for duplicate or overlap NSLCQ last coverage entry */
+      /* Check for duplicate or overlap SourceIDs last coverage entry */
       if (prevcoverage)
       {
-        /* At this point the NSLCQ and rate are the same, check if the
+        /* At this point the SourceID and rate are the same, check if the
          * segment is completly contained by the previous coverage entry. */
         if (seg->starttime >= prevcoverage->starttime &&
             seg->endtime <= prevcoverage->endtime)
@@ -1596,23 +1259,23 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
         /* If overlapping trace is a higher priority than targetseg add to coverage */
         if (priority == -1)
         {
-          /* Loop through list of associated Records, determine
-           * contiguous coverage and store in an MSTraceGroup */
-          recmap = (RecordMap *)seg->prvtptr;
-          rec = recmap->first;
+          /* Loop through list of records, and determine contiguous coverage */
+          recptr = seg->recordlist->first;
           newsegment = 1;
-          while (rec)
+          while (recptr)
           {
             /* Check if record has been marked as non-contributing */
-            if (rec->reclen == 0)
+            if (recptr->msr->reclen == 0)
             {
-              rec = rec->next;
+              recptr = recptr->next;
               continue;
             }
 
+            newrange = (TimeRange *)recptr->prvtptr;
+
             /* Determine effective record start and end times */
-            effstarttime = (rec->newstart != NSTUNSET) ? rec->newstart : rec->starttime;
-            effendtime = (rec->newend != NSTUNSET) ? rec->newend : rec->endtime;
+            effstarttime = (newrange && newrange->starttime != NSTUNSET) ? newrange->starttime : recptr->msr->starttime;
+            effendtime = (newrange && newrange->endtime != NSTUNSET) ? newrange->endtime : recptr->endtime;
 
             /* Create a new segment if a break in the time-series is detected */
             if (coverage)
@@ -1641,7 +1304,7 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
             else
               ms_log (2, "ACK! covergage is not allocated!?  PLEASE REPORT\n");
 
-            rec = rec->next;
+            recptr = recptr->next;
           }
         }
       }
@@ -1656,17 +1319,15 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
 } /* End of findcoverage() */
 
 /***************************************************************************
- * trimtrace():
- *
  * Adjust Record entries associated with the target MS3TraceSeg that
  * are overlapping the time represented by the Coverage
  * in two different ways: 1) mark records that are completely
  * overlapped and 2) determine partial record trim boundaries (new
  * record times) if sample level pruning is requested.
  *
- * Completely overlapping Record entries are marked for omission by
- * setting Record.reclen = 0.  Partial Record overlaps are noted by
- * setting Record.newstart and Record.newend when sample level pruning
+ * Completely overlapping record entries are marked for omission by
+ * setting reclen = 0.  Partial Record overlaps are noted by setting
+ * newrange.starttime and newrange.newend when sample level pruning
  * is requested.  The actual trimming of the data records, complete or
  * partial, is performed during the output sequence, not in this
  * routine.
@@ -1676,13 +1337,13 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
 static int
 trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverage)
 {
-  RecordMap *recmap;
-  Record *rec;
+  MS3RecordPtr *recptr;
+  TimeRange *newrange;
   Coverage *cov;
   nstime_t effstarttime, effendtime;
   nstime_t nsdelta, nstimetol;
-  char stime[30] = {0};
-  char etime[30] = {0};
+  char stime[32] = {0};
+  char etime[32] = {0};
   int modcount = 0;
 
   if (!targetseg || !coverage)
@@ -1692,105 +1353,123 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
   nsdelta = (targetseg->samprate) ? (nstime_t)(NSTMODULUS / targetseg->samprate) : 0;
 
   /* Determine time tolerance in high precision time ticks */
-  nstimetol = (timetol == -1) ? (nsdelta / 2) : (nstime_t)(NSTMODULUS * timetol);
+  nstimetol = (timetol == -1.0) ? (nsdelta / 2) : (nstime_t)(NSTMODULUS * timetol);
 
-  /* Traverse the Record chain for the target MS3Trace and mark Records
-   * that are completely overlapped by the MSTraceGroup coverage */
-  recmap = (RecordMap *)targetseg->prvtptr;
-  rec = recmap->first;
-  while (rec)
+  /* Traverse the record list for the target segment and mark records
+   * that overlap or intersect with the coverage */
+  recptr = targetseg->recordlist->first;
+  while (recptr)
   {
     cov = coverage;
     while (cov)
     {
-      if (!rec->reclen) /* Skip if marked non-contributing */
+      if (!recptr->msr->reclen) /* Skip if marked non-contributing */
         break;
 
+      newrange = (TimeRange *)recptr->prvtptr;
+
       /* Determine effective record start and end times for comparison */
-      effstarttime = (rec->newstart != NSTUNSET) ? rec->newstart : rec->starttime;
-      effendtime = (rec->newend != NSTUNSET) ? rec->newend : rec->endtime;
+      effstarttime = (newrange && newrange->starttime != NSTUNSET) ? newrange->starttime : recptr->msr->starttime;
+      effendtime = (newrange && newrange->endtime != NSTUNSET) ? newrange->endtime : recptr->endtime;
 
-      /* Use selection start and end for pruning if they are stricter */
-      if (rec->selectstart != NSTUNSET && rec->selectstart > effstarttime)
-        effstarttime = rec->selectstart;
-      if (rec->selectend != NSTUNSET && rec->selectend < effendtime)
-        effendtime = rec->selectend;
-
-      /* Mark Record if it is completely overlapped by the coverage including tolerance */
-      if (effstarttime >= (coverage->starttime - nstimetol) &&
-          effendtime <= (coverage->endtime + nstimetol))
+      /* Mark record if it is completely overlapped by the coverage including tolerance */
+      if (effstarttime >= (cov->starttime - nstimetol) &&
+          effendtime <= (cov->endtime + nstimetol))
       {
         if (verbose > 1)
         {
-          ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-          ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
-          ms_log (1, "Removing Record %s (%u) :: %s  %s  offset: %lld, reclen: %d\n",
-                  targetsourceid, rec->pubversion, stime, etime,
-                  (long long int)rec->offset, rec->reclen);
+          ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+          ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+          ms_log (1, "Removing Record [complete overlap] %s (%u) :: %s  %s  offset: %" PRId64 ", reclen: %d\n",
+                  targetsourceid, recptr->msr->pubversion, stime, etime,
+                  recptr->fileoffset, recptr->msr->reclen);
         }
 
-        rec->flp->recrmcount++;
-        rec->reclen = 0;
+        recptr->msr->reclen = 0;
         modcount++;
       }
 
       /* Determine the new start/end times if pruning at the sample level */
-      if (prunedata == 's' && rec->reclen != 0)
+      if (prunedata == 's' && recptr->msr->reclen != 0)
       {
-        /* Record overlaps beginning of coverage */
-        if (effstarttime < coverage->starttime &&
-            (effendtime + nstimetol) >= coverage->starttime)
+        /* Record intersects beginning of coverage */
+        if (effstarttime < cov->starttime &&
+            (effendtime + nstimetol) >= cov->starttime)
         {
-          /* Set Record new end time boundary including specified time tolerance */
-          rec->newend = coverage->starttime - nsdelta + nstimetol;
+          if (recptr->prvtptr == NULL)
+          {
+            if ((recptr->prvtptr = (TimeRange *)malloc (sizeof (TimeRange))) == NULL)
+            {
+              ms_log (2, "Cannot allocate memory for TimeRange, bah humbug.\n");
+              return -1;
+            }
 
-          if ((starttime != NSTUNSET) && (rec->newend < starttime))
+            ((TimeRange *)recptr->prvtptr)->starttime = NSTUNSET;
+            ((TimeRange *)recptr->prvtptr)->endtime = NSTUNSET;
+          }
+
+          newrange = (TimeRange *)recptr->prvtptr;
+
+          /* Set new end time boundary including specified time tolerance */
+          newrange->endtime = cov->starttime - nsdelta + nstimetol;
+
+          if (newrange->starttime != NSTUNSET && newrange->endtime < newrange->starttime)
           {
             if (verbose > 1)
             {
-              ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-              ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
-              ms_log (1, "Removing Record %s (%u) :: %s  %s\n",
-                      targetsourceid, rec->pubversion, stime, etime);
+              ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+              ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+              ms_log (1, "Removing record [start intersect] %s (%u) :: %s  %s\n",
+                      targetsourceid, recptr->msr->pubversion, stime, etime);
             }
 
-            rec->flp->recrmcount++;
-            rec->reclen = 0;
+            recptr->msr->reclen = 0;
             modcount++;
           }
           else
           {
-            effendtime = rec->newend;
-            rec->flp->rectrimcount++;
+            effendtime = newrange->endtime;
             modcount++;
           }
         }
 
-        /* Record overlaps end of coverage */
-        if ((effstarttime - nstimetol) <= coverage->endtime &&
-            effendtime > coverage->endtime)
+        /* Record intersects end of coverage */
+        if ((effstarttime - nstimetol) <= cov->endtime &&
+            effendtime > cov->endtime)
         {
-          /* Set Record new start time boundary including specified time tolerance */
-          rec->newstart = coverage->endtime + nsdelta - nstimetol;
+          if (recptr->prvtptr == NULL)
+          {
+            if ((recptr->prvtptr = (TimeRange *)malloc (sizeof (TimeRange))) == NULL)
+            {
+              ms_log (2, "Cannot allocate memory for TimeRange, bah humbug.\n");
+              return -1;
+            }
 
-          if ((endtime != NSTUNSET) && (rec->newstart > endtime))
+            ((TimeRange *)recptr->prvtptr)->starttime = NSTUNSET;
+            ((TimeRange *)recptr->prvtptr)->endtime = NSTUNSET;
+          }
+
+          newrange = (TimeRange *)recptr->prvtptr;
+
+          /* Set Record new start time boundary including specified time tolerance */
+          newrange->starttime = cov->endtime + nsdelta - nstimetol;
+
+          if (newrange->endtime != NSTUNSET && newrange->starttime > newrange->endtime)[]
           {
             if (verbose > 1)
             {
-              ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-              ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
-              ms_log (1, "Removing Record %s (%u) :: %s  %s\n",
-                      targetsourceid, rec->pubversion, stime, etime);
+              ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+              ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+              ms_log (1, "Removing record [end intersect] %s (%u) :: %s  %s\n",
+                      targetsourceid, recptr->msr->pubversion, stime, etime);
             }
 
-            rec->flp->recrmcount++;
-            rec->reclen = 0;
+            recptr->msr->reclen = 0;
             modcount++;
           }
           else
           {
-            effstarttime = rec->newstart;
-            rec->flp->rectrimcount++;
+            effstarttime = newrange->starttime;
             modcount++;
           }
         }
@@ -1799,23 +1478,21 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
          * test for special cases of:
          * a) no time coverage (single sample) and no pruning
          * b) no time coverage (single last sample) and split boundary usage */
+        //TODO remove split boundary check, it is not needed
         if (effstarttime >= (effendtime - nstimetol) &&
-            !(rec->starttime == rec->endtime &&
-              rec->starttime == effstarttime &&
-              rec->endtime == effendtime) &&
-            !(splitboundary &&
-              (effstarttime == effendtime && effendtime == rec->endtime)))
+            !(recptr->msr->starttime == recptr->endtime &&
+              recptr->msr->starttime == effstarttime &&
+              recptr->endtime == effendtime))
         {
           if (verbose > 1)
           {
-            ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-            ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
-            ms_log (1, "Removing Record %s (%u) :: %s  %s\n",
-                    targetsourceid, rec->pubversion, stime, etime);
+            ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+            ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+            ms_log (1, "Removing record [all pruned] %s (%u) :: %s  %s\n",
+                    targetsourceid, recptr->msr->pubversion, stime, etime);
           }
 
-          rec->flp->recrmcount++;
-          rec->reclen = 0;
+          recptr->msr->reclen = 0;
           modcount++;
         }
 
@@ -1824,15 +1501,13 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
       cov = cov->next;
     }
 
-    rec = rec->next;
+    recptr = recptr->next;
   }
 
   return modcount;
 } /* End of trimtrace() */
 
 /***************************************************************************
- * reconcile_tracetimes():
- *
  * Reconcile the start and end times of the traces in a specified
  * trace group with the list of records in an associated record map.
  * In other words, set the start and end times of each MS3TraceSeg in
@@ -1848,10 +1523,10 @@ reconcile_tracetimes (MS3TraceList *mstl)
 {
   MS3TraceID *id;
   MS3TraceSeg *seg;
-  RecordMap *recmap;
-  Record *rec;
-  Record *first = NULL;
-  Record *last = NULL;
+  MS3RecordPtr *recptr;
+  MS3RecordPtr *first = NULL;
+  MS3RecordPtr *last = NULL;
+  TimeRange *newrange;
 
   if (!mstl)
     return -1;
@@ -1865,51 +1540,44 @@ reconcile_tracetimes (MS3TraceList *mstl)
     seg = id->first;
     while (seg)
     {
-      recmap = (RecordMap *)seg->prvtptr;
-
       /* Find first contributing record (reclen != 0) */
-      rec = recmap->first;
-      while (rec)
+      recptr = seg->recordlist->first;
+      while (recptr)
       {
-        if (rec->reclen > 0)
+        if (recptr->msr->reclen > 0)
         {
-          first = rec;
-          break;
+          if (!first)
+            first = recptr;
+
+          last = recptr;
         }
 
-        rec = rec->next;
-      }
-
-      /* Find last contributing record (reclen != 0) */
-      rec = recmap->last;
-      while (rec)
-      {
-        if (rec->reclen > 0)
-        {
-          last = rec;
-          break;
-        }
-
-        rec = rec->prev;
+        recptr = recptr->next;
       }
 
       /* Set a new MS3TraceSeg start time */
       if (first)
       {
+        newrange = (TimeRange *)first->prvtptr;
+
         /* Use the new boundary start time if set and sane */
-        if (first->newstart != NSTUNSET && first->newstart > first->starttime)
-          seg->starttime = first->newstart;
+        if (newrange && newrange->starttime != NSTUNSET &&
+            newrange->starttime > first->msr->starttime)
+          seg->starttime = newrange->starttime;
         /* Otherwise use the record start time */
         else
-          seg->starttime = first->starttime;
+          seg->starttime = first->msr->starttime;
       }
 
       /* Set a new MS3TraceSeg end time */
       if (last)
       {
+        newrange = (TimeRange *)last->prvtptr;
+
         /* Use the new boundary end time if set and sane */
-        if (last->newend != NSTUNSET && last->newend < last->endtime)
-          seg->endtime = last->newend;
+        if (newrange && newrange->endtime != NSTUNSET &&
+            newrange->endtime < last->endtime)
+          seg->endtime = newrange->endtime;
         /* Otherwise use the record end time */
         else
           seg->endtime = last->endtime;
@@ -1927,8 +1595,6 @@ reconcile_tracetimes (MS3TraceList *mstl)
 } /* End of reconcile_tracetimes() */
 
 /***************************************************************************
- * printmodsummary():
- *
  * Print a summary of modifications to stdout.  If 'nomods' is true
  * include files that were not modified.
  ***************************************************************************/
@@ -1959,28 +1625,26 @@ printmodsummary (int8_t nomods)
 } /* End of printmodsummary() */
 
 /***************************************************************************
- * printtracemap():
- *
- * Print record map for each MS3TraceSeg to stdout.
+ * Print record list for each MS3TraceSeg to stdout.
  ***************************************************************************/
 static void
-printtracemap (MS3TraceList *mstl)
+printtracelist (MS3TraceList *mstl, uint8_t details)
 {
   MS3TraceID *id = NULL;
   MS3TraceSeg *seg = NULL;
-  char stime[30] = {0};
-  char etime[30] = {0};
+  MS3RecordPtr *recptr = NULL;
+  TimeRange *newrange = NULL;
+  char stime[32] = {0};
+  char etime[32] = {0};
   int segcnt = 0;
 
   if (!mstl)
     return;
 
-  id = mstl->traces.next[0];
-
   /* Print out the appropriate header */
-  ms_log (0, "\nTrace Map:\n");
   ms_log (0, "   Source              Start sample             End sample        Hz   Samples\n");
 
+  id = mstl->traces.next[0];
   while (id)
   {
     seg = id->first;
@@ -1998,13 +1662,41 @@ printtracemap (MS3TraceList *mstl)
       ms_log (0, "%-15s %-24s %-24s %-4.4g %-" PRId64 "\n",
               id->sid, stime, etime, seg->samprate, seg->samplecnt);
 
-      if (!seg->prvtptr)
+      if (!seg->recordlist)
       {
-        ms_log (2, "No record map associated with this MS3TraceSeg.\n");
+        ms_log (2, "No record list associated with this MS3TraceSeg.\n");
       }
       else
       {
-        printrecordmap ((RecordMap *)seg->prvtptr, 0);
+        recptr = seg->recordlist->first;
+        while (recptr)
+        {
+          ms_log (0, "  Filename: %s  Offset: %" PRId64 "  RecLen: %d  PubVersion: %u\n",
+                  (recptr->filename) ? recptr->filename : "NONE", recptr->fileoffset,
+                  recptr->msr->reclen, recptr->msr->pubversion);
+
+          ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+          ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+          ms_log (0, "        Start: %s        End: %s\n", stime, etime);
+
+          if (details && recptr->prvtptr != NULL)
+          {
+            newrange = (TimeRange *)recptr->prvtptr;
+
+            if (newrange->starttime == NSTUNSET)
+              strcpy (stime, "NONE");
+            else
+              ms_nstime2timestr (newrange->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+            if (newrange->endtime == NSTUNSET)
+              strcpy (etime, "NONE");
+            else
+              ms_nstime2timestr (newrange->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+
+            ms_log (0, " Select start: %-24s Select end: %-24s\n", stime, etime);
+          }
+
+          recptr = recptr->next;
+        }
       }
 
       segcnt++;
@@ -2014,68 +1706,11 @@ printtracemap (MS3TraceList *mstl)
     id = id->next[0];
   }
 
-  ms_log (0, "End of trace map: %d trace segment(s)\n\n", segcnt);
+  ms_log (0, "End of trace list: %d trace segment(s)\n\n", segcnt);
 
-} /* End of printtracemap() */
-
-/***************************************************************************
- * printrecordmap():
- *
- * Print record map to stdout.
- ***************************************************************************/
-static void
-printrecordmap (RecordMap *recmap, int8_t details)
-{
-  char stime[30] = {0};
-  char etime[30] = {0};
-  Record *rec;
-
-  if (!recmap)
-    return;
-
-  rec = recmap->first;
-
-  ms_log (0, "Record map contains %lld records:\n", recmap->recordcnt);
-
-  while (rec)
-  {
-    ms_log (0, "  Filename: %s  Offset: %llu  RecLen: %d  PubVersion: %u\n",
-            rec->flp->infilename, (long long unsigned)rec->offset, rec->reclen, rec->pubversion);
-
-    ms_nstime2timestr (rec->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    ms_nstime2timestr (rec->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
-    ms_log (0, "        Start: %s       End: %s\n", stime, etime);
-
-    if (details)
-    {
-      if (rec->newstart == NSTUNSET)
-        strcpy (stime, "NONE");
-      else
-        ms_nstime2timestr (rec->newstart, stime, ISOMONTHDAY_Z, NANO_MICRO);
-      if (rec->newend == NSTUNSET)
-        strcpy (etime, "NONE");
-      else
-        ms_nstime2timestr (rec->newend, etime, ISOMONTHDAY_Z, NANO_MICRO);
-      ms_log (0, "  Start bound: %-24s  End bound: %-24s\n", stime, etime);
-
-      if (rec->selectstart == NSTUNSET)
-        strcpy (stime, "NONE");
-      else
-        ms_nstime2timestr (rec->selectstart, stime, ISOMONTHDAY_Z, NANO_MICRO);
-      if (rec->selectend == NSTUNSET)
-        strcpy (etime, "NONE");
-      else
-        ms_nstime2timestr (rec->selectend, etime, ISOMONTHDAY_Z, NANO_MICRO);
-      ms_log (0, " Select start: %-24s Select end: %-24s\n", stime, etime);
-    }
-
-    rec = rec->next;
-  }
-} /* End of printrecordmap() */
+} /* End of printtracelist() */
 
 /***************************************************************************
- * printwritten():
- *
  * Print summary of output records.
  ***************************************************************************/
 static void
@@ -2083,8 +1718,8 @@ printwritten (MS3TraceList *mstl)
 {
   MS3TraceID *id = NULL;
   MS3TraceSeg *seg = NULL;
-  char stime[30] = {0};
-  char etime[30] = {0};
+  char stime[32] = {0};
+  char etime[32] = {0};
   FILE *ofp;
 
   if (!mstl)
@@ -2138,79 +1773,7 @@ printwritten (MS3TraceList *mstl)
 } /* End of printwritten() */
 
 /***************************************************************************
- * findselectlimits():
- *
- * Determine selection limits for the given record based on all
- * matching selection entries.
- *
- * Return 0 on success and -1 on error.
- ***************************************************************************/
-static int
-findselectlimits (const MS3Selections *select, const char *sid, nstime_t starttime,
-                  nstime_t endtime, Record *rec)
-{
-  const MS3SelectTime *selecttime = NULL;
-  char timestring[100];
-
-  if (!rec || !sid || !select)
-    return -1;
-
-  while ((select = ms3_matchselect (select, sid, starttime, endtime, 0, &selecttime)))
-  {
-    while (selecttime)
-    {
-      /* Continue if selection edge time does not intersect with record coverage */
-      if ((starttime < selecttime->starttime && !(starttime <= selecttime->starttime && endtime >= selecttime->starttime)))
-      {
-        selecttime = selecttime->next;
-        continue;
-      }
-      else if ((endtime > selecttime->endtime && !(starttime <= selecttime->endtime && endtime >= selecttime->endtime)))
-      {
-        selecttime = selecttime->next;
-        continue;
-      }
-
-      /* Check that the selection intersects previous selection range if set,
-       * otherwise the combined selection is not possible. */
-      if (rec->selectstart != NSTUNSET && rec->selectend != NSTUNSET &&
-          !(rec->selectstart <= selecttime->endtime && rec->selectend >= selecttime->starttime))
-      {
-        ms_nstime2timestr (starttime, timestring, ISOMONTHDAY_Z, NANO_MICRO);
-        ms_log (1, "Warning: impossible combination of selections for record (%s, %s), not pruning.\n",
-                sid, timestring);
-        rec->selectstart = NSTUNSET;
-        rec->selectend = NSTUNSET;
-        return 0;
-      }
-
-      if (rec->selectstart == NSTUNSET || rec->selectstart > selecttime->starttime)
-      {
-        rec->selectstart = selecttime->starttime;
-      }
-
-      if (rec->selectend == NSTUNSET || rec->selectend < selecttime->endtime)
-      {
-        rec->selectend = selecttime->endtime;
-      }
-
-      /* Shortcut if the entire record is already selected */
-      if (rec->starttime >= rec->selectstart && rec->endtime <= rec->selectend)
-        return 0;
-
-      selecttime = selecttime->next;
-    }
-
-    select = select->next;
-  }
-
-  return 0;
-} /* End of findselectlimits() */
-
-/***************************************************************************
- * sortrecmap():
- *
- * Sort a RecordMap so that records are in time order using a
+ * Sort a record list so that records are in time order using a
  * mergesort algorithm.
  *
  * The mergesort implementation was inspired by the listsort function
@@ -2219,19 +1782,20 @@ findselectlimits (const MS3Selections *select, const char *sid, nstime_t startti
  * Return 0 on success and -1 on error.
  ***************************************************************************/
 static int
-sortrecmap (RecordMap *recmap)
+sortrecordlist (MS3RecordList **ppreclist)
 {
-  Record *p, *q, *e, *top, *tail;
+  MS3RecordPtr *p, *q, *e, *top, *tail;
   int nmerges;
   int insize, psize, qsize, i;
 
-  if (!recmap)
+  if (!ppreclist)
     return -1;
 
-  if (!recmap->first || !recmap->last) /* Done if empty */
+  /* Done if no records in list */
+  if (!*ppreclist || (*ppreclist)->recordcnt == 0)
     return 0;
 
-  top = recmap->first;
+  top = (*ppreclist)->first;
   insize = 1;
 
   for (;;)
@@ -2307,8 +1871,8 @@ sortrecmap (RecordMap *recmap)
     /* If we have done only one merge, we're finished. */
     if (nmerges <= 1) /* allow for nmerges==0, the empty list case */
     {
-      recmap->first = top;
-      recmap->last = tail;
+      (*ppreclist)->first = top;
+      (*ppreclist)->last = tail;
 
       return 0;
     }
@@ -2316,30 +1880,33 @@ sortrecmap (RecordMap *recmap)
     /* Otherwise repeat, merging lists twice the size */
     insize *= 2;
   }
-} /* End of sortrecmap() */
+} /* End of sortrecordlist() */
 
 /***************************************************************************
- * recordcmp():
- *
  * Compare the start times of each Record for the purposes of sorting
- * a RecordMap.
+ * a record list.
  *
  * Return 1 if rec1 is "greater" than rec2, otherwise return 0.
  ***************************************************************************/
 static int
-recordcmp (Record *rec1, Record *rec2)
+recordcmp (MS3RecordPtr *rec1, MS3RecordPtr *rec2)
 {
-  nstime_t *start1;
-  nstime_t *start2;
+  TimeRange *newrange1;
+  TimeRange *newrange2;
+  nstime_t start1;
+  nstime_t start2;
 
   if (!rec1 || !rec2)
     return -1;
 
   /* Determine effective start times */
-  start1 = (rec1->newstart != NSTUNSET) ? &(rec1->newstart) : &(rec1->starttime);
-  start2 = (rec2->newstart != NSTUNSET) ? &(rec2->newstart) : &(rec2->starttime);
+  newrange1 = (TimeRange *)rec1->prvtptr;
+  start1 = (newrange1 && newrange1->starttime != NSTUNSET) ? newrange1->starttime : rec1->msr->starttime;
 
-  if (*start1 > *start2)
+  newrange2 = (TimeRange *)rec2->prvtptr;
+  start2 = (newrange2 && newrange2->starttime != NSTUNSET) ? newrange2->starttime : rec2->msr->starttime;
+
+  if (start1 > start2)
   {
     return 1;
   }
@@ -2348,7 +1915,6 @@ recordcmp (Record *rec1, Record *rec2)
 } /* End of recordcmp() */
 
 /***************************************************************************
- * processparam():
  * Process the command line parameters.
  *
  * Returns 0 on success, and -1 on failure
@@ -2356,10 +1922,12 @@ recordcmp (Record *rec1, Record *rec2)
 static int
 processparam (int argcount, char **argvec)
 {
-  int optind;
+  nstime_t timestart = NSTUNSET;
+  nstime_t timeend = NSTUNSET;
+  char matchpattern[100] = {0};
   char *selectfile = NULL;
-  char *matchpattern = NULL;
   char *tptr;
+  int optind;
 
   /* Process all command line arguments */
   for (optind = 1; optind < argcount; optind++)
@@ -2407,29 +1975,34 @@ processparam (int argcount, char **argvec)
     }
     else if (strcmp (argvec[optind], "-ts") == 0)
     {
-      starttime = ms_timestr2nstime (getoptval (argcount, argvec, optind++));
-      if (starttime == NSTERROR)
+      timestart = ms_timestr2nstime (getoptval (argcount, argvec, optind++));
+      if (timestart == NSTERROR)
         return -1;
     }
     else if (strcmp (argvec[optind], "-te") == 0)
     {
-      endtime = ms_timestr2nstime (getoptval (argcount, argvec, optind++));
-      if (endtime == NSTERROR)
+      timeend = ms_timestr2nstime (getoptval (argcount, argvec, optind++));
+      if (timeend == NSTERROR)
         return -1;
     }
     else if (strcmp (argvec[optind], "-M") == 0)
     {
-      matchpattern = strdup (getoptval (argcount, argvec, optind++));
+      /* Accept value if it is valid globbbing characters an FDSN SourceID */
+      tptr = getoptval (argcount, argvec, optind++);
+      if (strspn (tptr, "-[]*?:_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrtsuvwxyz0123456789") == strlen (tptr))
+      {
+        strncpy (matchpattern, tptr, sizeof (matchpattern) - 1);
+      }
+      else
+      {
+        ms_log (2, "Invalid globbing pattern: %s\n", tptr);
+        ms_log (2, "Regular expressions are no longer supported, see the -m option\n");
+        return -1;
+      }
     }
     else if (strcmp (argvec[optind], "-m") == 0)
     {
-      tptr = getoptval (argcount, argvec, optind++);
-
-      if (ms3_addselect (&selections, tptr, NSTUNSET, NSTUNSET, 0) < 0)
-      {
-        ms_log (2, "Unable to add selection: '%s'\n", tptr);
-        return -1;
-      }
+      strncpy (matchpattern, tptr, sizeof (matchpattern) - 1);
     }
     else if (strcmp (argvec[optind], "-o") == 0)
     {
@@ -2458,18 +2031,6 @@ processparam (int argcount, char **argvec)
     {
       prunedata = 'e';
     }
-    else if (strcmp (argvec[optind], "-Sd") == 0)
-    {
-      splitboundary = 'd';
-    }
-    else if (strcmp (argvec[optind], "-Sh") == 0)
-    {
-      splitboundary = 'h';
-    }
-    else if (strcmp (argvec[optind], "-Sm") == 0)
-    {
-      splitboundary = 'm';
-    }
     else if (strcmp (argvec[optind], "-rls") == 0)
     {
       splitreclen = 1;
@@ -2485,10 +2046,6 @@ processparam (int argcount, char **argvec)
         ms_log (2, "Invalid data indicator: '%c'\n", restampqind);
         exit (1);
       }
-    }
-    else if (strcmp (argvec[optind], "-sum") == 0)
-    {
-      basicsum = 1;
     }
     else if (strcmp (argvec[optind], "-mod") == 0)
     {
@@ -2597,40 +2154,30 @@ processparam (int argcount, char **argvec)
     }
   }
 
-  /* Expand match pattern from a file if prefixed by '@' */
-  if (matchpattern)
+  /* Combine SourceID match pattern, time start and end into a selection entry */
+  if (matchpattern[0] || timestart != NSTUNSET || timeend != NSTUNSET)
   {
-    if (*matchpattern == '@')
+    size_t mplength = strlen (matchpattern);
+
+    /* Add wildcards to match pattern for logical "contains" */
+    if (matchpattern[0] && mplength < (sizeof (matchpattern) - 3))
     {
-      tptr = strdup (matchpattern + 1); /* Skip the @ sign */
-      free (matchpattern);
-      matchpattern = NULL;
-
-      if (readregexfile (tptr, &matchpattern) <= 0)
-      {
-        ms_log (2, "Cannot read match pattern regex file\n");
-        exit (1);
-      }
-
-      free (tptr);
+      memmove (matchpattern + 1, matchpattern, mplength);
+      matchpattern[0] = '*';
+      matchpattern[mplength + 1] = '*';
+      matchpattern[mplength + 2] = '\0';
     }
-  }
-
-  /* Compile match pattern */
-  if (matchpattern)
-  {
-    if (!(match = (regex_t *)malloc (sizeof (regex_t))))
+    else if (matchpattern[0] == 0)
     {
-      ms_log (2, "Cannot allocate memory for match expression\n");
-      exit (1);
+      matchpattern[0] = '*';
+      matchpattern[1] = '\0';
     }
 
-    if (regcomp (match, matchpattern, REG_EXTENDED) != 0)
+    if (ms3_addselect (&selections, matchpattern, timestart, timeend, 0))
     {
-      ms_log (2, "Cannot compile match regex: '%s'\n", matchpattern);
+      ms_log (2, "Unable to add selection: '%s'\n", tptr);
+      return -1;
     }
-
-    free (matchpattern);
   }
 
   /* Report the program version */
@@ -2641,7 +2188,6 @@ processparam (int argcount, char **argvec)
 } /* End of processparam() */
 
 /***************************************************************************
- * getoptval:
  * Return the value to a command line option; checking that the value is
  * itself not an option (starting with '-') and is not past the end of
  * the argument list.
@@ -2692,8 +2238,6 @@ getoptval (int argcount, char **argvec, int argopt)
 } /* End of getoptval() */
 
 /***************************************************************************
- * setofilelimit:
- *
  * Check the current open file limit and if it is not >= 'limit' try
  * to increase it to 'limit'.
  *
@@ -2733,8 +2277,6 @@ setofilelimit (int limit)
 } /* End of setofilelimit() */
 
 /***************************************************************************
- * addfile:
- *
  * Add file to end of the specified file list.
  *
  * Check for and parse start and end byte offsets (a read range)
@@ -2804,8 +2346,6 @@ addfile (char *filename)
 } /* End of addfile() */
 
 /***************************************************************************
- * addlistfile:
- *
  * Add files listed in the specified file to the global input file list.
  *
  * Returns count of files added on success and -1 on error.
@@ -2857,7 +2397,6 @@ addlistfile (char *filename)
 } /* End of addlistfile() */
 
 /***************************************************************************
- * addarchive:
  * Add entry to the data stream archive chain.  'layout' if defined
  * will be appended to 'path'.
  *
@@ -2909,106 +2448,6 @@ addarchive (const char *path, const char *layout)
 } /* End of addarchive() */
 
 /***************************************************************************
- * readregexfile:
- *
- * Read a list of regular expressions from a file and combine them
- * into a single, compound expression which is returned in *pppattern.
- * The return buffer is reallocated as need to hold the growing
- * pattern.  When called *pppattern should not point to any associated
- * memory.
- *
- * Returns the number of regexes parsed from the file or -1 on error.
- ***************************************************************************/
-static int
-readregexfile (char *regexfile, char **pppattern)
-{
-  FILE *fp;
-  char line[1024];
-  char linepattern[1024];
-  int regexcnt = 0;
-  int lengthbase;
-  int lengthadd;
-
-  if (!regexfile)
-  {
-    ms_log (2, "readregexfile: regex file not supplied\n");
-    return -1;
-  }
-
-  if (!pppattern)
-  {
-    ms_log (2, "readregexfile: pattern string buffer not supplied\n");
-    return -1;
-  }
-
-  /* Open the regex list file */
-  if ((fp = fopen (regexfile, "rb")) == NULL)
-  {
-    ms_log (2, "Cannot open regex list file %s: %s\n",
-            regexfile, strerror (errno));
-    return -1;
-  }
-
-  if (verbose)
-    ms_log (1, "Reading regex list from %s\n", regexfile);
-
-  *pppattern = NULL;
-
-  while ((fgets (line, sizeof (line), fp)) != NULL)
-  {
-    /* Trim spaces and skip if empty lines */
-    if (sscanf (line, " %s ", linepattern) != 1)
-      continue;
-
-    /* Skip comment lines */
-    if (*linepattern == '#')
-      continue;
-
-    regexcnt++;
-
-    /* Add regex to compound regex */
-    if (*pppattern)
-    {
-      lengthbase = strlen (*pppattern);
-      lengthadd = strlen (linepattern) + 4; /* Length of addition plus 4 characters: |()\0 */
-
-      *pppattern = realloc (*pppattern, lengthbase + lengthadd);
-
-      if (*pppattern)
-      {
-        snprintf ((*pppattern) + lengthbase, lengthadd, "|(%s)", linepattern);
-      }
-      else
-      {
-        ms_log (2, "Cannot allocate memory for regex string\n");
-        return -1;
-      }
-    }
-    else
-    {
-      lengthadd = strlen (linepattern) + 3; /* Length of addition plus 3 characters: ()\0 */
-
-      *pppattern = malloc (lengthadd);
-
-      if (*pppattern)
-      {
-        snprintf (*pppattern, lengthadd, "(%s)", linepattern);
-      }
-      else
-      {
-        ms_log (2, "Cannot allocate memory for regex string\n");
-        return -1;
-      }
-    }
-  }
-
-  fclose (fp);
-
-  return regexcnt;
-} /* End of readregexfile() */
-
-/***************************************************************************
- * usage():
  * Print the usage message.
  ***************************************************************************/
 static void
@@ -3032,8 +2471,8 @@ usage (int level)
            " -ts time     Limit to records that contain or start after time\n"
            " -te time     Limit to records that contain or end before time\n"
            "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
-           " -M match     Limit to records matching the specified regular expression\n"
-           "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
+           " -m match     Limit to records containing the specified pattern\n"
+           "                Patterns are applied to: 'FDSN:NET_STA_LOC_BAND_SOURCE_SS'\n"
            "\n"
            " ## Output options ##\n"
            " -o file      Specify a single output file, use +o file to append\n"
@@ -3046,7 +2485,6 @@ usage (int level)
            " -Q DRQM      Re-stamp output data records with quality code: D, R, Q or M\n"
            "\n"
            " ## Diagnostic output ##\n"
-           " -sum         Print a basic summary after reading all input files\n"
            " -mod         Print summary of file modifications after processing\n"
            " -out file    Write a summary of output records to specified file\n"
            " -outprefix X Include prefix on summary output lines for identification\n"
