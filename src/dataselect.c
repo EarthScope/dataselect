@@ -161,7 +161,7 @@ static void printmodsummary (flag nomods);
 static void printtracelist (MS3TraceList *mstl, uint8_t details);
 static void printwritten (MS3TraceList *mstl);
 
-static int sortrecordlist (MS3RecordList **ppreclist);
+static int sortrecordlist (MS3RecordList *reclist);
 static int recordcmp (MS3RecordPtr *rec1, MS3RecordPtr *rec2);
 
 static int processparam (int argcount, char **argvec);
@@ -201,7 +201,7 @@ static char *outputfile = NULL;  /* Single output file */
 static int8_t outputmode = 0;    /* Mode for single output file: 0=overwrite, 1=append */
 static Archive *archiveroot = 0; /* Output file structures */
 
-static char recordbuf[16384]; /* Global record buffer */
+static char recordbuf[MAXRECLEN]; /* Global record buffer */
 
 static Filelink *filelist = NULL;        /* List of input files */
 static Filelink *filelisttail = NULL;    /* Tail of list of input files */
@@ -474,10 +474,11 @@ writetraces (MS3TraceList *mstl)
   MS3TraceID *id;
   MS3TraceID *groupid;
   MS3TraceSeg *seg;
-  MS3TraceSeg *groupseg;
   MS3RecordPtr *recptr;
   MS3RecordPtr *recptrprev;
   MS3RecordPtr *recptrnext;
+
+  MS3RecordList *groupreclist;
 
   TimeRange *newrange;
   Filelink *flpsearch;
@@ -516,27 +517,40 @@ writetraces (MS3TraceList *mstl)
     }
   }
 
-  /* Re-link records into write lists, from per-segment lists to per ID lists.
+  /* Re-link records into write lists, from per-segment lists to per-ID lists.
    * This allows (later) sorting of data records as logical groups regardless
    * from which segment the record was originally associated. */
-  if (prunedata)
+  id = mstl->traces.next[0];
+  groupid = id;
+  while (id)
   {
-    id = mstl->traces.next[0];
-    groupid = NULL;
-
-    while (id)
+    /* Check if new group ID is needed */
+    if (groupid != id && strcmp (groupid->sid, id->sid) != 0)
     {
-      /* Check if a new group ID is needed */
-      if (groupid == NULL || strcmp (id->sid, groupid->sid) != 0)
+      groupid = id;
+    }
+
+    if (groupid->prvtptr == NULL)
+    {
+      /* Allocate MS3RecordList for ID-level list */
+      if ((id->prvtptr = (MS3RecordList *)malloc (sizeof (MS3RecordList))) == NULL)
       {
-        groupid = id;
-        groupseg = id->first;
+        ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+        return 1;
       }
 
-      seg = id->first;
-      while (seg)
+      groupreclist = (MS3RecordList *)id->prvtptr;
+      groupreclist->first = NULL;
+      groupreclist->last = NULL;
+      groupreclist->recordcnt = 0;
+    }
+
+    seg = id->first;
+    while (seg)
+    {
+      /* Remove non-contributing records from list denoted with 0 reclen */
+      if (prunedata)
       {
-        /* Remove non-contributing records from list denoted with 0 reclen */
         recptr = seg->recordlist->first;
         recptrprev = NULL;
         while (recptr)
@@ -550,6 +564,7 @@ writetraces (MS3TraceList *mstl)
             else
               seg->recordlist->first = recptr->next;
 
+            msr3_free (&recptr->msr);
             free (recptr);
             seg->recordlist->recordcnt--;
           }
@@ -560,24 +575,30 @@ writetraces (MS3TraceList *mstl)
 
           recptr = recptrnext;
         }
-
-        /* Append record list to group segment list */
-        if (seg != groupseg)
-        {
-          groupseg->recordlist->last->next = seg->recordlist->first;
-          groupseg->recordlist->last = seg->recordlist->last;
-          groupseg->recordlist->recordcnt += seg->recordlist->recordcnt;
-
-          seg->recordlist->first = NULL;
-          seg->recordlist->last = NULL;
-          seg->recordlist->recordcnt = 0;
-        }
-
-        seg = seg->next;
       }
 
-      id = id->next[0];
+      /* Append record list to ID-level list */
+      if (groupreclist->first == NULL)
+      {
+        groupreclist->first = seg->recordlist->first;
+        groupreclist->last = seg->recordlist->last;
+        groupreclist->recordcnt = seg->recordlist->recordcnt;
+      }
+      else
+      {
+        groupreclist->last->next = seg->recordlist->first;
+        groupreclist->last = seg->recordlist->last;
+        groupreclist->recordcnt += seg->recordlist->recordcnt;
+      }
+
+      seg->recordlist->first = NULL;
+      seg->recordlist->last = NULL;
+      seg->recordlist->recordcnt = 0;
+
+      seg = seg->next;
     }
+
+    id = id->next[0];
   } /* Done combining pruned records into SourceID groups */
 
   /* Loop through MS3TraceList and write records */
@@ -592,26 +613,21 @@ writetraces (MS3TraceList *mstl)
     if (splitreclen)
       suffix = 1;
 
-    seg = id->first;
-    while (seg)
-    {
-      if (seg->recordlist->recordcnt == 0)
-      {
-        seg = seg->next;
-        continue;
-      }
+    groupreclist = (MS3RecordList *)id->prvtptr;
 
+    if (groupreclist && groupreclist->recordcnt > 0)
+    {
       /* Sort record list if overlaps have been pruned, if the data has not been
        * pruned it is already in time order. */
       if (prunedata == 'r' || prunedata == 's')
       {
-        sortrecordlist (&(seg->recordlist));
+        sortrecordlist (groupreclist);
       }
 
       /* Write each record.
        * After records are read from the input files, perform any
        * pre-identified pruning before writing data. */
-      recptr = seg->recordlist->first;
+      recptr = groupreclist->first;
       while (recptr && !errflag)
       {
         if (recptr->msr->reclen > sizeof (recordbuf))
@@ -688,8 +704,7 @@ writetraces (MS3TraceList *mstl)
         writerdata.flp = flp;
 
         /* Write out the data, either the record needs to be trimmed (and will be
-         * send to the record writer) or we send it directly to the record writer.
-         */
+         * send to the record writer) or we send it directly to the record writer. */
         newrange = (TimeRange *)(recptr->prvtptr);
 
         /* Trim data from the record if new start or end times are specifed */
@@ -729,13 +744,11 @@ writetraces (MS3TraceList *mstl)
         }
 
         recptr = recptr->next;
-      } /* Done looping through records for this MS3TraceSeg */
-
-      seg = seg->next;
-    } /* Done looping through MS3TraceSegs */
+      } /* Done looping through record list */
+    }
 
     id = id->next[0];
-  } /* Done looping through MS3TraceIDs the MS3TraceList */
+  } /* Done looping through MS3TraceIDs */
 
   /* Close all open input & output files and remove backups if requested */
   flp = filelist;
@@ -1162,6 +1175,8 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
   if (!mstl || !targetid || !targetseg || !ppcoverage)
     return -1;
 
+  *ppcoverage = NULL;
+
   /* Determine sample period in high precision time ticks */
   nsdelta = (targetseg->samprate) ? (nstime_t)(NSTMODULUS / targetseg->samprate) : 0;
 
@@ -1182,7 +1197,6 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
       }
     }
 
-    prevcoverage = NULL;
     seg = id->first;
     while (seg)
     {
@@ -1215,12 +1229,12 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
       }
 
       /* Check for duplicate or overlap SourceIDs last coverage entry */
-      if (prevcoverage)
+      if (coverage)
       {
         /* At this point the SourceID and rate are the same, check if the
          * segment is completly contained by the previous coverage entry. */
-        if (seg->starttime >= prevcoverage->starttime &&
-            seg->endtime <= prevcoverage->endtime)
+        if (seg->starttime >= coverage->starttime &&
+            seg->endtime <= coverage->endtime)
         {
           seg = seg->next;
           continue;
@@ -1286,17 +1300,23 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
             {
               newsegment = 0;
 
+              prevcoverage = coverage;
+
               if ((coverage = (Coverage *)malloc (sizeof (Coverage))) == NULL)
               {
                 ms_log (2, "Cannot allocate memory for coverage, bah humbug.\n");
                 return -1;
               }
 
-              prevcoverage = coverage;
+              if (*ppcoverage == NULL)
+                *ppcoverage = coverage;
+              else
+                prevcoverage->next = coverage;
+
               coverage->pubversion = id->pubversion;
               coverage->samprate = seg->samprate;
               coverage->starttime = effstarttime;
-              *ppcoverage = coverage;
+              coverage->next = NULL;
             }
 
             if (coverage)
@@ -1781,21 +1801,22 @@ printwritten (MS3TraceList *mstl)
  *
  * Return 0 on success and -1 on error.
  ***************************************************************************/
+//TODO doesn't need to be point-to-point, can be done with a list
 static int
-sortrecordlist (MS3RecordList **ppreclist)
+sortrecordlist (MS3RecordList *reclist)
 {
   MS3RecordPtr *p, *q, *e, *top, *tail;
   int nmerges;
   int insize, psize, qsize, i;
 
-  if (!ppreclist)
+  if (reclist == NULL)
     return -1;
 
   /* Done if no records in list */
-  if (!*ppreclist || (*ppreclist)->recordcnt == 0)
+  if (reclist->recordcnt == 0)
     return 0;
 
-  top = (*ppreclist)->first;
+  top = reclist->first;
   insize = 1;
 
   for (;;)
@@ -1871,8 +1892,8 @@ sortrecordlist (MS3RecordList **ppreclist)
     /* If we have done only one merge, we're finished. */
     if (nmerges <= 1) /* allow for nmerges==0, the empty list case */
     {
-      (*ppreclist)->first = top;
-      (*ppreclist)->last = tail;
+      reclist->first = top;
+      reclist->last = tail;
 
       return 0;
     }
