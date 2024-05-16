@@ -12,7 +12,8 @@
 	- Remove capability to replace input files and the -rep and -nb options
 	- Remove -R (source ID rejection) option
 	- Remove -sum (basic summary) option
-	- Remove -S? (split boundary) option
+	- Remove -S[dhm] (split boundary) option
+	- Remove -rls (split on record length change) option
 
 2023.054: 3.24
 	- Fix heap corruption fault due to free'ing just-allocated archive

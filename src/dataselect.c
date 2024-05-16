@@ -3,8 +3,7 @@
  *
  * Opens one or more user specified files, applys filtering criteria
  * and outputs any matched data while time-ordering the data and
- * optionally pruning any overlap (at record or sample level) and
- * splitting records on day, hour or minute boundaries.
+ * optionally pruning any overlap (at record or sample level).
  *
  * In general critical error messages are prefixed with "ERROR:" and
  * the return code will be 1.  On successfull operation the return
@@ -178,7 +177,6 @@ static int8_t bestversion = 1;    /* Use publication version to retain the "best
 static int8_t prunedata = 0;      /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
 static char restampqind = 0;      /* Re-stamp data record/quality indicator */
 static int8_t modsummary = 0;     /* Print modification summary after all processing */
-static char splitreclen = 0;      /* Split output files on record length changes */
 static double timetol = -1.0;     /* Time tolerance for continuous traces */
 static double sampratetol = -1.0; /* Sample rate tolerance for continuous traces */
 static MS3Tolerance tolerance = {.time = NULL, .samprate = NULL};
@@ -468,7 +466,6 @@ writetraces (MS3TraceList *mstl)
   char *ab = "ab";
   char *mode;
   int8_t errflag = 0;
-  long suffix = 0;
   int rv;
 
   MS3TraceID *id;
@@ -488,7 +485,6 @@ writetraces (MS3TraceList *mstl)
   WriterData writerdata;
 
   writerdata.errflagp = &errflag;
-  writerdata.suffixp = &suffix;
 
   if (!mstl)
     return 1;
@@ -557,12 +553,16 @@ writetraces (MS3TraceList *mstl)
         {
           recptrnext = recptr->next;
 
+          /* Re-link list to remove recptr, maintaining first and last */
           if (recptr->msr->reclen == 0)
           {
-            if (recptrprev)
-              recptrprev->next = recptr->next;
-            else
+            if (recptr == seg->recordlist->first)
               seg->recordlist->first = recptr->next;
+            else if (recptrprev)
+              recptrprev->next = recptr->next;
+
+            if (recptr == seg->recordlist->last)
+              seg->recordlist->last = recptrprev;
 
             msr3_free (&recptr->msr);
             free (recptr);
@@ -578,17 +578,20 @@ writetraces (MS3TraceList *mstl)
       }
 
       /* Append record list to ID-level list */
-      if (groupreclist->first == NULL)
+      if (seg->recordlist->first != NULL)
       {
-        groupreclist->first = seg->recordlist->first;
-        groupreclist->last = seg->recordlist->last;
-        groupreclist->recordcnt = seg->recordlist->recordcnt;
-      }
-      else
-      {
-        groupreclist->last->next = seg->recordlist->first;
-        groupreclist->last = seg->recordlist->last;
-        groupreclist->recordcnt += seg->recordlist->recordcnt;
+        if (groupreclist->first == NULL)
+        {
+          groupreclist->first = seg->recordlist->first;
+          groupreclist->last = seg->recordlist->last;
+          groupreclist->recordcnt = seg->recordlist->recordcnt;
+        }
+        else
+        {
+          groupreclist->last->next = seg->recordlist->first;
+          groupreclist->last = seg->recordlist->last;
+          groupreclist->recordcnt += seg->recordlist->recordcnt;
+        }
       }
 
       seg->recordlist->first = NULL;
@@ -608,10 +611,6 @@ writetraces (MS3TraceList *mstl)
     /* Reset error flag for continuation errors */
     if (errflag == 2)
       errflag = 0;
-
-    /* Set suffix if splitting on record length changes */
-    if (splitreclen)
-      suffix = 1;
 
     groupreclist = (MS3RecordList *)id->prvtptr;
 
@@ -736,12 +735,6 @@ writetraces (MS3TraceList *mstl)
 
         totalrecsout++;
         totalbytesout += recptr->msr->reclen;
-
-        /* Increment suffix if splitting and record length changes */
-        if (splitreclen && recptr->next && recptr->next->msr->reclen != recptr->msr->reclen)
-        {
-          suffix++;
-        }
 
         recptr = recptr->next;
       } /* Done looping through record list */
@@ -1025,6 +1018,7 @@ writerecord (char *record, int reclen, void *handlerdata)
       arch = archiveroot;
       while (arch)
       {
+        //TODO remove suffix usage
         if (ds_streamproc (&arch->datastream,
                            writerdata->recptr->msr,
                            *writerdata->suffixp,
@@ -2052,10 +2046,6 @@ processparam (int argcount, char **argvec)
     {
       prunedata = 'e';
     }
-    else if (strcmp (argvec[optind], "-rls") == 0)
-    {
-      splitreclen = 1;
-    }
     else if (strcmp (argvec[optind], "-Q") == 0)
     {
       tptr = getoptval (argcount, argvec, optind++);
@@ -2501,8 +2491,6 @@ usage (int level)
            " -Pr          Prune data at the record level using 'best' version priority\n"
            " -Ps          Prune data at the sample level using 'best' version priority\n"
            " -Pe          Prune traces at user specified edges only, leave overlaps\n"
-           " -S[dhm]      Split records on day, hour or minute boundaries\n"
-           " -rls         Add suffixes to output files to split on record length changes\n"
            " -Q DRQM      Re-stamp output data records with quality code: D, R, Q or M\n"
            "\n"
            " ## Diagnostic output ##\n"
