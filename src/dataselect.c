@@ -99,13 +99,6 @@ typedef struct Filelink_s
   char *infilename_raw;   /* Input file name with potential annotation (byte range) */
   char *infilename;       /* Input file name without annotation (byte range) */
   FILE *infp;             /* Input file descriptor */
-  uint64_t reordercount;  /* Number of records re-ordered */
-  uint64_t recsplitcount; /* Number of records split */
-  uint64_t recrmcount;    /* Number of records removed */
-  uint64_t rectrimcount;  /* Number of records trimmed */
-  nstime_t earliest;      /* Earliest data time in this file selection */
-  nstime_t latest;        /* Latest data time in this file selection */
-  uint64_t byteswritten;  /* Number of bytes written out */
   struct Filelink_s *next;
 } Filelink;
 
@@ -156,7 +149,6 @@ static int trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid,
                       Coverage *coverage);
 static int reconcile_tracetimes (MS3TraceList *mstl);
 
-static void printmodsummary (flag nomods);
 static void printtracelist (MS3TraceList *mstl, uint8_t details);
 static void printwritten (MS3TraceList *mstl);
 
@@ -176,7 +168,6 @@ static int8_t skipnotdata = 0;    /* Controls skipping of non-miniSEED data */
 static int8_t bestversion = 1;    /* Use publication version to retain the "best" data when pruning */
 static int8_t prunedata = 0;      /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
 static char restampqind = 0;      /* Re-stamp data record/quality indicator */
-static int8_t modsummary = 0;     /* Print modification summary after all processing */
 static double timetol = -1.0;     /* Time tolerance for continuous traces */
 static double sampratetol = -1.0; /* Sample rate tolerance for continuous traces */
 static MS3Tolerance tolerance = {.time = NULL, .samprate = NULL};
@@ -320,9 +311,6 @@ main (int argc, char **argv)
   /* Write all MS3TraceSeg associated records to output file(s) */
   if (writetraces (mstl))
     return 1;
-
-  if (modsummary)
-    printmodsummary (verbose);
 
   if (writtenfile)
   {
@@ -1492,7 +1480,6 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
          * test for special cases of:
          * a) no time coverage (single sample) and no pruning
          * b) no time coverage (single last sample) and split boundary usage */
-        //TODO remove split boundary check, it is not needed
         if (effstarttime >= (effendtime - nstimetol) &&
             !(recptr->msr->starttime == recptr->endtime &&
               recptr->msr->starttime == effstarttime &&
@@ -1608,35 +1595,6 @@ reconcile_tracetimes (MS3TraceList *mstl)
   return 0;
 } /* End of reconcile_tracetimes() */
 
-/***************************************************************************
- * Print a summary of modifications to stdout.  If 'nomods' is true
- * include files that were not modified.
- ***************************************************************************/
-static void
-printmodsummary (int8_t nomods)
-{
-  Filelink *flp;
-
-  ms_log (0, "File modification summary:\n");
-
-  flp = filelist;
-
-  while (flp)
-  {
-    if (!nomods && !flp->reordercount && !flp->recrmcount && !flp->rectrimcount)
-    {
-      flp = flp->next;
-      continue;
-    }
-
-    ms_log (0, " Records split: %" PRId64 " trimmed: %" PRId64 " removed: %" PRId64 ", Segments reordered: %" PRId64 " :: %s\n",
-            flp->recsplitcount, flp->rectrimcount, flp->recrmcount, flp->reordercount, flp->infilename);
-
-    flp = flp->next;
-  }
-
-  return;
-} /* End of printmodsummary() */
 
 /***************************************************************************
  * Print record list for each MS3TraceSeg to stdout.
@@ -1795,7 +1753,6 @@ printwritten (MS3TraceList *mstl)
  *
  * Return 0 on success and -1 on error.
  ***************************************************************************/
-//TODO doesn't need to be point-to-point, can be done with a list
 static int
 sortrecordlist (MS3RecordList *reclist)
 {
@@ -2057,10 +2014,6 @@ processparam (int argcount, char **argvec)
         ms_log (2, "Invalid data indicator: '%c'\n", restampqind);
         exit (1);
       }
-    }
-    else if (strcmp (argvec[optind], "-mod") == 0)
-    {
-      modsummary = 1;
     }
     else if (strcmp (argvec[optind], "-out") == 0)
     {
