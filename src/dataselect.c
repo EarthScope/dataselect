@@ -788,7 +788,7 @@ static int
 trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 {
   MS3Record *msr = NULL;
-  nstime_t nsdelta;
+  nstime_t nsperiod;
   nstime_t ostarttime;
   TimeRange *newrange;
 
@@ -891,10 +891,10 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   }
 
   /* Determine sample period in nanosecond time ticks */
-  nsdelta = (msr->samprate) ? (nstime_t)(NSTMODULUS / msr->samprate) : 0;
+  nsperiod = msr3_nsperiod(msr);
 
   /* Remove samples from the beginning of the record */
-  if (newrange->starttime != NSTUNSET && nsdelta)
+  if (newrange->starttime != NSTUNSET && nsperiod)
   {
     nstime_t newstarttime;
 
@@ -904,7 +904,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 
     while (newstarttime < newrange->starttime && trimsamples < msr->samplecnt)
     {
-      newstarttime += nsdelta;
+      newstarttime += nsperiod;
       trimsamples++;
     }
 
@@ -934,7 +934,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   }
 
   /* Remove samples from the end of the record */
-  if (newrange->endtime != NSTUNSET && nsdelta)
+  if (newrange->endtime != NSTUNSET && nsperiod)
   {
     nstime_t newendtime;
 
@@ -944,7 +944,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 
     while (newendtime > newrange->endtime && trimsamples < msr->samplecnt)
     {
-      newendtime -= nsdelta;
+      newendtime -= nsperiod;
       trimsamples++;
     }
 
@@ -1161,7 +1161,7 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
   Coverage *coverage = NULL;
   Coverage *prevcoverage = NULL;
   TimeRange *newrange;
-  nstime_t nsdelta, nstimetol;
+  nstime_t nsperiod, nstimetol;
   nstime_t effstarttime, effendtime;
   int priority;
   int newsegment;
@@ -1172,10 +1172,10 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
   *ppcoverage = NULL;
 
   /* Determine sample period in high precision time ticks */
-  nsdelta = (targetseg->samprate) ? (nstime_t)(NSTMODULUS / targetseg->samprate) : 0;
+  nsperiod = (targetseg->samprate) ? (nstime_t)(NSTMODULUS / targetseg->samprate + 0.5) : 0;
 
   /* Determine time tolerance in high precision time ticks */
-  nstimetol = (timetol == -1.0) ? (nsdelta / 2) : (nstime_t)(NSTMODULUS * timetol);
+  nstimetol = (timetol == -1.0) ? (nsperiod / 2) : (nstime_t)(NSTMODULUS * timetol);
 
   /* Loop through each MS3TraceID in the list */
   id = mstl->traces.next[0];
@@ -1287,7 +1287,7 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
 
             /* Create a new segment if a break in the time-series is detected */
             if (coverage)
-              if (llabs ((coverage->endtime + nsdelta) - effstarttime) > nstimetol)
+              if (llabs ((coverage->endtime + nsperiod) - effstarttime) > nstimetol)
                 newsegment = 1;
 
             if (newsegment)
@@ -1355,7 +1355,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
   TimeRange *newrange;
   Coverage *cov;
   nstime_t effstarttime, effendtime;
-  nstime_t nsdelta, nstimetol;
+  nstime_t nsperiod, nstimetol;
   char stime[32] = {0};
   char etime[32] = {0};
   int modcount = 0;
@@ -1364,10 +1364,10 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
     return -1;
 
   /* Determine sample period in high precision time ticks */
-  nsdelta = (targetseg->samprate) ? (nstime_t)(NSTMODULUS / targetseg->samprate) : 0;
+  nsperiod = (targetseg->samprate) ? (nstime_t)(NSTMODULUS / targetseg->samprate + 0.5) : 0;
 
   /* Determine time tolerance in high precision time ticks */
-  nstimetol = (timetol == -1.0) ? (nsdelta / 2) : (nstime_t)(NSTMODULUS * timetol);
+  nstimetol = (timetol == -1.0) ? (nsperiod / 2) : (nstime_t)(NSTMODULUS * timetol);
 
   /* Traverse the record list for the target segment and mark records
    * that overlap or intersect with the coverage */
@@ -1425,7 +1425,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
           newrange = (TimeRange *)recptr->prvtptr;
 
           /* Set new end time boundary including specified time tolerance */
-          newrange->endtime = cov->starttime - nsdelta + nstimetol;
+          newrange->endtime = cov->starttime - nsperiod + nstimetol;
 
           if (newrange->starttime != NSTUNSET && newrange->endtime < newrange->starttime)
           {
@@ -1466,7 +1466,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
           newrange = (TimeRange *)recptr->prvtptr;
 
           /* Set Record new start time boundary including specified time tolerance */
-          newrange->starttime = cov->endtime + nsdelta - nstimetol;
+          newrange->starttime = cov->endtime + nsperiod - nstimetol;
 
           if (newrange->endtime != NSTUNSET && newrange->starttime > newrange->endtime)
           {
