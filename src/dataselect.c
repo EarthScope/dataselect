@@ -77,7 +77,6 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <math.h>
-#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -87,6 +86,7 @@
 #include <time.h>
 
 #include <libmseed.h>
+#include <mseedformat.h>
 
 #include "dsarchive.h"
 
@@ -132,7 +132,6 @@ typedef struct WriterData_s
   FILE *ofp;
   MS3RecordPtr *recptr;
   Filelink *flp;
-  long *suffixp;
   int8_t *errflagp;
 } WriterData;
 
@@ -167,7 +166,7 @@ static int8_t verbose = 0;
 static int8_t skipnotdata = 0;    /* Controls skipping of non-miniSEED data */
 static int8_t bestversion = 1;    /* Use publication version to retain the "best" data when pruning */
 static int8_t prunedata = 0;      /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
-static char restampqind = 0;      /* Re-stamp data record/quality indicator */
+static uint8_t setpubver = 0;     /* Set publication version/quality indicator on output records */
 static double timetol = -1.0;     /* Time tolerance for continuous traces */
 static double sampratetol = -1.0; /* Sample rate tolerance for continuous traces */
 static MS3Tolerance tolerance = {.time = NULL, .samprate = NULL};
@@ -675,16 +674,6 @@ writetraces (MS3TraceList *mstl)
           break;
         }
 
-        /* Re-stamp quality indicator if specified */
-        // TODO fix for two versions, maybe do this in writerecord()?  To avoid parsing again
-        if (restampqind)
-        {
-          if (verbose > 3)
-            ms_log (1, "Re-stamping data quality indicator to '%c'\n", restampqind);
-
-          *(recordbuf + 6) = restampqind;
-        }
-
         /* Setup writer data */
         writerdata.ofp = ofp;
         writerdata.recptr = recptr;
@@ -988,6 +977,46 @@ writerecord (char *record, int reclen, void *handlerdata)
   if (!record || reclen <= 0 || !handlerdata)
     return;
 
+  /* Set v3 publication version or v2 data quality indicator */
+  if (setpubver)
+  {
+    if (writerdata->recptr->msr->formatversion == 2)
+    {
+      unsigned char dataquality;
+
+      if (setpubver == 1)
+        dataquality = 'R';
+      else if (setpubver == 2)
+        dataquality = 'D';
+      else if (setpubver == 3)
+        dataquality = 'Q';
+      else
+        dataquality = 'M';
+
+      if (verbose > 2)
+        ms_log (1, "Setting v2 data quality indicator to '%c'\n", setpubver);
+
+      *pMS2FSDH_DATAQUALITY (recordbuf) = dataquality;
+    }
+    else if (writerdata->recptr->msr->formatversion == 3)
+    {
+      if (verbose > 2)
+        ms_log (1, "Setting publication version to %u\n", setpubver);
+
+      *pMS3FSDH_PUBVERSION (record) = setpubver;
+
+      /* Recalculate CRC */
+      *pMS3FSDH_CRC (record) = 0;
+      uint32_t crc = ms_crc32c ((uint8_t *)record, reclen, 0);
+      *pMS3FSDH_CRC (record) = HO4u (crc, ms_bigendianhost ());
+    }
+    else
+    {
+      ms_log (2, "Cannot set publication version for format version %d\n",
+              writerdata->recptr->msr->formatversion);
+    }
+  }
+
   /* Write to a single output file if specified */
   if (writerdata->ofp)
   {
@@ -1006,10 +1035,10 @@ writerecord (char *record, int reclen, void *handlerdata)
       arch = archiveroot;
       while (arch)
       {
-        //TODO remove suffix usage
+        //TODO remove suffix, now 0
         if (ds_streamproc (&arch->datastream,
                            writerdata->recptr->msr,
-                           *writerdata->suffixp,
+                           0, //*writerdata->suffixp,
                            verbose - 1))
         {
           *writerdata->errflagp = 1;
@@ -1726,11 +1755,11 @@ printwritten (MS3TraceList *mstl)
       if (ms_nstime2timestr (seg->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO) == NULL)
         ms_log (2, "Cannot convert trace end time for %s\n", id->sid);
 
-      fprintf (ofp, "%s%s|%u|%-30s|%-30s|%lld|%lld\n",
+      fprintf (ofp, "%s%s|%u|%s|%s|%" PRId64 "|%" PRId64 "\n",
                (writtenprefix) ? writtenprefix : "",
                id->sid, id->pubversion, stime, etime,
-               (long long int)*((int64_t *)seg->prvtptr),
-               (long long int)seg->samplecnt);
+               *((int64_t *)seg->prvtptr),
+               seg->samplecnt);
 
       seg = seg->next;
     }
@@ -1896,9 +1925,11 @@ processparam (int argcount, char **argvec)
 {
   nstime_t timestart = NSTUNSET;
   nstime_t timeend = NSTUNSET;
+  unsigned long ulong;
   char matchpattern[100] = {0};
   char *selectfile = NULL;
-  char *tptr;
+  char *tptr = NULL;
+  char *endptr = NULL;
   int optind;
 
   /* Process all command line arguments */
@@ -2006,13 +2037,28 @@ processparam (int argcount, char **argvec)
     else if (strcmp (argvec[optind], "-Q") == 0)
     {
       tptr = getoptval (argcount, argvec, optind++);
-      restampqind = *tptr;
 
-      if (restampqind != 'D' && restampqind != 'R' &&
-          restampqind != 'Q' && restampqind != 'M')
+      if (tptr[0] == 'R' && tptr[1] == '\0')
+        setpubver = 1;
+      else if (tptr[0] == 'D' && tptr[1] == '\0')
+        setpubver = 2;
+      else if (tptr[0] == 'Q' && tptr[1] == '\0')
+        setpubver = 3;
+      else if (tptr[0] == 'M' && tptr[1] == '\0')
+        setpubver = 4;
+      else
       {
-        ms_log (2, "Invalid data indicator: '%c'\n", restampqind);
-        exit (1);
+        ulong = strtoul (tptr, &endptr, 10);
+
+        if (*endptr == '\0' && ulong > 0 && ulong <= UINT8_MAX)
+        {
+          setpubver = ulong;
+        }
+        else
+        {
+          ms_log (2, "Invalid publication version/quality indicator: %s\n", tptr);
+          return -1;
+        }
       }
     }
     else if (strcmp (argvec[optind], "-out") == 0)
@@ -2411,6 +2457,7 @@ addarchive (const char *path, const char *layout)
   return 0;
 } /* End of addarchive() */
 
+
 /***************************************************************************
  * Print the usage message.
  ***************************************************************************/
@@ -2447,7 +2494,6 @@ usage (int level)
            " -Q DRQM      Re-stamp output data records with quality code: D, R, Q or M\n"
            "\n"
            " ## Diagnostic output ##\n"
-           " -mod         Print summary of file modifications after processing\n"
            " -out file    Write a summary of output records to specified file\n"
            " -outprefix X Include prefix on summary output lines for identification\n"
            "\n"

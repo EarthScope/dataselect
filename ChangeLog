@@ -3,18 +3,21 @@
 	- The modification log now includes SourceIDs instead of Net,Sta,Loc,Chan.
 	- Byte range annotation on input file names now uses a "-" between start
 	and end offsets to match libmseed.  Legacy delimiter ":" also supported.
+	- Add -m option to match source ID against globbing pattern.
+	- Add -snd to skip non-miniSEED data, otherwise quit on unrecognized input.
+	- Allow -Q to accept publication versions in addition to RDQM codes.
+	- Remove the -szs (skip-zero-sample records) option.
+	- Remove the -lso (longest segment only) option.
+	- Remove the -msl (minimum segment length) option.
+	- Remove the -sb (staging buffer) option.
+	- Remove capability to replace input files and the -rep and -nb options.
+	- Remove -R (source ID rejection) option.
+	- Remove match/reject list file capability.
+	- Remove -sum (basic summary) option.
+	- Remove -S[dhm] (split boundary) option.
+	- Remove -rls (split on record length change) option.
+	- Remove -mod (modification summary) option.
 	- Remove warning about LIBMSEED_LEAPSECOND_FILE, now included in libmseed.
-	- Add -snd to skip non-miniSEED data, otherwise quit on unrecognized input
-	- Remove the -szs (skip-zero-sample records) option
-	- Remove the -lso (longest segment only) option
-	- Remove the -msl (minimum segment length) option
-	- Remove the -sb (staging buffer) option
-	- Remove capability to replace input files and the -rep and -nb options
-	- Remove -R (source ID rejection) option
-	- Remove -sum (basic summary) option
-	- Remove -S[dhm] (split boundary) option
-	- Remove -rls (split on record length change) option
-	- Remove -mod (modification summary) option
 
 2023.054: 3.24
 	- Fix heap corruption fault due to free'ing just-allocated archive
