@@ -695,6 +695,8 @@ writetraces (MS3TraceList *mstl)
           }
           if (rv == -2)
           {
+            // TODO remove the skipping of the rest of the channel?
+            // Instead should include when we cannot trim
             ms_log (2, "Cannot unpack miniSEED from byte offset %lld in %s\n",
                     recptr->fileoffset, flp->infilename);
             ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->sid);
@@ -764,7 +766,6 @@ writetraces (MS3TraceList *mstl)
 static int
 trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 {
-  MS3Record *msr = NULL;
   nstime_t nsperiod;
   nstime_t ostarttime;
   TimeRange *newrange;
@@ -809,22 +810,9 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
     return -1;
   }
 
-  /* Parse data record header without decoding samples */
-  // TODO consider using msr3_duplicate() to avoid unpacking the record twice
-  // But previously the record was modified in place by quality/version, so this would require a change
-
-  //TODO BETTER Do we need a new MSR for any reason?  Just use the existing after attaching the record buffer.
-  // Still need to do record quality/version changes somewhere, but maybe that can be done in writerecord()?
-  if ((retcode = msr3_parse (recordbuf, recptr->msr->reclen, &msr, 0, 0)))
+  if (ms_encoding_sizetype (recptr->msr->encoding, &samplesize, &sampletype))
   {
-    ms_log (2, "Cannot unpack miniSEED record: %s\n", ms_errorstr (retcode));
-    return -2;
-  }
-
-  if (ms_encoding_sizetype (msr->encoding, &samplesize, &sampletype))
-  {
-    ms_log (2, "Cannot determine sample size and type for encoding %d\n", msr->encoding);
-    msr3_free (&msr);
+    ms_log (2, "Cannot determine sample size and type for encoding %d\n", recptr->msr->encoding);
     return -1;
   }
 
@@ -833,27 +821,27 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   {
     if (verbose)
     {
-      ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
       ms_log (1, "Skipping trim of %s (%s), unsupported encoding (%d: %s)\n",
-              msr->sid, stime, msr->encoding, ms_encodingstr (msr->encoding));
+              recptr->msr->sid, stime, recptr->msr->encoding, ms_encodingstr (recptr->msr->encoding));
     }
 
-    msr3_free (&msr);
     return 0;
   }
 
   /* Decode data samples */
-  if ((retcode = msr3_unpack_data (msr, 0)) < 0)
+  recptr->msr->record = recordbuf;
+  if ((retcode = msr3_unpack_data (recptr->msr, 0)) < 0)
   {
     ms_log (2, "Cannot unpack miniSEED record: %s\n", ms_errorstr (retcode));
-    msr3_free (&msr);
+
     return -2;
   }
 
   if (verbose > 1)
   {
-    ms_log (1, "Triming record: %s (%u)\n", msr->sid, msr->pubversion);
-    ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+    ms_log (1, "Triming record: %s (%u)\n", recptr->msr->sid, recptr->msr->pubversion);
+    ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (1, "       Start: %s        End: %s\n", stime, etime);
     if (newrange->starttime == NSTUNSET)
@@ -868,7 +856,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   }
 
   /* Determine sample period in nanosecond time ticks */
-  nsperiod = msr3_nsperiod(msr);
+  nsperiod = msr3_nsperiod(recptr->msr);
 
   /* Remove samples from the beginning of the record */
   if (newrange->starttime != NSTUNSET && nsperiod)
@@ -879,18 +867,17 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
     trimsamples = 0;
     newstarttime = recptr->msr->starttime;
 
-    while (newstarttime < newrange->starttime && trimsamples < msr->samplecnt)
+    while (newstarttime < newrange->starttime && trimsamples < recptr->msr->samplecnt)
     {
       newstarttime += nsperiod;
       trimsamples++;
     }
 
-    if (trimsamples >= msr->samplecnt)
+    if (trimsamples >= recptr->msr->samplecnt)
     {
       if (verbose > 1)
         ms_log (1, "All samples would be trimmed from record, skipping\n");
 
-      msr3_free (&msr);
       return -1;
     }
 
@@ -900,13 +887,13 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
       ms_log (1, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
     }
 
-    memmove (msr->datasamples,
-             (char *)msr->datasamples + (samplesize * trimsamples),
-             samplesize * (msr->numsamples - trimsamples));
+    memmove (recptr->msr->datasamples,
+             (char *)recptr->msr->datasamples + (samplesize * trimsamples),
+             samplesize * (recptr->msr->numsamples - trimsamples));
 
-    msr->numsamples -= trimsamples;
-    msr->samplecnt -= trimsamples;
-    msr->starttime = newstarttime;
+    recptr->msr->numsamples -= trimsamples;
+    recptr->msr->samplecnt -= trimsamples;
+    recptr->msr->starttime = newstarttime;
     newrange->starttime = newstarttime;
   }
 
@@ -919,18 +906,17 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
     trimsamples = 0;
     newendtime = recptr->endtime;
 
-    while (newendtime > newrange->endtime && trimsamples < msr->samplecnt)
+    while (newendtime > newrange->endtime && trimsamples < recptr->msr->samplecnt)
     {
       newendtime -= nsperiod;
       trimsamples++;
     }
 
-    if (trimsamples >= msr->samplecnt)
+    if (trimsamples >= recptr->msr->samplecnt)
     {
       if (verbose > 1)
         ms_log (1, "All samples would be trimmed from record, skipping\n");
 
-      msr3_free (&msr);
       return -1;
     }
 
@@ -940,26 +926,28 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
       ms_log (1, "Removing %d samples from the end, new end time: %s\n", trimsamples, etime);
     }
 
-    msr->numsamples -= trimsamples;
-    msr->samplecnt -= trimsamples;
+    recptr->msr->numsamples -= trimsamples;
+    recptr->msr->samplecnt -= trimsamples;
     newrange->endtime = newendtime;
   }
 
   /* Pack the data record into the global record buffer used by writetraces() */
-  packedrecords = msr3_pack (msr, &writerecord, writerdata,
+  packedrecords = msr3_pack (recptr->msr, &writerecord, writerdata,
                              &packedsamples, MSF_FLUSHDATA, verbose - 1);
 
   if (packedrecords <= 0)
   {
     ms_nstime2timestr (ostarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, "%s(): Cannot pack miniSEED record for %s %s\n",
-            __func__, msr->sid, stime);
-    msr3_free (&msr);
+            __func__, recptr->msr->sid, stime);
+
     return -2;
   }
 
-  /* Clean up MS3Record */
-  msr3_free (&msr);
+  /* Free allocated samples */
+  libmseed_memory.free(recptr->msr->datasamples);
+  recptr->msr->datasamples = NULL;
+  recptr->msr->numsamples = 0;
 
   return 0;
 } /* End of trimrecord() */
@@ -1035,11 +1023,9 @@ writerecord (char *record, int reclen, void *handlerdata)
       arch = archiveroot;
       while (arch)
       {
-        //TODO remove suffix, now 0
         if (ds_streamproc (&arch->datastream,
                            writerdata->recptr->msr,
-                           0, //*writerdata->suffixp,
-                           verbose - 1))
+                           verbose - 1, NULL))
         {
           *writerdata->errflagp = 1;
         }

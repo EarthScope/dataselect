@@ -12,6 +12,8 @@
  * "DataStreamGroup"s, each unique group will be saved into a unique
  * file.  The definition of the groups is implied by the format of the
  * archive.
+ *
+ * Version 2024.5.16
  ***************************************************************************/
 
 #include <errno.h>
@@ -59,13 +61,12 @@ static int dsverbose;
  * ds_shutdown() will be called to close all open files and free all
  * associated memory.
  *
- * This version has been modified from others to add the suffix
- * integer supplied with ds_streamproc() to the defkey and file name.
- *
  * Returns 0 on success, -1 on error.
  ***************************************************************************/
-extern int
-ds_streamproc (DataStream *datastream, MS3Record *msr, long suffix, int verbose)
+int
+ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
+               int (expand_code) (const char *code, MS3Record *msr,
+                                  char *expanded, int expandedlen))
 {
   DataStreamGroup *foundgroup = NULL;
   strlist *fnlist, *fnptr;
@@ -372,15 +373,6 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, long suffix, int verbose)
   }
 
   strparse (NULL, NULL, &fnlist);
-
-  /* Add ".suffix" to filename and definition if suffix is not 0 */
-  if (suffix)
-  {
-    snprintf (tstr, sizeof (tstr), ".%06ld", suffix);
-    strncat (filename, tstr, (sizeof (filename) - fnlen));
-    strncat (definition, tstr, (sizeof (definition) - fnlen));
-    fnlen = strlen (filename);
-  }
 
   /* Make sure the filename and definition are NULL terminated */
   *(filename + sizeof (filename) - 1) = '\0';
