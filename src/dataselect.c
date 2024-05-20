@@ -2054,6 +2054,11 @@ processparam (int argcount, char **argvec)
       if (addarchive (getoptval (argcount, argvec, optind++), CHANLAYOUT) == -1)
         return -1;
     }
+    else if (strcmp (argvec[optind], "-VCHAN") == 0)
+    {
+      if (addarchive (getoptval (argcount, argvec, optind++), VCHANLAYOUT) == -1)
+        return -1;
+    }
     else if (strcmp (argvec[optind], "-QCHAN") == 0)
     {
       if (addarchive (getoptval (argcount, argvec, optind++), QCHANLAYOUT) == -1)
@@ -2461,7 +2466,7 @@ usage (int level)
            " -s file      Specify a file containing selection criteria\n"
            " -ts time     Limit to records that contain or start after time\n"
            " -te time     Limit to records that contain or end before time\n"
-           "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
+           "                time format: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'\n"
            " -m match     Limit to records containing the specified pattern\n"
            "                Patterns are applied to: 'FDSN:NET_STA_LOC_BAND_SOURCE_SS'\n"
            "\n"
@@ -2471,9 +2476,9 @@ usage (int level)
            " -Pr          Prune data at the record level using 'best' version priority\n"
            " -Ps          Prune data at the sample level using 'best' version priority\n"
            " -Pe          Prune traces at user specified edges only, leave overlaps\n"
-           " -Q DRQM      Re-stamp output data records with quality code: D, R, Q or M\n"
+           " -Q #DRQM     Specify publication version of all output records\n"
            "\n"
-           " ## Diagnostic output ##\n"
+           " ## Logging ##\n"
            " -out file    Write a summary of output records to specified file\n"
            " -outprefix X Include prefix on summary output lines for identification\n"
            "\n"
@@ -2487,6 +2492,7 @@ usage (int level)
              "\n"
              "  # Preset format layouts #\n"
              " -CHAN dir    Write records into separate Net.Sta.Loc.Chan files\n"
+             " -VCHAN dir   Write records into separate Net.Sta.Loc.Chan.PubVersion files\n"
              " -QCHAN dir   Write records into separate Net.Sta.Loc.Chan.Quality files\n"
              " -CDAY dir    Write records into separate Net.Sta.Loc.Chan.Year:Yday:<time> files\n"
              " -SDAY dir    Write records into separate Net.Sta.Year:Yday files\n"
@@ -2508,7 +2514,8 @@ usage (int level)
              "  M : minute, 2 digits zero padded\n"
              "  S : second, 2 digits zero padded\n"
              "  F : fractional seconds, 4 digits zero padded\n"
-             "  q : single character record quality indicator (D, R, Q, M)\n"
+             "  v : publication version, 1-255\n"
+             "  q : data quality if possible, otherwise pub version (D, R, Q, M, or #)\n"
              "  L : data record length in bytes\n"
              "  r : Sample rate (Hz) as a rounded integer\n"
              "  R : Sample rate (Hz) as a float with 6 digit precision\n"

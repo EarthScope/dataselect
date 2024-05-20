@@ -3,8 +3,10 @@
 	- The modification log now includes SourceIDs instead of Net,Sta,Loc,Chan.
 	- Byte range annotation on input file names now uses a "-" between start
 	and end offsets to match libmseed.  Legacy delimiter ":" also supported.
+	- Allow -Q to accept publication versions in addition to RDQM codes.
 	- Add -m option to match source ID against globbing pattern.
 	- Add -snd to skip non-miniSEED data, otherwise quit on unrecognized input.
+	- Add -VCHAN archive layout option that uses publication version.
 	- Allow -Q to accept publication versions in addition to RDQM codes.
 	- Remove skipping of channels on decoding errors, output untrimmed record.
 	- Remove the -szs (skip-zero-sample records) option.
