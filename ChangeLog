@@ -6,6 +6,7 @@
 	- Add -m option to match source ID against globbing pattern.
 	- Add -snd to skip non-miniSEED data, otherwise quit on unrecognized input.
 	- Allow -Q to accept publication versions in addition to RDQM codes.
+	- Remove skipping of channels on decoding errors, output untrimmed record.
 	- Remove the -szs (skip-zero-sample records) option.
 	- Remove the -lso (longest segment only) option.
 	- Remove the -msl (minimum segment length) option.

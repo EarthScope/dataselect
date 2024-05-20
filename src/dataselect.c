@@ -593,12 +593,8 @@ writetraces (MS3TraceList *mstl)
 
   /* Loop through MS3TraceList and write records */
   id = mstl->traces.next[0];
-  while (id && errflag != 1)
+  while (id && errflag == 0)
   {
-    /* Reset error flag for continuation errors */
-    if (errflag == 2)
-      errflag = 0;
-
     groupreclist = (MS3RecordList *)id->prvtptr;
 
     if (groupreclist && groupreclist->recordcnt > 0)
@@ -614,7 +610,7 @@ writetraces (MS3TraceList *mstl)
        * After records are read from the input files, perform any
        * pre-identified pruning before writing data. */
       recptr = groupreclist->first;
-      while (recptr && !errflag)
+      while (recptr && errflag == 0)
       {
         if (recptr->msr->reclen > sizeof (recordbuf))
         {
@@ -641,7 +637,7 @@ writetraces (MS3TraceList *mstl)
         if (flp == NULL)
         {
           ms_log (2, "Cannot find input file entry for %s\n", recptr->filename);
-          errflag = 2;
+          errflag = 1;
           break;
         }
 
@@ -695,13 +691,11 @@ writetraces (MS3TraceList *mstl)
           }
           if (rv == -2)
           {
-            // TODO remove the skipping of the rest of the channel?
-            // Instead should include when we cannot trim
-            ms_log (2, "Cannot unpack miniSEED from byte offset %lld in %s\n",
+            ms_log (1, "Cannot unpack miniSEED from byte offset %lld in %s\n",
                     recptr->fileoffset, flp->infilename);
-            ms_log (2, "  Expecting %s, skipping the rest of this channel\n", id->sid);
-            errflag = 2;
-            break;
+            ms_log (1, "  Writing %s record without trimming\n", id->sid);
+
+            writerecord (recordbuf, recptr->msr->reclen, &writerdata);
           }
         }
         else
