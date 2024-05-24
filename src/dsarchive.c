@@ -61,6 +61,8 @@ static int dsverbose;
  * ds_shutdown() will be called to close all open files and free all
  * associated memory.
  *
+ * NOTE: the expand_code() callback function is not yet implemented.
+ *
  * Returns 0 on success, -1 on error.
  ***************************************************************************/
 int

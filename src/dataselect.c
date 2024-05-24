@@ -1905,11 +1905,11 @@ processparam (int argcount, char **argvec)
 {
   nstime_t timestart = NSTUNSET;
   nstime_t timeend = NSTUNSET;
-  unsigned long ulong;
   char matchpattern[100] = {0};
   char *selectfile = NULL;
   char *tptr = NULL;
   char *endptr = NULL;
+  unsigned long ulong;
   int optind;
 
   /* Process all command line arguments */
@@ -1985,7 +1985,7 @@ processparam (int argcount, char **argvec)
     }
     else if (strcmp (argvec[optind], "-m") == 0)
     {
-      strncpy (matchpattern, tptr, sizeof (matchpattern) - 1);
+      strncpy (matchpattern, getoptval (argcount, argvec, optind++), sizeof (matchpattern) - 1);
     }
     else if (strcmp (argvec[optind], "-o") == 0)
     {
