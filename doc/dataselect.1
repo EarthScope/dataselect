@@ -1,4 +1,4 @@
-.TH DATASELECT 1 2024/4/15
+.TH DATASELECT 1 2024/5/24
 .SH NAME
 miniSEED data selection, sorting and pruning
 
@@ -25,12 +25,12 @@ and is done in a modification-minimizing way.
 When removing overlapping data records or samples the concept of
 priority is used to determine from which time-series data should be
 removed if overlaps are detected.  By default the priority is given to
-the highest quality data (M > Q > D > R).  When the qualities are the
-same priority is given to the longer segment.
+the highest publication version (or v2 quality data).  When the
+qualities are the same priority is given to the longer segment.
 
 Multiple input files will be read in the order specified and processed
 all together as if all the data records were from the same file.  The
-program must read input data from files, input from pipes, etc. is not
+program must read input data from files; input from pipes, etc. is not
 possible.
 
 Files on the command line prefixed with a '@' character are input list
@@ -41,9 +41,6 @@ Each input file may be specified with an explict byte range to read.
 The program will begin reading at the specified start offset and stop
 reading at the specified end range.  See \fBINPUT FILE RANGE\fP for
 more details.
-
-When a input file is full SEED including both SEED headers and data
-records all of the headers will be skipped and completely unprocessed.
 
 .SH OPTIONS
 
@@ -72,88 +69,47 @@ segments. The tolerance is specified as the difference between two
 sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
 0.0001).
 
-.IP "-E\fP"
-Consider all data qualities equal when determining priority for
-pruning.  By default priority is given the the data with the highest
-quality indicator: (highest) Q > D > R (lowest).
+.IP "-snd"
+Skip non-miniSEED records.  By default the program will stop when
+it encounters data that cannot be identified as a miniSEED record.
+This option can be useful with full SEED volumes or files with bad
+data.
 
-.IP "-sb \fIsize\fP"
-Use an internal buffer of \fIsize\fP bytes (\fBK\fP, \fBM\fP and
-\fBG\fP suffixes recognized) to store records during the initial read
-and use them for output instead of re-reading the files.  Useful for
-speeding up reads from slow network storage, but not always faster due
-to OS and other caching.
+.IP "-E\fP"
+Consider all publication versions (or v2 qualities) equal when
+determining priority for pruning.  By default priority is given to
+the data with the highest publication version.
 
 .IP "-s \fIselectfile\fP"
 Limit processing to miniSEED records that match a selection in the
 specified file.  The selection file contains parameters to match the
-network, station, location, channel, quality and time range for input
-records.  As a special case, specifying "-" will result in selection
+SourceID (network, station, location, channel), publication version
+(or v2 quality), and time range for input records.
+As a special case, specifying "-" will result in selection
 lines being read from stdin.  For more details see the \fBSELECTION
 FILE\fP section below.
 
 .IP "-ts \fItime\fP"
 Limit processing to miniSEED records that start after or contain
-\fItime\fP.  The format of the \fItime\fP argument
-is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either
-commas (,), colons (:) or periods (.), except the seconds and
-fractional seconds must be separated by a period (.).
+\fItime\fP.  The preferred format of the \fItime\fP argument
+is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.
 
 .IP "-te \fItime\fP"
 Limit processing to miniSEED records that end before or contain
-\fItime\fP.  The format of the \fItime\fP argument
-is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either
-commas (,), colons (:) or periods (.), except the seconds and
-fractional seconds must be separated by a period (.).
-
-.IP "-M \fImatch\fP"
-Limit input to records that match this regular expression, the
-\fImatch\fP is tested against the full source
-name: 'NET_STA_LOC_CHAN_QUAL'.  If the match expression begins with
-an '@' character it is assumed to indicate a file containing a list of
-expressions to match, see the \fBMATCH OR REJECT LIST FILE\fP section
-below.
-
-.IP "-R \fIreject\fP"
-Limit input to records that do not match this regular expression, the
-\fIreject\fP is tested against the full source
-name: 'NET_STA_LOC_CHAN_QUAL'.  If the reject expression begins with
-an '@' character it is assumed to indicate a file containing a list of
-expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fP
-section below.
-
-.IP "-szs"
-Skip records that contain zero samples, generally these are detection
-records, etc.
-
-.IP "-lso"
-Longest segement only.  Limit the output to the longest continuous
-segment for each channel.
-
-.IP "-msl \fIseconds\fP"
-Specify minimum segment length, no continuous segments shorter than
-\fIseconds\fP in duration will be written to the output.
+\fItime\fP.  The perferred format of the \fItime\fP argument
+is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.
 
 .IP "-m \fImatch\fP"
-This is effectively the same as \fB-M\fP except that \fImatch\fP is
-evaluated as a globbing expression instead of regular expression.
-Otherwise undocumented as it is primarily useful at the IRIS/EarthScope.
-
-.IP "-rep"
-Replace input files.  By default this will rename the original files
-by adding a '.orig' suffix.
-
-.IP "-nb"
-Do not keep backups of renamed original input files if replacing them
-by using the \fI-rep\fP option.
+Limit input to records that match this globbing pattern, the
+\fImatch\fP is tested against the full FDSN Source ID:
+'FDSN:NET_STA_LOC_B_S_SS'.
 
 .IP "-o \fIfile\fP"
 Write all output data to output \fIfile\fP instead of replacing the
-original files.  When this option is used no backups will be created
-and the original files will not be modified in any way.  If '-' is
-specified as the output file all output data will be written to
-standard out.  By default the output file will be overwritten,
-changing the option to \fI+o file\fP appends to the output file.
+original files.  If '-' is specified as the output file all output
+data will be written to standard out.  By default the output file
+will be overwritten, changing the option to \fI+o file\fP appends to
+the output file.
 
 .IP "-A \fIformat\fP"
 All output records will be written to a directory/file layout defined
@@ -164,13 +120,14 @@ FORMAT\fP section below for more details including pre-defined archive
 layouts.
 
 .IP "-CHAN \fIdirectory\fP"
+.IP "-CHAN \fVCHANLAYOUT\fP"
 .IP "-QCHAN \fIdirectory\fP"
 .IP "-CDAY \fIdirectory\fP"
 .IP "-SDAY \fIdirectory\fP"
 .IP "-BUD \fIdirectory\fP"
 .IP "-SDS \fIdirectory\fP"
 .IP "-CSS \fIdirectory\fP"
-Pre-defined output archive formats, see the \fBArchive Format\fP
+Pre-defined output archive formats, see the \fBARCHIVE FORMAT\fP
 section below for more details.
 
 .IP "-Pr         "
@@ -192,33 +149,14 @@ times) at the sample level. This option will not remove overlap data
 within specified start and end time window.  Caveats the same as for
 \fB-Ps\fP.
 
-.IP "-S[dhm]      "
-Split records on day, hour or minute boundaries.  When data records
-span the split boundary (day, hour or minute) the record will be split
-by duplicating the record and trimming both records such they are
-continous across the boundaries.  Both of the records will have the
-same record number.
-
-.IP "-rls         "
-Split output files on record length changes by adding integer suffixes
-to the file names.  This option only works when writing output files
-using the \fI-A\fP argument (or a pre-defined layout).  Suffixes are
-in the form of ".######" where the # is an integer starting at 1 and
-are left padded with zeros up to 6 digits.
-
-.IP "-Q DRQM      "
-Change the data quality indicator for all output records to the
-specified quality: D, R, Q or M.
-
-.IP "-sum         "
-Print a basic summary of input data after reading all the files.
-
-.IP "-mod         "
-Print a file modification summary after processing an input group.
-For files specified on the command line all files constitute a group.
-By default this summary will only include the files that were
-modified, if the verbose option is used the summary will include all
-files processed.
+.IP "-Q pubversion"
+Change the data publication version or quality indicator for all output
+records to the specified value.  If this value is one of the letters:
+R, D, Q or M it will be translated to the appropriate publication of
+1, 2, 3, 4 respectively.  If the value is not one of these letters it
+must be a number between 1 and 255.  Note that miniSEED v2 data quality
+indicators only support values 1-4, and all higher values will result in
+a publication version of 4 (aka data quality 'M').
 
 .IP "-out file    "
 Print a summary of output records to the specified file.  Any existing
@@ -258,11 +196,11 @@ ignored.
 
 Example selection file entires (the first four fields are required)
 .nf
-#net sta  loc  chan  qual  start             end
-IU   ANMO *    BH?
-II   *    *    *     Q
-IU   COLA 00   LH[ENZ] R
-IU   COLA 00   LHZ   *     2008,100,10,00,00 2008,100,10,30,00
+#SourceID                  Starttime              Endtime             Pubversion
+FDSN:IU_ANMO_*_B_H_?
+FDSN:II                    *                      *                   3
+FDSN:IU_COLA_00_L_H_[ENZ]  *                      *                   1
+FDSN:IU_COLA_00_L_H_Z      2008-4-9T10:00:00Z    2008-4-9T10:30:00Z
 .fi
 
 \fBWarning:\fP with a selection file it is possible to specify
@@ -299,33 +237,15 @@ filename.mseed@[startoffset][-][endoffset]
 .fi
 
 For example: "filename.mseed@4096-8192".  Both the start and end
-offsets are optional.  The colon separator is optional if no end
+offsets are optional.  The dash separator is optional if no end
 offset is specified.
-
-.SH "MATCH OR REJECT LIST FILE"
-A list file used with either the \fB-M\fP or \fB-R\fP contains a list
-of regular expressions (one on each line) that will be combined into a
-single compound expression.  The initial '@' character indicating a
-list file is not considered part of the file name.  As an example, if
-the following command line option was used:
-
-.nf
-\fB-M @match.list\fP
-.fi
-
-The 'match.list' file might look like this:
-
-.nf
-IU_ANMO_.*
-IU_ADK_00_BHZ.*
-II_BFO_00_BHZ_Q
-.fi
 
 .SH "ARCHIVE FORMAT"
 The pre-defined archive layouts are as follows:
 
 .nf
 -CHAN dir   :: dir/%n.%s.%l.%c
+-VCHAN dir  :: dir/%n.%s.%l.%c.%v
 -QCHAN dir  :: dir/%n.%s.%l.%c.%q
 -CDAY dir   :: dir/%n.%s.%l.%c.%Y:%j:#H:#M:#S
 -SDAY dir   :: dir/%n.%s.%Y:%j
@@ -349,7 +269,8 @@ substitution flags:
   \fBM\fP : minute, 2 digits zero padded
   \fBS\fP : second, 2 digits zero padded
   \fBF\fP : fractional seconds, 4 digits zero padded
-  \fBq\fP : single character record quality indicator (D, R, Q)
+  \fBv\fP : publication version, 1-255
+  \fBq\fP : data quality if possible, otherwise pub version (D, R, Q, M, or #)
   \fBL\fP : data record length in bytes
   \fBr\fP : sample rate (Hz) as a rounded integer
   \fBR\fP : sample rate (Hz) as a float with 6 digit precision
@@ -390,19 +311,18 @@ specified with the non-defining modifier.  The hour, minute and second
 fields are from the first record in the file.
 
 .SH LEAP SECOND LIST FILE
-If the environment variable LIBMSEED_LEAPSECOND_FILE is set it is
-expected to indicate a file containing a list of leap seconds as
-published by NIST and IETF, usually available here:
-https://www.ietf.org/timezones/data/leap-seconds.list
+NOTE: A list of leap seconds is included in the program and no external
+list should be needed unless a leap second is added after year 2023.
 
-Specifying this file is highly recommended when pruning overlap data.
+If the environment variable LIBMSEED_LEAPSECOND_FILE is set it is
+expected to indicate a file containing a list of leap seconds in NTP
+leap second list format. Some locations where this file can be obtained
+are indicated in RFC 8633 section 3.7:
+https://www.rfc-editor.org/rfc/rfc8633.html#section-3.7
 
 If present, the leap seconds listed in this file will be used to
 adjust the time coverage for records that contain a leap second.
 Also, leap second indicators in the miniSEED headers will be ignored.
-
-To suppress the warning printed by the program without specifying a
-leap second file, set LIBMSEED_LEAPSECOND_FILE=NONE.
 
 .SH ERROR HANDLING AND RETURN CODES
 Any significant error message will be pre-pended with "ERROR" which

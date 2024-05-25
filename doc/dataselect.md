@@ -8,7 +8,6 @@
 1. [Selection File](#selection-file)
 1. [Input List File](#input-list-file)
 1. [Input File Range](#input-file-range)
-1. [Match Or Reject List File](#match-or-reject-list-file)
 1. [Archive Format](#archive-format)
 1. [Archive Format Examples](#archive-format-examples)
 1. [Leap Second List File](#leap-second-list-file)
@@ -28,15 +27,13 @@ dataselect [options] file1 [file2 file3 ...]
 
 <p >Data pruning, removal of overlap, can be performed at either the record or sample level.  Pruning at the record level guarantees that records are never unpacked/repacked, but this could potentially leave small amounts of overlap in the data.  Pruning at the sample level will remove any overlap and splice data to within the time-series tolerance, this requires the unpacking and repacking of data records and is done in a modification-minimizing way.</p>
 
-<p >When removing overlapping data records or samples the concept of priority is used to determine from which time-series data should be removed if overlaps are detected.  By default the priority is given to the highest quality data (M > Q > D > R).  When the qualities are the same priority is given to the longer segment.</p>
+<p >When removing overlapping data records or samples the concept of priority is used to determine from which time-series data should be removed if overlaps are detected.  By default the priority is given to the highest publication version (or v2 quality data).  When the qualities are the same priority is given to the longer segment.</p>
 
-<p >Multiple input files will be read in the order specified and processed all together as if all the data records were from the same file.  The program must read input data from files, input from pipes, etc. is not possible.</p>
+<p >Multiple input files will be read in the order specified and processed all together as if all the data records were from the same file.  The program must read input data from files; input from pipes, etc. is not possible.</p>
 
 <p >Files on the command line prefixed with a '@' character are input list files and are expected to contain a simple list of input files, see <b>INPUT LIST FILE</b> for more details.</p>
 
 <p >Each input file may be specified with an explict byte range to read. The program will begin reading at the specified start offset and stop reading at the specified end range.  See <b>INPUT FILE RANGE</b> for more details.</p>
-
-<p >When a input file is full SEED including both SEED headers and data records all of the headers will be skipped and completely unprocessed.</p>
 
 ## <a id='options'>Options</a>
 
@@ -64,67 +61,41 @@ dataselect [options] file1 [file2 file3 ...]
 
 <p style="padding-left: 30px;">Specify a sample rate tolerance for constructing continous trace segments. The tolerance is specified as the difference between two sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) < 0.0001).</p>
 
+<b>-snd</b>
+
+<p style="padding-left: 30px;">Skip non-miniSEED records.  By default the program will stop when it encounters data that cannot be identified as a miniSEED record. This option can be useful with full SEED volumes or files with bad data.</p>
+
 <b>-E</b>\fP
 
-<p style="padding-left: 30px;">Consider all data qualities equal when determining priority for pruning.  By default priority is given the the data with the highest quality indicator: (highest) Q > D > R (lowest).</p>
-
-<b>-sb </b><i>size</i>
-
-<p style="padding-left: 30px;">Use an internal buffer of <i>size</i> bytes (<b>K</b>, <b>M</b> and <b>G</b> suffixes recognized) to store records during the initial read and use them for output instead of re-reading the files.  Useful for speeding up reads from slow network storage, but not always faster due to OS and other caching.</p>
+<p style="padding-left: 30px;">Consider all publication versions (or v2 qualities) equal when determining priority for pruning.  By default priority is given to the data with the highest publication version.</p>
 
 <b>-s </b><i>selectfile</i>
 
-<p style="padding-left: 30px;">Limit processing to miniSEED records that match a selection in the specified file.  The selection file contains parameters to match the network, station, location, channel, quality and time range for input records.  As a special case, specifying "-" will result in selection lines being read from stdin.  For more details see the <b>SELECTION FILE</b> section below.</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that match a selection in the specified file.  The selection file contains parameters to match the SourceID (network, station, location, channel), publication version (or v2 quality), and time range for input records. As a special case, specifying "-" will result in selection lines being read from stdin.  For more details see the <b>SELECTION FILE</b> section below.</p>
 
 <b>-ts </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to miniSEED records that start after or contain <i>time</i>.  The format of the <i>time</i> argument is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.), except the seconds and fractional seconds must be separated by a period (.).</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that start after or contain <i>time</i>.  The preferred format of the <i>time</i> argument is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.</p>
 
 <b>-te </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to miniSEED records that end before or contain <i>time</i>.  The format of the <i>time</i> argument is: 'YYYY[,DDD,HH,MM,SS.FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.), except the seconds and fractional seconds must be separated by a period (.).</p>
-
-<b>-M </b><i>match</i>
-
-<p style="padding-left: 30px;">Limit input to records that match this regular expression, the <i>match</i> is tested against the full source name: 'NET_STA_LOC_CHAN_QUAL'.  If the match expression begins with an '@' character it is assumed to indicate a file containing a list of expressions to match, see the <b>MATCH OR REJECT LIST FILE</b> section below.</p>
-
-<b>-R </b><i>reject</i>
-
-<p style="padding-left: 30px;">Limit input to records that do not match this regular expression, the <i>reject</i> is tested against the full source name: 'NET_STA_LOC_CHAN_QUAL'.  If the reject expression begins with an '@' character it is assumed to indicate a file containing a list of expressions to reject, see the <b>MATCH OR REJECT LIST FILE</b> section below.</p>
-
-<b>-szs</b>
-
-<p style="padding-left: 30px;">Skip records that contain zero samples, generally these are detection records, etc.</p>
-
-<b>-lso</b>
-
-<p style="padding-left: 30px;">Longest segement only.  Limit the output to the longest continuous segment for each channel.</p>
-
-<b>-msl </b><i>seconds</i>
-
-<p style="padding-left: 30px;">Specify minimum segment length, no continuous segments shorter than <i>seconds</i> in duration will be written to the output.</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that end before or contain <i>time</i>.  The perferred format of the <i>time</i> argument is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.</p>
 
 <b>-m </b><i>match</i>
 
-<p style="padding-left: 30px;">This is effectively the same as <b>-M</b> except that <i>match</i> is evaluated as a globbing expression instead of regular expression. Otherwise undocumented as it is primarily useful at the IRIS/EarthScope.</p>
-
-<b>-rep</b>
-
-<p style="padding-left: 30px;">Replace input files.  By default this will rename the original files by adding a '.orig' suffix.</p>
-
-<b>-nb</b>
-
-<p style="padding-left: 30px;">Do not keep backups of renamed original input files if replacing them by using the <i>-rep</i> option.</p>
+<p style="padding-left: 30px;">Limit input to records that match this globbing pattern, the <i>match</i> is tested against the full FDSN Source ID: 'FDSN:NET_STA_LOC_B_S_SS'.</p>
 
 <b>-o </b><i>file</i>
 
-<p style="padding-left: 30px;">Write all output data to output <i>file</i> instead of replacing the original files.  When this option is used no backups will be created and the original files will not be modified in any way.  If '-' is specified as the output file all output data will be written to standard out.  By default the output file will be overwritten, changing the option to <i>+o file</i> appends to the output file.</p>
+<p style="padding-left: 30px;">Write all output data to output <i>file</i> instead of replacing the original files.  If '-' is specified as the output file all output data will be written to standard out.  By default the output file will be overwritten, changing the option to <i>+o file</i> appends to the output file.</p>
 
 <b>-A </b><i>format</i>
 
 <p style="padding-left: 30px;">All output records will be written to a directory/file layout defined by <i>format</i>.  All directories implied in the <i>format</i> string will be created if necessary.  The option may be used multiple times to write input records to multiple archives.  See the <b>ARCHIVE FORMAT</b> section below for more details including pre-defined archive layouts.</p>
 
 <b>-CHAN </b><i>directory</i>
+
+<b>-CHAN </b>\fVCHANLAYOUT\fP
 
 <b>-QCHAN </b><i>directory</i>
 
@@ -138,7 +109,7 @@ dataselect [options] file1 [file2 file3 ...]
 
 <b>-CSS </b><i>directory</i>
 
-<p style="padding-left: 30px;">Pre-defined output archive formats, see the <b>Archive Format</b> section below for more details.</p>
+<p style="padding-left: 30px;">Pre-defined output archive formats, see the <b>ARCHIVE FORMAT</b> section below for more details.</p>
 
 <b>-Pr</b>
 
@@ -152,25 +123,9 @@ dataselect [options] file1 [file2 file3 ...]
 
 <p style="padding-left: 30px;">Prune (trim) returned traces to user specified edges (start and end times) at the sample level. This option will not remove overlap data within specified start and end time window.  Caveats the same as for <b>-Ps</b>.</p>
 
-<b>-S[dhm]</b>
+<b>-Q pubversion</b>
 
-<p style="padding-left: 30px;">Split records on day, hour or minute boundaries.  When data records span the split boundary (day, hour or minute) the record will be split by duplicating the record and trimming both records such they are continous across the boundaries.  Both of the records will have the same record number.</p>
-
-<b>-rls</b>
-
-<p style="padding-left: 30px;">Split output files on record length changes by adding integer suffixes to the file names.  This option only works when writing output files using the <i>-A</i> argument (or a pre-defined layout).  Suffixes are in the form of ".######" where the # is an integer starting at 1 and are left padded with zeros up to 6 digits.</p>
-
-<b>-Q DRQM</b>
-
-<p style="padding-left: 30px;">Change the data quality indicator for all output records to the specified quality: D, R, Q or M.</p>
-
-<b>-sum</b>
-
-<p style="padding-left: 30px;">Print a basic summary of input data after reading all the files.</p>
-
-<b>-mod</b>
-
-<p style="padding-left: 30px;">Print a file modification summary after processing an input group. For files specified on the command line all files constitute a group. By default this summary will only include the files that were modified, if the verbose option is used the summary will include all files processed.</p>
+<p style="padding-left: 30px;">Change the data publication version or quality indicator for all output records to the specified value.  If this value is one of the letters: R, D, Q or M it will be translated to the appropriate publication of 1, 2, 3, 4 respectively.  If the value is not one of these letters it must be a number between 1 and 255.  Note that miniSEED v2 data quality indicators only support values 1-4, and all higher values will result in a publication version of 4 (aka data quality 'M').</p>
 
 <b>-out file</b>
 
@@ -192,11 +147,11 @@ dataselect [options] file1 [file2 file3 ...]
 
 <p >Example selection file entires (the first four fields are required)</p>
 <pre >
-#net sta  loc  chan  qual  start             end
-IU   ANMO *    BH?
-II   *    *    *     Q
-IU   COLA 00   LH[ENZ] R
-IU   COLA 00   LHZ   *     2008,100,10,00,00 2008,100,10,30,00
+#SourceID                  Starttime              Endtime             Pubversion
+FDSN:IU_ANMO_*_B_H_?
+FDSN:II                    *                      *                   3
+FDSN:IU_COLA_00_L_H_[ENZ]  *                      *                   1
+FDSN:IU_COLA_00_L_H_Z      2008-4-9T10:00:00Z    2008-4-9T10:30:00Z
 </pre>
 
 <p ><b>Warning:</b> with a selection file it is possible to specify multiple, arbitrary selections.  Some combinations of these selects are not possible.  See <b>CAVEATS AND LIMITATIONS</b> for more details.</p>
@@ -219,29 +174,13 @@ data/day3.mseed
 
 ## <a id='input-file-range'>Input File Range</a>
 
-<p >Each input file may be specified with an associated byte range to read.  The program will begin reading at the specified start offset and finish reading when at or beyond the end offset.  The range is specified by appending an '@' charater to the filename with the start and end offsets separated by a colon:</p>
+<p >Each input file may be specified with an associated byte range to read.  The program will begin reading at the specified start offset and finish reading when at or beyond the end offset.  The range is specified by appending an '@' charater to the filename with the start and end offsets separated by a dash:</p>
 
 <pre >
-filename.mseed@[startoffset][:][endoffset]
+filename.mseed@[startoffset][-][endoffset]
 </pre>
 
-<p >For example: "filename.mseed@4096:8192".  Both the start and end offsets are optional.  The colon separator is optional if no end offset is specified.</p>
-
-## <a id='match-or-reject-list-file'>Match Or Reject List File</a>
-
-<p >A list file used with either the <b>-M</b> or <b>-R</b> contains a list of regular expressions (one on each line) that will be combined into a single compound expression.  The initial '@' character indicating a list file is not considered part of the file name.  As an example, if the following command line option was used:</p>
-
-<pre >
-<b>-M @match.list</b>
-</pre>
-
-<p >The 'match.list' file might look like this:</p>
-
-<pre >
-IU_ANMO_.*
-IU_ADK_00_BHZ.*
-II_BFO_00_BHZ_Q
-</pre>
+<p >For example: "filename.mseed@4096-8192".  Both the start and end offsets are optional.  The dash separator is optional if no end offset is specified.</p>
 
 ## <a id='archive-format'>Archive Format</a>
 
@@ -249,6 +188,7 @@ II_BFO_00_BHZ_Q
 
 <pre >
 -CHAN dir   :: dir/%n.%s.%l.%c
+-VCHAN dir  :: dir/%n.%s.%l.%c.%v
 -QCHAN dir  :: dir/%n.%s.%l.%c.%q
 -CDAY dir   :: dir/%n.%s.%l.%c.%Y:%j:#H:#M:#S
 -SDAY dir   :: dir/%n.%s.%Y:%j
@@ -271,7 +211,8 @@ II_BFO_00_BHZ_Q
   <b>M</b> : minute, 2 digits zero padded
   <b>S</b> : second, 2 digits zero padded
   <b>F</b> : fractional seconds, 4 digits zero padded
-  <b>q</b> : single character record quality indicator (D, R, Q)
+  <b>v</b> : publication version, 1-255
+  <b>q</b> : data quality if possible, otherwise pub version (D, R, Q, M, or #)
   <b>L</b> : data record length in bytes
   <b>r</b> : sample rate (Hz) as a rounded integer
   <b>R</b> : sample rate (Hz) as a float with 6 digit precision
@@ -305,13 +246,11 @@ II_BFO_00_BHZ_Q
 
 ## <a id='leap-second-list-file'>Leap Second List File</a>
 
-<p >If the environment variable LIBMSEED_LEAPSECOND_FILE is set it is expected to indicate a file containing a list of leap seconds as published by NIST and IETF, usually available here: https://www.ietf.org/timezones/data/leap-seconds.list</p>
+<p >NOTE: A list of leap seconds is included in the program and no external list should be needed unless a leap second is added after year 2023.</p>
 
-<p >Specifying this file is highly recommended when pruning overlap data.</p>
+<p >If the environment variable LIBMSEED_LEAPSECOND_FILE is set it is expected to indicate a file containing a list of leap seconds in NTP leap second list format. Some locations where this file can be obtained are indicated in RFC 8633 section 3.7: https://www.rfc-editor.org/rfc/rfc8633.html#section-3.7</p>
 
 <p >If present, the leap seconds listed in this file will be used to adjust the time coverage for records that contain a leap second. Also, leap second indicators in the miniSEED headers will be ignored.</p>
-
-<p >To suppress the warning printed by the program without specifying a leap second file, set LIBMSEED_LEAPSECOND_FILE=NONE.</p>
 
 ## <a id='error-handling-and-return-codes'>Error Handling And Return Codes</a>
 
@@ -329,4 +268,4 @@ EarthScope Data Services
 </pre>
 
 
-(man page 2023/1/9)
+(man page 2024/5/24)
