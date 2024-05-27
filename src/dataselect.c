@@ -462,7 +462,7 @@ writetraces (MS3TraceList *mstl)
   MS3RecordPtr *recptrprev;
   MS3RecordPtr *recptrnext;
 
-  MS3RecordList *groupreclist;
+  MS3RecordList *groupreclist = NULL;
 
   TimeRange *newrange;
   Filelink *flpsearch;
@@ -567,7 +567,7 @@ writetraces (MS3TraceList *mstl)
       /* Append record list to ID-level list */
       if (seg->recordlist->first != NULL)
       {
-        if (groupreclist->first == NULL)
+        if (groupreclist && groupreclist->first == NULL)
         {
           groupreclist->first = seg->recordlist->first;
           groupreclist->last = seg->recordlist->last;
@@ -612,7 +612,7 @@ writetraces (MS3TraceList *mstl)
       recptr = groupreclist->first;
       while (recptr && errflag == 0)
       {
-        if (recptr->msr->reclen > sizeof (recordbuf))
+        if ((size_t)recptr->msr->reclen > sizeof (recordbuf))
         {
           ms_log (2, "Record length (%d bytes) larger than buffer (%llu bytes)\n",
                   recptr->msr->reclen, (long long unsigned int)sizeof (recordbuf));
@@ -691,7 +691,7 @@ writetraces (MS3TraceList *mstl)
           }
           if (rv == -2)
           {
-            ms_log (1, "Cannot unpack miniSEED from byte offset %lld in %s\n",
+            ms_log (1, "Cannot unpack miniSEED from byte offset %" PRId64 " in %s\n",
                     recptr->fileoffset, flp->infilename);
             ms_log (1, "  Writing %s record without trimming\n", id->sid);
 
@@ -738,7 +738,7 @@ writetraces (MS3TraceList *mstl)
 
   if (verbose)
   {
-    ms_log (1, "Wrote %llu bytes of %llu records to output file(s)\n",
+    ms_log (1, "Wrote %" PRIu64 " bytes of %" PRIu64 " records to output file(s)\n",
             totalbytesout, totalrecsout);
   }
 
@@ -2251,7 +2251,7 @@ setofilelimit (int limit)
     return -1;
   }
 
-  if (rlim.rlim_cur < limit)
+  if (rlim.rlim_cur < (rlim_t)limit)
   {
     oldlimit = rlim.rlim_cur;
     rlim.rlim_cur = (rlim_t)limit;

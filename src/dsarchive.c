@@ -70,6 +70,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
                int (expand_code) (const char *code, MS3Record *msr,
                                   char *expanded, int expandedlen))
 {
+  (void) expand_code; /* Suppress warnings while unused */
   DataStreamGroup *foundgroup = NULL;
   strlist *fnlist, *fnptr;
   char network[11] = {0};
