@@ -12,6 +12,8 @@
  * "DataStreamGroup"s, each unique group will be saved into a unique
  * file.  The definition of the groups is implied by the format of the
  * archive.
+ *
+ * Version 2024.5.16
  ***************************************************************************/
 
 #include <errno.h>
@@ -30,7 +32,7 @@
 #include "dsarchive.h"
 
 /* Maximum number of open files */
-int ds_maxopenfiles  = 0;
+int ds_maxopenfiles = 0;
 int ds_openfilecount = 0;
 
 /* For a linked list of strings, as filled by strparse() */
@@ -41,8 +43,8 @@ typedef struct strlist_s
 } strlist;
 
 /* Functions internal to this source file */
-static DataStreamGroup *ds_getstream (DataStream *datastream, MSRecord *msr,
-                                      const char *defkey, const char *filename);
+static DataStreamGroup *ds_getstream (DataStream *datastream, const char *defkey,
+                                      const char *filename);
 static int ds_openfile (DataStream *datastream, const char *filename);
 static int ds_closeidle (DataStream *datastream, int idletimeout);
 static void ds_shutdown (DataStream *datastream);
@@ -53,27 +55,35 @@ static int dsverbose;
 /***************************************************************************
  * ds_streamproc:
  *
- * Save MiniSEED records in a custom directory/file structure.  The
+ * Save miniSEED records in a custom directory/file structure.  The
  * appropriate directories and files are created if nesecessary.  If
  * files already exist they are appended to.  If 'msr' is NULL then
  * ds_shutdown() will be called to close all open files and free all
  * associated memory.
  *
- * This version has been modified from others to add the suffix
- * integer supplied with ds_streamproc() to the defkey and file name.
+ * NOTE: the expand_code() callback function is not yet implemented.
  *
  * Returns 0 on success, -1 on error.
  ***************************************************************************/
-extern int
-ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
+int
+ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
+               int (expand_code) (const char *code, MS3Record *msr,
+                                  char *expanded, int expandedlen))
 {
+  (void) expand_code; /* Suppress warnings while unused */
   DataStreamGroup *foundgroup = NULL;
-  BTime stime;
   strlist *fnlist, *fnptr;
-  char net[9] = {0};
-  char sta[9] = {0};
-  char loc[9] = {0};
-  char chan[9] = {0};
+  char network[11] = {0};
+  char station[11] = {0};
+  char location[11] = {0};
+  char channel[11] = {0};
+  uint16_t year;
+  uint16_t yday;
+  uint8_t hour;
+  uint8_t min;
+  uint8_t sec;
+  uint32_t nsec;
+
   char filename[400] = {0};
   char definition[400] = {0};
   char pathformat[600] = {0};
@@ -93,20 +103,15 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
     return 0;
   }
 
-  if (!msr->fsdh)
-  {
-    fprintf (stderr, "ds_streamproc(): msr->fsdh must be available\n");
-    return -1;
-  }
-
   /* Build file path and name from datastream->path */
-  filename[0]   = '\0';
+  filename[0] = '\0';
   definition[0] = '\0';
   snprintf (pathformat, sizeof (pathformat), "%s", datastream->path);
 
   if (strparse (pathformat, "/", &fnlist) < 0)
   {
-    fprintf (stderr, "ds_streamproc(): error parsing path format: '%s'\n", pathformat);
+    fprintf (stderr, "%s(): error parsing path format: '%s'\n",
+             __func__, pathformat);
     return -1;
   }
 
@@ -122,23 +127,32 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
     }
     else
     {
-      fprintf (stderr, "ds_streamproc(): empty path format\n");
+      fprintf (stderr, "%s(): empty path format\n", __func__);
       strparse (NULL, NULL, &fnlist);
       return -1;
     }
   }
 
-  /* Convert normalized starttime to BTime structure */
-  if (ms_hptime2btime (msr->starttime, &stime))
+  /* Decompose start time to date-time values */
+  if (ms_nstime2time (msr->starttime, &year, &yday, &hour, &min, &sec, &nsec))
   {
-    fprintf (stderr, "ds_streamproc(): cannot convert start time to separate fields\n");
+    fprintf (stderr, "%s(): cannot convert start time to separate fields\n", __func__);
+    strparse (NULL, NULL, &fnlist);
+    return -1;
+  }
+
+  /* Decompose SourceID to network station, location and channel codes */
+  if (ms_sid2nslc (msr->sid, network, station, location, channel))
+  {
+    fprintf (stderr, "%s(): cannot convert SourceID to network, station, location and channel\n", __func__);
     strparse (NULL, NULL, &fnlist);
     return -1;
   }
 
   while (fnptr != 0)
   {
-    int tdy;
+    uint16_t tdy;
+    char quality;
     char *w, *p, def;
 
     p = fnptr->element;
@@ -146,8 +160,8 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
     /* Special case of no file given */
     if (*p == '\0' && fnptr->next == 0)
     {
-      fprintf (stderr, "ds_streamproc(): no file name specified, only %s\n",
-               filename);
+      fprintf (stderr, "%s(): no file name specified, only %s\n",
+               __func__, filename);
       strparse (NULL, NULL, &fnlist);
       return -1;
     }
@@ -155,7 +169,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
     while ((w = strpbrk (p, "%#")) != NULL)
     {
       def = (*w == '%');
-      *w  = '\0';
+      *w = '\0';
       strncat (filename, p, (sizeof (filename) - fnlen));
       fnlen = strlen (filename);
 
@@ -164,47 +178,43 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
       switch (*w)
       {
       case 'n':
-        ms_strncpclean (net, msr->fsdh->network, 2);
-        strncat (filename, net, (sizeof (filename) - fnlen));
+        strncat (filename, network, (sizeof (filename) - fnlen));
         if (def)
-          strncat (definition, net, (sizeof (definition) - fnlen));
+          strncat (definition, network, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 's':
-        ms_strncpclean (sta, msr->fsdh->station, 5);
-        strncat (filename, sta, (sizeof (filename) - fnlen));
+        strncat (filename, station, (sizeof (filename) - fnlen));
         if (def)
-          strncat (definition, sta, (sizeof (definition) - fnlen));
+          strncat (definition, station, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'l':
-        ms_strncpclean (loc, msr->fsdh->location, 2);
-        strncat (filename, loc, (sizeof (filename) - fnlen));
+        strncat (filename, location, (sizeof (filename) - fnlen));
         if (def)
-          strncat (definition, loc, (sizeof (definition) - fnlen));
+          strncat (definition, location, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'c':
-        ms_strncpclean (chan, msr->fsdh->channel, 3);
-        strncat (filename, chan, (sizeof (filename) - fnlen));
+        strncat (filename, channel, (sizeof (filename) - fnlen));
         if (def)
-          strncat (definition, chan, (sizeof (definition) - fnlen));
+          strncat (definition, channel, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'Y':
-        snprintf (tstr, sizeof (tstr), "%04d", (int)stime.year);
+        snprintf (tstr, sizeof (tstr), "%04u", year);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'y':
-        tdy = (int)stime.year;
+        tdy = year;
         while (tdy > 100)
         {
           tdy -= 100;
@@ -214,55 +224,80 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'j':
-        snprintf (tstr, sizeof (tstr), "%03d", (int)stime.day);
+        snprintf (tstr, sizeof (tstr), "%03u", yday);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'H':
-        snprintf (tstr, sizeof (tstr), "%02d", (int)stime.hour);
+        snprintf (tstr, sizeof (tstr), "%02u", hour);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'M':
-        snprintf (tstr, sizeof (tstr), "%02d", (int)stime.min);
+        snprintf (tstr, sizeof (tstr), "%02d", (int)min);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'S':
-        snprintf (tstr, sizeof (tstr), "%02d", (int)stime.sec);
+        snprintf (tstr, sizeof (tstr), "%02d", (int)sec);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
-      case 'F':
-        snprintf (tstr, sizeof (tstr), "%04d", (int)stime.fract);
+      case 'N':
+        snprintf (tstr, sizeof (tstr), "%09u", (int)nsec);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'q':
-        snprintf (tstr, sizeof (tstr), "%c", msr->dataquality);
+        /* Map publication version into a legacy data quality indicator */
+        if (msr->pubversion == 1)
+          quality = 'R';
+        else if (msr->pubversion == 2)
+          quality = 'D';
+        else if (msr->pubversion == 3)
+          quality = 'Q';
+        else if (msr->pubversion == 4)
+          quality = 'M';
+        else
+          quality = '?';
+
+        /* Use quality code if mapping possible, otherwise publication version */
+        if (quality != '?')
+          snprintf (tstr, sizeof (tstr), "%c", quality);
+        else
+          snprintf (tstr, sizeof (tstr), "%u", msr->pubversion);
+
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
+        break;
+      case 'v':
+        snprintf (tstr, sizeof (tstr), "%u", msr->pubversion);
+        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        if (def)
+          strncat (definition, tstr, (sizeof (definition) - fnlen));
+        fnlen = strlen (filename);
+        p = w + 1;
         break;
       case 'L':
         snprintf (tstr, sizeof (tstr), "%d", msr->reclen);
@@ -270,7 +305,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'r':
         snprintf (tstr, sizeof (tstr), "%ld", (long int)(msr->samprate + 0.5));
@@ -278,7 +313,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case 'R':
         snprintf (tstr, sizeof (tstr), "%.6f", msr->samprate);
@@ -286,17 +321,17 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case '%':
         strncat (filename, "%", (sizeof (filename) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       case '#':
         strncat (filename, "#", (sizeof (filename) - fnlen));
         fnlen = strlen (filename);
-        p     = w + 1;
+        p = w + 1;
         break;
       default:
         fprintf (stderr, "Unknown layout format code: '%c'\n", *w);
@@ -320,7 +355,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 
           if (mkdir (filename, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH))
           {
-            fprintf (stderr, "ds_streamproc: mkdir(%s) %s\n", filename, strerror (errno));
+            fprintf (stderr, "%s: mkdir(%s) %s\n", __func__, filename, strerror (errno));
             strparse (NULL, NULL, &fnlist);
             return -1;
           }
@@ -342,21 +377,12 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 
   strparse (NULL, NULL, &fnlist);
 
-  /* Add ".suffix" to filename and definition if suffix is not 0 */
-  if (suffix)
-  {
-    snprintf (tstr, sizeof (tstr), ".%06ld", suffix);
-    strncat (filename, tstr, (sizeof (filename) - fnlen));
-    strncat (definition, tstr, (sizeof (definition) - fnlen));
-    fnlen = strlen (filename);
-  }
-
   /* Make sure the filename and definition are NULL terminated */
-  *(filename + sizeof (filename) - 1)     = '\0';
+  *(filename + sizeof (filename) - 1) = '\0';
   *(definition + sizeof (definition) - 1) = '\0';
 
   /* Check for previously used stream entry, otherwise create it */
-  foundgroup = ds_getstream (datastream, msr, definition, filename);
+  foundgroup = ds_getstream (datastream, definition, filename);
 
   if (foundgroup != NULL)
   {
@@ -368,7 +394,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 
       if (!write (foundgroup->filed, msr->datasamples, msr->numsamples * ms_samplesize (msr->sampletype)))
       {
-        fprintf (stderr, "ds_streamproc: failed to write binary data samples\n");
+        fprintf (stderr, "%s(): failed to write binary data samples\n", __func__);
         return -1;
       }
       else
@@ -384,7 +410,7 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
 
       if (!write (foundgroup->filed, msr->record, msr->reclen))
       {
-        fprintf (stderr, "ds_streamproc: failed to write data record\n");
+        fprintf (stderr, "%s: failed to write data record\n", __func__);
         return -1;
       }
       else
@@ -414,19 +440,18 @@ ds_streamproc (DataStream *datastream, MSRecord *msr, long suffix, int verbose)
  * Returns a pointer to a DataStreamGroup on success or NULL on error.
  ***************************************************************************/
 static DataStreamGroup *
-ds_getstream (DataStream *datastream, MSRecord *msr,
-              const char *defkey, const char *filename)
+ds_getstream (DataStream *datastream, const char *defkey, const char *filename)
 {
-  DataStreamGroup *foundgroup  = NULL;
+  DataStreamGroup *foundgroup = NULL;
   DataStreamGroup *searchgroup = NULL;
-  DataStreamGroup *prevgroup   = NULL;
+  DataStreamGroup *prevgroup = NULL;
   time_t curtime;
 
   if (!datastream)
     return NULL;
 
   searchgroup = datastream->grouproot;
-  curtime     = time (NULL);
+  curtime = time (NULL);
 
   /* Traverse the stream chain looking for matching streams */
   while (searchgroup != NULL)
@@ -449,7 +474,7 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
       break;
     }
 
-    prevgroup   = searchgroup;
+    prevgroup = searchgroup;
     searchgroup = nextgroup;
   }
 
@@ -461,14 +486,15 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
 
     if (!(foundgroup = (DataStreamGroup *)malloc (sizeof (DataStreamGroup))))
     {
-      fprintf (stderr, "ERROR: Cannot allocate memory for DataStreamGroup\n");
+      fprintf (stderr, "%s(): ERROR, Cannot allocate memory for DataStreamGroup\n",
+               __func__);
       return NULL;
     }
 
-    foundgroup->defkey  = strdup (defkey);
-    foundgroup->filed   = 0;
+    foundgroup->defkey = strdup (defkey);
+    foundgroup->filed = 0;
     foundgroup->modtime = -curtime;
-    foundgroup->next    = NULL;
+    foundgroup->next = NULL;
 
     /* Set the stream root if this is the first entry */
     if (datastream->grouproot == NULL)
@@ -482,7 +508,7 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
     }
     else
     {
-      fprintf (stderr, "stream chain is broken!\n");
+      fprintf (stderr, "%s(): ERROR, stream chain is broken!\n", __func__);
       return NULL;
     }
   }
@@ -500,13 +526,15 @@ ds_getstream (DataStream *datastream, MSRecord *msr,
 
     if ((foundgroup->filed = ds_openfile (datastream, filename)) == -1)
     {
-      fprintf (stderr, "cannot open data stream file, %s\n", strerror (errno));
+      fprintf (stderr, "%s(): ERROR, cannot open data stream file, %s\n",
+               __func__, strerror (errno));
       return NULL;
     }
 
     if ((filepos = (off_t)lseek (foundgroup->filed, (off_t)0, SEEK_END)) < 0)
     {
-      fprintf (stderr, "cannot seek in data stream file, %s\n", strerror (errno));
+      fprintf (stderr, "%s(): ERROR, cannot seek in data stream file, %s\n",
+               __func__, strerror (errno));
       return NULL;
     }
   }
@@ -531,9 +559,9 @@ ds_openfile (DataStream *datastream, const char *filename)
   static char rlimit = 0;
   struct rlimit rlim;
   int idletimeout = datastream->idletimeout;
-  int oret        = 0;
-  int flags       = (O_RDWR | O_CREAT | O_APPEND);
-  mode_t mode     = (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); /* Mode 0644 */
+  int oret = 0;
+  int flags = (O_RDWR | O_CREAT | O_APPEND);
+  mode_t mode = (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); /* Mode 0644 */
 
   /* Lookup process open file limit and change ds_maxopenfiles if needed */
   if (!rlimit)
@@ -542,24 +570,24 @@ ds_openfile (DataStream *datastream, const char *filename)
 
     if (getrlimit (RLIMIT_NOFILE, &rlim) == -1)
     {
-      fprintf (stderr, "getrlimit failed to get open file limit\n");
+      fprintf (stderr, "%s(): getrlimit() failed to get open file limit\n", __func__);
     }
     else
     {
       /* Increase process open file limit to ds_maxopenfiles or hard limit */
-      if (ds_maxopenfiles && ds_maxopenfiles > rlim.rlim_cur)
+      if (ds_maxopenfiles && (rlim_t)ds_maxopenfiles > rlim.rlim_cur)
       {
-        if (ds_maxopenfiles > rlim.rlim_max)
+        if ((rlim_t)ds_maxopenfiles > rlim.rlim_max)
           rlim.rlim_cur = rlim.rlim_max;
         else
-          rlim.rlim_cur = ds_maxopenfiles;
+          rlim.rlim_cur = (rlim_t)ds_maxopenfiles;
 
         if (dsverbose >= 2)
           fprintf (stderr, "Setting open file limit to %lld\n", (long long int)rlim.rlim_cur);
 
         if (setrlimit (RLIMIT_NOFILE, &rlim) == -1)
         {
-          fprintf (stderr, "setrlimit failed to set open file limit\n");
+          fprintf (stderr, "%s(): setrlimit() failed to set open file limit\n", __func__);
         }
 
         ds_maxopenfiles = rlim.rlim_cur;
@@ -606,14 +634,14 @@ ds_openfile (DataStream *datastream, const char *filename)
 static int
 ds_closeidle (DataStream *datastream, int idletimeout)
 {
-  int count                    = 0;
+  int count = 0;
   DataStreamGroup *searchgroup = NULL;
-  DataStreamGroup *prevgroup   = NULL;
-  DataStreamGroup *nextgroup   = NULL;
+  DataStreamGroup *prevgroup = NULL;
+  DataStreamGroup *nextgroup = NULL;
   time_t curtime;
 
   searchgroup = datastream->grouproot;
-  curtime     = time (NULL);
+  curtime = time (NULL);
 
   /* Traverse the stream chain */
   while (searchgroup != NULL)
@@ -643,8 +671,8 @@ ds_closeidle (DataStream *datastream, int idletimeout)
 
       /* Close the associated file */
       if (close (searchgroup->filed))
-        fprintf (stderr, "ds_closeidle(), closing data stream file, %s\n",
-                 strerror (errno));
+        fprintf (stderr, "%s(), closing data stream file, %s\n",
+                 __func__, strerror (errno));
       else
         count++;
 
@@ -679,7 +707,7 @@ ds_closeidle (DataStream *datastream, int idletimeout)
 static void
 ds_shutdown (DataStream *datastream)
 {
-  DataStreamGroup *curgroup  = NULL;
+  DataStreamGroup *curgroup = NULL;
   DataStreamGroup *prevgroup = NULL;
 
   curgroup = datastream->grouproot;
@@ -687,14 +715,14 @@ ds_shutdown (DataStream *datastream)
   while (curgroup != NULL)
   {
     prevgroup = curgroup;
-    curgroup  = curgroup->next;
+    curgroup = curgroup->next;
 
     if (dsverbose >= 2)
       fprintf (stderr, "Shutting down stream with key: %s\n", prevgroup->defkey);
 
     if (close (prevgroup->filed))
-      fprintf (stderr, "ds_shutdown(), closing data stream file, %s\n",
-               strerror (errno));
+      fprintf (stderr, "%s(), closing data stream file, %s\n",
+               __func__, strerror (errno));
 
     free (prevgroup->defkey);
     free (prevgroup);
@@ -719,7 +747,7 @@ strparse (const char *string, const char *delim, strlist **list)
 {
   const char *beg; /* beginning of element */
   const char *del; /* delimiter */
-  int stop  = 0;
+  int stop = 0;
   int count = 0;
   int total;
 
@@ -729,7 +757,7 @@ strparse (const char *string, const char *delim, strlist **list)
   if (string != NULL && delim != NULL)
   {
     total = strlen (string);
-    beg   = string;
+    beg = string;
 
     while (!stop)
     {
@@ -739,13 +767,13 @@ strparse (const char *string, const char *delim, strlist **list)
       /* Delimiter not found or empty */
       if (del == NULL || strlen (delim) == 0)
       {
-        del  = string + strlen (string);
+        del = string + strlen (string);
         stop = 1;
       }
 
       if (!(tmplist = (strlist *)malloc (sizeof (strlist))))
       {
-        fprintf (stderr, "ERROR: Cannot allocate memory for string parsing\n");
+        fprintf (stderr, "%s(): ERROR, Cannot allocate memory for string parsing\n", __func__);
         return -1;
       }
 
@@ -753,7 +781,7 @@ strparse (const char *string, const char *delim, strlist **list)
 
       if (!(tmplist->element = (char *)malloc (del - beg + 1)))
       {
-        fprintf (stderr, "ERROR: Cannot allocate memory for string parsing\n");
+        fprintf (stderr, "%s(): ERROR, Cannot allocate memory for string parsing\n", __func__);
         return -1;
       }
 
@@ -764,12 +792,12 @@ strparse (const char *string, const char *delim, strlist **list)
       if (count++ == 0)
       {
         curlist = tmplist;
-        *list   = curlist;
+        *list = curlist;
       }
       else
       {
         curlist->next = tmplist;
-        curlist       = curlist->next;
+        curlist = curlist->next;
       }
 
       /* Update 'beg' */
