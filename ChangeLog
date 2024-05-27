@@ -1,4 +1,8 @@
-2024.106: v4.0
+2024.148: v4.0.0
+	A new major version that supports both miniSEED v2 and v3.
+	This release also removes many of the more esoteric features of the
+	program in order make it more maintainable.
+
 	- Port to libmseed 3.1.2 with support for both miniSEED v2 and v3.
 	- The modification log now includes SourceIDs instead of Net,Sta,Loc,Chan.
 	- Byte range annotation on input file names now uses a "-" between start
