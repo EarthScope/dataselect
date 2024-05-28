@@ -1,4 +1,4 @@
-.TH DATASELECT 1 2024/5/24
+.TH DATASELECT 1 2024/5/28
 .SH NAME
 miniSEED data selection, sorting and pruning
 
@@ -161,8 +161,8 @@ a publication version of 4 (aka data quality 'M').
 .IP "-out file    "
 Print a summary of output records to the specified file.  Any existing
 file will be appended to.  Specify the file as '-' to print to stdout
-or '--' to print to stderr.  Each line contains network, station,
-location, channel, quality, start time, end time, byte count and
+or '--' to print to stderr.  Each summary line contains FDSN Source ID,
+publication version, start time, end time, byte count, and
 sample count for each output trace segment.
 
 .IP "-outprefix prefix"

@@ -129,7 +129,7 @@ dataselect [options] file1 [file2 file3 ...]
 
 <b>-out file</b>
 
-<p style="padding-left: 30px;">Print a summary of output records to the specified file.  Any existing file will be appended to.  Specify the file as '-' to print to stdout or '--' to print to stderr.  Each line contains network, station, location, channel, quality, start time, end time, byte count and sample count for each output trace segment.</p>
+<p style="padding-left: 30px;">Print a summary of output records to the specified file.  Any existing file will be appended to.  Specify the file as '-' to print to stdout or '--' to print to stderr.  Each summary line contains FDSN Source ID, publication version, start time, end time, byte count, and sample count for each output trace segment.</p>
 
 <b>-outprefix prefix</b>
 
@@ -268,4 +268,4 @@ EarthScope Data Services
 </pre>
 
 
-(man page 2024/5/24)
+(man page 2024/5/28)
