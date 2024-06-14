@@ -1,3 +1,6 @@
+2024.165: v4.0.1
+	- Retain miniSEED v2 sequence numbers when re-packing records during pruning.
+
 2024.148: v4.0.0
 	A new major version that supports both miniSEED v2 and v3.
 	This release also removes many of the more esoteric features of the
@@ -126,7 +129,7 @@
 
 2012.257: 3.9
 	- Update libmseed to 2.7.
-	- Add -Pe option to request pruning at edges only (user specified start 
+	- Add -Pe option to request pruning at edges only (user specified start
 	and end) at the sample level.  This will leave overlap within the user
 	specified time window but will trim traces to the window.
 
@@ -175,7 +178,7 @@
 2011.144: 3.5.1
 	- Update to libmseed 2.6.1 with fixes for more graceful handling of bad
 	data and corner-case IRIS archive files.
-	
+
 2011.057: 3.5
 	- Update to final libmseed 2.6.
 
@@ -237,7 +240,7 @@
 
 2010.026:
 	- When unpacking errors occur during writing to the output files skip
-	to the next channel and emit an ERROR message to help identify the 
+	to the next channel and emit an ERROR message to help identify the
 	channel.
 
 2010.025:
@@ -249,7 +252,7 @@
 
 2010.015:
 	- Update libmseed to 2.4.
-	- Add -m option to add a srcname to the selection list, this option 
+	- Add -m option to add a srcname to the selection list, this option
 	is effectively a globbing version of -M (which does regex matching).
 
 2010.010:
@@ -321,7 +324,7 @@
 	- Update libmseed to 2.1.5.
 	- Use normalized (time correction applied) start time when
 	writing records to user defined archive files.
-	
+
 2000.067: 1.0
 	- Update man page.
 
@@ -352,11 +355,11 @@
 	- Specifically exclude the OOB MSTrace from pruning.
 
 2007.337: 0.9.4
-	- Exit with message when no output options were specified. 
+	- Exit with message when no output options were specified.
 	- Do not allow deleting of backup files (nobackups) when not
 	replacing input files.
 	- The POD option now implicitly means replacing input files.
- 
+
 2007.324: 0.9.3
 	- Fix free'ing of file lists, which fixes POD processing.
 	- Fix coverage detection of exactly matching trace entries.

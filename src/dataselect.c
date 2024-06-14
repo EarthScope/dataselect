@@ -90,7 +90,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "4.0.0"
+#define VERSION "4.0.1"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */
@@ -923,6 +923,27 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
     recptr->msr->numsamples -= trimsamples;
     recptr->msr->samplecnt -= trimsamples;
     newrange->endtime = newendtime;
+  }
+
+  /* Add the v2 "sequence number" to extra headers so it is included in output */
+  if (recptr->msr->formatversion == 2)
+  {
+    int64_t seqnum = 0;
+    char seqstr[7];
+    char *endptr;
+
+    memcpy (seqstr, recordbuf, 6);
+    seqstr[6] = '\0';
+
+    seqnum = (int64_t)strtoll (seqstr, &endptr, 10);
+
+    if (endptr != seqstr)
+    {
+      if (mseh_set (recptr->msr, "/FDSN/Sequence", &seqnum, 'i'))
+      {
+        ms_log (2, "Cannot set sequence number in extra headers\n");
+      }
+    }
   }
 
   /* Pack the data record into the global record buffer used by writetraces() */
