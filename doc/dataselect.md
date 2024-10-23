@@ -33,7 +33,7 @@ dataselect [options] file1 [file2 file3 ...]
 
 <p >Files on the command line prefixed with a '@' character are input list files and are expected to contain a simple list of input files, see <b>INPUT LIST FILE</b> for more details.</p>
 
-<p >Each input file may be specified with an explict byte range to read. The program will begin reading at the specified start offset and stop reading at the specified end range.  See <b>INPUT FILE RANGE</b> for more details.</p>
+<p >Each input file may be specified with an explicit byte range to read. The program will begin reading at the specified start offset and stop reading at the specified end range.  See <b>INPUT FILE RANGE</b> for more details.</p>
 
 ## <a id='options'>Options</a>
 
@@ -55,11 +55,11 @@ dataselect [options] file1 [file2 file3 ...]
 
 <b>-tt </b><i>secs</i>
 
-<p style="padding-left: 30px;">Specify a time tolerance for constructing continous trace segments. The tolerance is specified in seconds.  The default tolerance is 1/2 of the sample period.</p>
+<p style="padding-left: 30px;">Specify a time tolerance for constructing continuous trace segments. The tolerance is specified in seconds.  The default tolerance is 1/2 of the sample period.</p>
 
 <b>-rt </b><i>diff</i>
 
-<p style="padding-left: 30px;">Specify a sample rate tolerance for constructing continous trace segments. The tolerance is specified as the difference between two sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) < 0.0001).</p>
+<p style="padding-left: 30px;">Specify a sample rate tolerance for constructing continuous trace segments. The tolerance is specified as the difference between two sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) < 0.0001).</p>
 
 <b>-snd</b>
 
@@ -79,7 +79,7 @@ dataselect [options] file1 [file2 file3 ...]
 
 <b>-te </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to miniSEED records that end before or contain <i>time</i>.  The perferred format of the <i>time</i> argument is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that end before or contain <i>time</i>.  The preferred format of the <i>time</i> argument is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.</p>
 
 <b>-m </b><i>match</i>
 
@@ -137,15 +137,15 @@ dataselect [options] file1 [file2 file3 ...]
 
 ## <a id='the-pruning-process'>The Pruning Process</a>
 
-<p >The pruning algorithm used is independant of the file structure and organization.  Data from all input files are parsed and a map created for every data record and their relationship in continuous time series segments.</p>
+<p >The pruning algorithm used is independent of the file structure and organization.  Data from all input files are parsed and a map created for every data record and their relationship in continuous time series segments.</p>
 
-<p >Each data record time coverage in each continuous time-series is compared to the time coverage of every other continous time-series. When overlap is detected, data is optionally removed from the lower priority time-series until the overlap is minimized or completely removed depending on the pruning option specified.</p>
+<p >Each data record time coverage in each continuous time-series is compared to the time coverage of every other continuous time-series. When overlap is detected, data is optionally removed from the lower priority time-series until the overlap is minimized or completely removed depending on the pruning option specified.</p>
 
 ## <a id='selection-file'>Selection File</a>
 
 <p >A selection file is used to match input data records based on network, station, location and channel information.  Optionally a quality and time range may also be specified for more refined selection.  The non-time fields may use the '*' wildcard to match multiple characters and the '?' wildcard to match single characters.  Character sets may also be used, for example '[ENZ]' will match either E, N or Z. The '#' character indicates the remaining portion of the line will be ignored.</p>
 
-<p >Example selection file entires (the first four fields are required)</p>
+<p >Example selection file entries (the first field is required)</p>
 <pre >
 #SourceID                  Starttime              Endtime             Pubversion
 FDSN:IU_ANMO_*_B_H_?
@@ -174,7 +174,7 @@ data/day3.mseed
 
 ## <a id='input-file-range'>Input File Range</a>
 
-<p >Each input file may be specified with an associated byte range to read.  The program will begin reading at the specified start offset and finish reading when at or beyond the end offset.  The range is specified by appending an '@' charater to the filename with the start and end offsets separated by a dash:</p>
+<p >Each input file may be specified with an associated byte range to read.  The program will begin reading at the specified start offset and finish reading when at or beyond the end offset.  The range is specified by appending an '@' character to the filename with the start and end offsets separated by a dash:</p>
 
 <pre >
 filename.mseed@[startoffset][-][endoffset]
@@ -258,7 +258,7 @@ filename.mseed@[startoffset][-][endoffset]
 
 ## <a id='caveats-and-limitations'>Caveats And Limitations</a>
 
-<p >With the ability to specify multiple, arbitrary data selections it is possbile to specify very complex and pathological compound selections. When pruning samples from records into order to fit the requested selections, this program is limited to trimming samples from the beginning and/or end of the record.  This means it is not possible to select two or more non-intersecting time ranges from a single record. Put another way, one cannot select select data from the beginning and end, but not the middle of a record.  The work-around for this limitation is to run the program once for each selection.</p>
+<p >With the ability to specify multiple, arbitrary data selections it is possible to specify very complex and pathological compound selections. When pruning samples from records into order to fit the requested selections, this program is limited to trimming samples from the beginning and/or end of the record.  This means it is not possible to select two or more non-intersecting time ranges from a single record. Put another way, one cannot select select data from the beginning and end, but not the middle of a record.  The work-around for this limitation is to run the program once for each selection.</p>
 
 ## <a id='author'>Author</a>
 
@@ -268,4 +268,4 @@ EarthScope Data Services
 </pre>
 
 
-(man page 2024/5/28)
+(man page 2024/10/23)

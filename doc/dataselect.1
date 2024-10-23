@@ -1,4 +1,4 @@
-.TH DATASELECT 1 2024/5/28
+.TH DATASELECT 1 2024/10/23
 .SH NAME
 miniSEED data selection, sorting and pruning
 
@@ -37,7 +37,7 @@ Files on the command line prefixed with a '@' character are input list
 files and are expected to contain a simple list of input files, see
 \fBINPUT LIST FILE\fP for more details.
 
-Each input file may be specified with an explict byte range to read.
+Each input file may be specified with an explicit byte range to read.
 The program will begin reading at the specified start offset and stop
 reading at the specified end range.  See \fBINPUT FILE RANGE\fP for
 more details.
@@ -59,12 +59,12 @@ Be more verbose.  This flag can be used multiple times ("-v -v" or
 "-vv") for more verbosity.
 
 .IP "-tt \fIsecs\fP"
-Specify a time tolerance for constructing continous trace
+Specify a time tolerance for constructing continuous trace
 segments. The tolerance is specified in seconds.  The default
 tolerance is 1/2 of the sample period.
 
 .IP "-rt \fIdiff\fP"
-Specify a sample rate tolerance for constructing continous trace
+Specify a sample rate tolerance for constructing continuous trace
 segments. The tolerance is specified as the difference between two
 sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
 0.0001).
@@ -96,7 +96,7 @@ is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.
 
 .IP "-te \fItime\fP"
 Limit processing to miniSEED records that end before or contain
-\fItime\fP.  The perferred format of the \fItime\fP argument
+\fItime\fP.  The preferred format of the \fItime\fP argument
 is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.
 
 .IP "-m \fImatch\fP"
@@ -173,13 +173,13 @@ other output.
 
 .SH THE PRUNING PROCESS
 
-The pruning algorithm used is independant of the file structure and
+The pruning algorithm used is independent of the file structure and
 organization.  Data from all input files are parsed and a map created
 for every data record and their relationship in continuous time
 series segments.
 
 Each data record time coverage in each continuous time-series is
-compared to the time coverage of every other continous time-series.
+compared to the time coverage of every other continuous time-series.
 When overlap is detected, data is optionally removed from the lower
 priority time-series until the overlap is minimized or completely
 removed depending on the pruning option specified.
@@ -194,7 +194,7 @@ also be used, for example '[ENZ]' will match either E, N or Z.
 The '#' character indicates the remaining portion of the line will be
 ignored.
 
-Example selection file entires (the first four fields are required)
+Example selection file entries (the first field is required)
 .nf
 #SourceID                  Starttime              Endtime             Pubversion
 FDSN:IU_ANMO_*_B_H_?
@@ -229,7 +229,7 @@ data/day3.mseed
 Each input file may be specified with an associated byte range to
 read.  The program will begin reading at the specified start offset
 and finish reading when at or beyond the end offset.  The range is
-specified by appending an '@' charater to the filename with the start
+specified by appending an '@' character to the filename with the start
 and end offsets separated by a dash:
 
 .nf
@@ -333,7 +333,7 @@ errors were encountered.
 .SH CAVEATS AND LIMITATIONS
 
 With the ability to specify multiple, arbitrary data selections it is
-possbile to specify very complex and pathological compound selections.
+possible to specify very complex and pathological compound selections.
 When pruning samples from records into order to fit the requested
 selections, this program is limited to trimming samples from the
 beginning and/or end of the record.  This means it is not possible to
