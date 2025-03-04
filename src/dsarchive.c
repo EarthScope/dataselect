@@ -56,7 +56,7 @@ static int dsverbose;
  * ds_streamproc:
  *
  * Save miniSEED records in a custom directory/file structure.  The
- * appropriate directories and files are created if nesecessary.  If
+ * appropriate directories and files are created if necessary.  If
  * files already exist they are appended to.  If 'msr' is NULL then
  * ds_shutdown() will be called to close all open files and free all
  * associated memory.
@@ -386,37 +386,17 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
 
   if (foundgroup != NULL)
   {
-    /* Write binary data samples to approriate file */
-    if (msr->datasamples && msr->numsamples)
-    {
-      if (dsverbose >= 3)
-        fprintf (stderr, "Writing binary data samples to data stream file %s\n", filename);
+    if (dsverbose >= 3)
+      fprintf (stderr, "Writing data record to data stream file %s\n", filename);
 
-      if (!write (foundgroup->filed, msr->datasamples, msr->numsamples * ms_samplesize (msr->sampletype)))
-      {
-        fprintf (stderr, "%s(): failed to write binary data samples\n", __func__);
-        return -1;
-      }
-      else
-      {
-        foundgroup->modtime = time (NULL);
-      }
+    if (!write (foundgroup->filed, msr->record, msr->reclen))
+    {
+      fprintf (stderr, "%s: failed to write data record\n", __func__);
+      return -1;
     }
-    /* Write the data record to the appropriate file */
     else
     {
-      if (dsverbose >= 3)
-        fprintf (stderr, "Writing data record to data stream file %s\n", filename);
-
-      if (!write (foundgroup->filed, msr->record, msr->reclen))
-      {
-        fprintf (stderr, "%s: failed to write data record\n", __func__);
-        return -1;
-      }
-      else
-      {
-        foundgroup->modtime = time (NULL);
-      }
+      foundgroup->modtime = time (NULL);
     }
 
     return 0;
