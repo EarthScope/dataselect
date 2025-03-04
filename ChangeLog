@@ -1,3 +1,6 @@
+2025.063: v4.1.0
+	- Fix writing of records using the "archive" options, e.g. -A and presets.
+
 2024.165: v4.0.1
 	- Retain miniSEED v2 sequence numbers when re-packing records during pruning.
 

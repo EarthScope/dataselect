@@ -6,7 +6,7 @@
  * optionally pruning any overlap (at record or sample level).
  *
  * In general critical error messages are prefixed with "ERROR:" and
- * the return code will be 1.  On successfull operation the return
+ * the return code will be 1.  On successful operation the return
  * code will be 0.
  *
  * Written by Chad Trabant, EarthScope Data Services.
@@ -90,7 +90,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "4.0.1"
+#define VERSION "4.1.0"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */
@@ -979,6 +979,9 @@ writerecord (char *record, int reclen, void *handlerdata)
 
   if (!record || reclen <= 0 || !handlerdata)
     return;
+
+  /* Set the embedded record pointer for consistency */
+  writerdata->recptr->msr->record = record;
 
   /* Set v3 publication version or v2 data quality indicator */
   if (setpubver)
