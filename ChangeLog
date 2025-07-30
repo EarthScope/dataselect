@@ -1,3 +1,8 @@
+2025.210: v4.1.1
+	- Update libmseed to 3.1.6 with relevant changes:
+	- When creating v2 records ensure microsecond offsets are -50 to +49, which
+	matches previous major library version behavior and SEED recommendation.
+
 2025.063: v4.1.0
 	- Fix writing of records using the "archive" options, e.g. -A and presets.
 

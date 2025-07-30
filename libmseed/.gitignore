@@ -1,2 +1,13 @@
+# C build objects
+*.a
+*.so
+*.lo
+*.o
+*.dylib
+*.so
+*.dll
+*.dSYM/
+
+# Docs
 doc/working/
 doc/gh-pages/

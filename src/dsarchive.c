@@ -142,7 +142,8 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
   }
 
   /* Decompose SourceID to network station, location and channel codes */
-  if (ms_sid2nslc (msr->sid, network, station, location, channel))
+  if (ms_sid2nslc_n (msr->sid, network, sizeof (network), station, sizeof (station),
+                     location, sizeof (location), channel, sizeof (channel)))
   {
     fprintf (stderr, "%s(): cannot convert SourceID to network, station, location and channel\n", __func__);
     strparse (NULL, NULL, &fnlist);
