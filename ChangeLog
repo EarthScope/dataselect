@@ -1,4 +1,4 @@
-2025.234:
+2025.234: v4.1.2
 	- Update libmseed to v3.1.7. Includes fix for invalid time stamps in v2 record
 	blockettes.
 
