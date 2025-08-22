@@ -90,7 +90,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "4.1.1"
+#define VERSION "4.1.2"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */
@@ -788,17 +788,17 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
     ms_log (2, "Problem with new start/end record bound times.\n");
     ms_log (2, "  Original record %s from %s (byte offset: %llu)\n",
             "SourceID", writerdata->flp->infilename, (unsigned long long)recptr->fileoffset);
-    ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+    ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+    ms_nstime2timestr_n (recptr->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, "       Start: %s       End: %s\n", stime, etime);
     if (newrange->starttime == NSTUNSET)
       strcpy (stime, "NONE");
     else
-      ms_nstime2timestr (newrange->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr_n (newrange->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
     if (newrange->endtime == NSTUNSET)
       strcpy (etime, "NONE");
     else
-      ms_nstime2timestr (newrange->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr_n (newrange->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, " Start bound: %-24s End bound: %-24s\n", stime, etime);
 
     return -1;
@@ -815,7 +815,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   {
     if (verbose)
     {
-      ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
       ms_log (1, "Skipping trim of %s (%s), unsupported encoding (%d: %s)\n",
               recptr->msr->sid, stime, recptr->msr->encoding, ms_encodingstr (recptr->msr->encoding));
     }
@@ -835,17 +835,17 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   if (verbose > 1)
   {
     ms_log (1, "Triming record: %s (%u)\n", recptr->msr->sid, recptr->msr->pubversion);
-    ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-    ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+    ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+    ms_nstime2timestr_n (recptr->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (1, "       Start: %s        End: %s\n", stime, etime);
     if (newrange->starttime == NSTUNSET)
       strcpy (stime, "NONE");
     else
-      ms_nstime2timestr (newrange->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr_n (newrange->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
     if (newrange->endtime == NSTUNSET)
       strcpy (etime, "NONE");
     else
-      ms_nstime2timestr (newrange->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr_n (newrange->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (1, " Start bound: %-24s  End bound: %-24s\n", stime, etime);
   }
 
@@ -877,7 +877,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 
     if (verbose > 2)
     {
-      ms_nstime2timestr (newstarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr_n (newstarttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
       ms_log (1, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
     }
 
@@ -916,7 +916,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 
     if (verbose > 2)
     {
-      ms_nstime2timestr (newendtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+      ms_nstime2timestr_n (newendtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
       ms_log (1, "Removing %d samples from the end, new end time: %s\n", trimsamples, etime);
     }
 
@@ -952,7 +952,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 
   if (packedrecords <= 0)
   {
-    ms_nstime2timestr (ostarttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+    ms_nstime2timestr_n (ostarttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, "%s(): Cannot pack miniSEED record for %s %s\n",
             __func__, recptr->msr->sid, stime);
 
@@ -1413,8 +1413,8 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
       {
         if (verbose > 1)
         {
-          ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-          ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+          ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+          ms_nstime2timestr_n (recptr->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
           ms_log (1, "Removing Record [complete overlap] %s (%u) :: %s  %s  offset: %" PRId64 ", reclen: %d\n",
                   targetsourceid, recptr->msr->pubversion, stime, etime,
                   recptr->fileoffset, recptr->msr->reclen);
@@ -1452,8 +1452,8 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
           {
             if (verbose > 1)
             {
-              ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-              ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+              ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+              ms_nstime2timestr_n (recptr->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
               ms_log (1, "Removing record [start intersect] %s (%u) :: %s  %s\n",
                       targetsourceid, recptr->msr->pubversion, stime, etime);
             }
@@ -1493,8 +1493,8 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
           {
             if (verbose > 1)
             {
-              ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-              ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+              ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+              ms_nstime2timestr_n (recptr->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
               ms_log (1, "Removing record [end intersect] %s (%u) :: %s  %s\n",
                       targetsourceid, recptr->msr->pubversion, stime, etime);
             }
@@ -1520,8 +1520,8 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
         {
           if (verbose > 1)
           {
-            ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-            ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+            ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+            ms_nstime2timestr_n (recptr->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
             ms_log (1, "Removing record [all pruned] %s (%u) :: %s  %s\n",
                     targetsourceid, recptr->msr->pubversion, stime, etime);
           }
@@ -1657,10 +1657,10 @@ printtracelist (MS3TraceList *mstl, uint8_t details)
     while (seg)
     {
       /* Create formatted time strings */
-      if (ms_nstime2timestr (seg->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO) == NULL)
+      if (ms_nstime2timestr_n (seg->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO) == NULL)
         ms_log (2, "Cannot convert trace start time for %s\n", id->sid);
 
-      if (ms_nstime2timestr (seg->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO) == NULL)
+      if (ms_nstime2timestr_n (seg->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO) == NULL)
         ms_log (2, "Cannot convert trace end time for %s\n", id->sid);
 
       /* Print MS3TraceSeg header */
@@ -1680,8 +1680,8 @@ printtracelist (MS3TraceList *mstl, uint8_t details)
                   (recptr->filename) ? recptr->filename : "NONE", recptr->fileoffset,
                   recptr->msr->reclen, recptr->msr->pubversion);
 
-          ms_nstime2timestr (recptr->msr->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
-          ms_nstime2timestr (recptr->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+          ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+          ms_nstime2timestr_n (recptr->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
           ms_log (0, "        Start: %s        End: %s\n", stime, etime);
 
           if (details && recptr->prvtptr != NULL)
@@ -1691,11 +1691,11 @@ printtracelist (MS3TraceList *mstl, uint8_t details)
             if (newrange->starttime == NSTUNSET)
               strcpy (stime, "NONE");
             else
-              ms_nstime2timestr (newrange->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO);
+              ms_nstime2timestr_n (newrange->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
             if (newrange->endtime == NSTUNSET)
               strcpy (etime, "NONE");
             else
-              ms_nstime2timestr (newrange->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO);
+              ms_nstime2timestr_n (newrange->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
 
             ms_log (0, " Select start: %-24s Select end: %-24s\n", stime, etime);
           }
@@ -1753,10 +1753,10 @@ printwritten (MS3TraceList *mstl)
     seg = id->first;
     while (seg)
     {
-      if (ms_nstime2timestr (seg->starttime, stime, ISOMONTHDAY_Z, NANO_MICRO) == NULL)
+      if (ms_nstime2timestr_n (seg->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO) == NULL)
         ms_log (2, "Cannot convert trace start time for %s\n", id->sid);
 
-      if (ms_nstime2timestr (seg->endtime, etime, ISOMONTHDAY_Z, NANO_MICRO) == NULL)
+      if (ms_nstime2timestr_n (seg->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO) == NULL)
         ms_log (2, "Cannot convert trace end time for %s\n", id->sid);
 
       fprintf (ofp, "%s%s|%u|%s|%s|%" PRId64 "|%" PRId64 "\n",
