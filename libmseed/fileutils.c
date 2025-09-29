@@ -36,15 +36,15 @@
 MS3FileParam gMS3FileParam = MS3FileParam_INITIALIZER;
 
 /* Stream state flags */
-#define MSFP_RANGEAPPLIED 0x0001  //!< Byte ranging has been applied
+#define MSFP_RANGEAPPLIED 0x0001 //!< Byte ranging has been applied
 
 static char *parse_pathname_range (const char *string, int64_t *start, int64_t *end);
 
-/*****************************************************************/ /**
+/** ************************************************************************
  * @brief Run-time test for URL support in libmseed.
  *
  * @returns 0 when no URL suported is included, non-zero otherwise.
- *********************************************************************/
+ ***************************************************************************/
 int
 libmseed_url_support (void)
 {
@@ -55,7 +55,7 @@ libmseed_url_support (void)
 #endif
 } /* End of libmseed_url_support() */
 
-/*****************************************************************/ /**
+/** ************************************************************************
  * @brief Initialize ::MS3FileParam parameters for a file descriptor
  *
  * Initialize a ::MS3FileParam for reading from a specified \a fd
@@ -70,7 +70,7 @@ libmseed_url_support (void)
  * @returns Allocated ::MS3FileParam on success and NULL on error.
  *
  * \ref MessageOnError - this function logs a message on error
- *********************************************************************/
+ ***************************************************************************/
 MS3FileParam *
 ms3_mstl_init_fd (int fd)
 {
@@ -100,62 +100,14 @@ ms3_mstl_init_fd (int fd)
   return msfp;
 }
 
-/*****************************************************************/ /**
- * @brief Read miniSEED records from a file or URL
- *
- * This routine is a wrapper for ms3_readmsr_selection() that uses the
- * global file reading parameters.  This routine is _not_ thread safe
- * and cannot be used to read more than one stream at a time.
- *
- * See ms3_readmsr_selection() for a further description of arguments.
- *
- * @returns Return value from ms3_readmsr_selection()
- *
- * \ref MessageOnError - this function logs a message on error
- *********************************************************************/
-int
-ms3_readmsr (MS3Record **ppmsr, const char *mspath,
-             uint32_t flags, int8_t verbose)
-{
-  MS3FileParam *msfp = &gMS3FileParam;
-
-  return ms3_readmsr_selection (&msfp, ppmsr, mspath,
-                                flags, NULL, verbose);
-} /* End of ms3_readmsr() */
-
-/*****************************************************************/ /**
- * @brief Read miniSEED records from a file or URL in a thread-safe way
- *
- * This routine is a wrapper for ms3_readmsr_selection() that uses the
- * re-entrant capabilities.  This routine is thread safe and can be
- * used to read more than one stream at a time as long as separate
- * MS3FileParam containers are used for each stream.
- *
- * A ::MS3FileParam container will be allocated if \c *ppmsfp is \c
- * NULL.
- *
- * See ms3_readmsr_selection() for a further description of arguments.
- *
- * @returns Return value from ms3_readmsr_selection()
- *
- * \ref MessageOnError - this function logs a message on error
- *********************************************************************/
-int
-ms3_readmsr_r (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath,
-               uint32_t flags, int8_t verbose)
-{
-  return ms3_readmsr_selection (ppmsfp, ppmsr, mspath,
-                                flags, NULL, verbose);
-} /* End of ms_readmsr_r() */
-
-/**********************************************************************
+/***************************************************************************
  *
  * A helper routine to shift (remove bytes from the beginning of) the
  * stream reading buffer for a MSFP.  The buffer length, reading offset
  * and stream position indicators are all updated as necessary.
  *
  * \ref MessageOnError - this function logs a message on error
- *********************************************************************/
+ ***************************************************************************/
 static void
 ms3_shift_msfp (MS3FileParam *msfp, int shift)
 {
@@ -167,8 +119,8 @@ ms3_shift_msfp (MS3FileParam *msfp, int shift)
 
   if (shift <= 0 && shift > msfp->readlength)
   {
-    ms_log (2, "Cannot shift buffer, shift: %d, readlength: %d, readoffset: %d\n",
-            shift, msfp->readlength, msfp->readoffset);
+    ms_log (2, "Cannot shift buffer, shift: %d, readlength: %d, readoffset: %d\n", shift,
+            msfp->readlength, msfp->readoffset);
     return;
   }
 
@@ -194,77 +146,25 @@ ms3_shift_msfp (MS3FileParam *msfp, int shift)
 /* Macro to return current reading position */
 #define MSFPREADPTR(MSFP) (MSFP->readbuffer + MSFP->readoffset)
 
-/*****************************************************************/ /**
- * @brief Read miniSEED records from a file or URL with optional selection
+/***************************************************************************
+ * Implementation of MS3Record reading functions
  *
- * This routine will open and read, with subsequent calls, all
- * miniSEED records in specified stream (file or URL).
- *
- * All stream reading parameters are stored in a ::MS3FileParam
- * container and returned (via a pointer to a pointer) for the calling
- * routine to use in subsequent calls.  A ::MS3FileParam container
- * will be allocated if \c *ppmsfp is \c NULL.  This routine is thread
- * safe and can be used to read multiple streams in parallel as long as
- * the stream reading parameters are managed appropriately.
- *
- * The \a flags argument are bit flags used to control the reading
- * process.  The following flags are supported:
- *  - ::MSF_SKIPNOTDATA - skip input that cannot be identified as miniSEED
- *  - ::MSF_UNPACKDATA data samples will be unpacked
- *  - ::MSF_VALIDATECRC Validate CRC (if present in format)
- *  - ::MSF_PNAMERANGE Parse byte range suffix from \a mspath
- *
- * If ::MSF_PNAMERANGE is set in \a flags, the \a mspath will be
- * searched for start and end byte offsets for the file or URL in the
- * following format: '\c PATH@@\c START-\c END', where \c START and \c
- * END are both optional and specified in bytes.
- *
- * If \a selections is not NULL, the ::MS3Selections will be used to
- * limit what is returned to the caller.  Any data not matching the
- * selections will be skipped.
- *
- * After reading all the records in a stream the calling program should
- * call this routine a final time with \a mspath set to NULL.  This
- * will close the input stream and free allocated memory.
- *
- * @param[out] ppmsfp Pointer-to-pointer of an ::MS3FileParam, which
- * contains the state of stream reading across iterative calls of this
- * function.
- *
- * @param[out] ppmsr Pointer-to-pointer of an ::MS3Record, which will
- * contain a parsed record on success.
- *
- * @param[in] mspath File or URL to read
- *
- * @param[in] flags Flags used to control parsing, see @ref
- * control-flags
- *
- * @param[in] selections Specify limits to which data should be
- * returned, see @ref data-selections
- *
- * @param[in] verbose Controls verbosity, 0 means no diagnostic output
- *
- * @returns ::MS_NOERROR and populates an ::MS3Record struct, at \a
- * *ppmsr, on successful read.  On error, a (negative) libmseed error
- * code is returned and *ppmsr is set to NULL.
- * @retval ::MS_ENDOFFILE on reaching the end of a stream
- *
- * \sa @ref data-selections
- *
- * \ref MessageOnError - this function logs a message on error
- *********************************************************************/
+ * \sa ms3_readmsr()
+ * \sa ms3_readmsr_r()
+ * \sa ms3_readmsr_selection()
+ ***************************************************************************/
 int
-ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath,
-                       uint32_t flags, const MS3Selections *selections, int8_t verbose)
+_ms3_readmsr_impl (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath, uint32_t flags,
+                   const MS3Selections *selections, int8_t verbose)
 {
   MS3FileParam *msfp;
   uint32_t pflags = flags;
   char *pathname_range = NULL;
 
-  int parseval  = 0;
-  int readsize  = 0;
+  int parseval = 0;
+  int readsize = 0;
   int readcount = 0;
-  int retcode   = MS_NOERROR;
+  int retcode = MS_NOERROR;
 
   if (!ppmsr || !ppmsfp)
   {
@@ -285,7 +185,7 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
       return MS_GENERROR;
     }
 
-    *msfp = (MS3FileParam) MS3FileParam_INITIALIZER;
+    *msfp = (MS3FileParam)MS3FileParam_INITIALIZER;
 
     /* Redirect the supplied pointer to the allocated params */
     *ppmsfp = msfp;
@@ -305,7 +205,7 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
     /* If the parameters are the global parameters reset them */
     if (*ppmsfp == &gMS3FileParam)
     {
-      gMS3FileParam = (struct MS3FileParam) MS3FileParam_INITIALIZER;
+      gMS3FileParam = (struct MS3FileParam)MS3FileParam_INITIALIZER;
     }
     /* Otherwise free the MS3FileParam */
     else
@@ -356,7 +256,7 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
     }
     else
     {
-      if (msio_fopen(&msfp->input, msfp->path, "rb", &msfp->startoffset, &msfp->endoffset))
+      if (msio_fopen (&msfp->input, msfp->path, "rb", &msfp->startoffset, &msfp->endoffset))
       {
         msr3_free (ppmsr);
         return MS_GENERROR;
@@ -430,14 +330,14 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
       if (parseval == 0)
       {
         /* Test against selections if supplied */
-        if (selections &&
-            !ms3_matchselect (selections, (*ppmsr)->sid, (*ppmsr)->starttime,
-                              msr3_endtime (*ppmsr), (*ppmsr)->pubversion, NULL))
+        if (selections && !ms3_matchselect (selections, (*ppmsr)->sid, (*ppmsr)->starttime,
+                                            msr3_endtime (*ppmsr), (*ppmsr)->pubversion, NULL))
         {
           if (verbose > 1)
           {
-            ms_log (0, "Skipping (selection) record for %s (%d bytes) starting at offset %" PRId64 "\n",
-                    (*ppmsr)->sid, (*ppmsr)->reclen, msfp->streampos);
+            ms_log (
+                0, "Skipping (selection) record for %s (%d bytes) starting at offset %" PRId64 "\n",
+                (*ppmsr)->sid, (*ppmsr)->reclen, msfp->streampos);
           }
 
           /* Skip record length bytes, update reading offset and file position */
@@ -478,8 +378,8 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
         {
           if (verbose > 1)
           {
-            ms_log (0, "Skipped %d bytes of non-data record at byte offset %" PRId64 "\n",
-                    SKIPLEN, msfp->streampos);
+            ms_log (0, "Skipped %d bytes of non-data record at byte offset %" PRId64 "\n", SKIPLEN,
+                    msfp->streampos);
           }
 
           /* Skip SKIPLEN bytes, update reading offset and file position */
@@ -497,7 +397,9 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
         }
         else if (parseval == MS_OUTOFRANGE)
         {
-          ms_log (2, "miniSEED record length out of supported range in %s (at byte offset %" PRId64 ")\n",
+          ms_log (2,
+                  "miniSEED record length out of supported range in %s (at byte offset %" PRId64
+                  ")\n",
                   msfp->path, msfp->streampos);
 
           retcode = parseval;
@@ -522,7 +424,9 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
           }
           else
           {
-            ms_log (2, "miniSEED record length out of supported range in %s (at byte offset %" PRId64 ")\n",
+            ms_log (2,
+                    "miniSEED record length out of supported range in %s (at byte offset %" PRId64
+                    ")\n",
                     msfp->path, msfp->streampos);
 
             retcode = MS_OUTOFRANGE;
@@ -568,7 +472,107 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
   return retcode;
 } /* End of ms3_readmsr_selection() */
 
-/****************************************************************/ /**
+/** ************************************************************************
+ * @brief Read miniSEED records from a file or URL
+ *
+ * This routine will open and read, with subsequent calls, all
+ * miniSEED records in specified stream (file or URL).
+ *
+ * All stream reading parameters are stored in a ::MS3FileParam
+ * container and returned (via a pointer to a pointer) for the calling
+ * routine to use in subsequent calls.  A ::MS3FileParam container
+ * will be allocated if \c *ppmsfp is \c NULL.  This routine is thread
+ * safe and can be used to read multiple streams in parallel as long as
+ * the stream reading parameters are managed appropriately.
+ *
+ * The \a flags argument are bit flags used to control the reading
+ * process.  The following flags are supported:
+ *  - ::MSF_SKIPNOTDATA - skip input that cannot be identified as miniSEED
+ *  - ::MSF_UNPACKDATA data samples will be unpacked
+ *  - ::MSF_VALIDATECRC Validate CRC (if present in format)
+ *  - ::MSF_PNAMERANGE Parse byte range suffix from \a mspath
+ *
+ * If ::MSF_PNAMERANGE is set in \a flags, the \a mspath will be
+ * searched for start and end byte offsets for the file or URL in the
+ * following format: '\c PATH@@\c START-\c END', where \c START and \c
+ * END are both optional and specified in bytes.
+ *
+ * After reading all the records in a stream the calling program should
+ * call this routine a final time with \a mspath set to NULL.  This
+ * will close the input stream and free allocated memory.
+ *
+ * @param[out] ppmsr Pointer-to-pointer of an ::MS3Record, which will
+ * contain a parsed record on success.
+ *
+ * @param[in] mspath File or URL to read
+ *
+ * @param[in] flags Flags used to control parsing, see @ref
+ * control-flags
+ *
+ * @param[in] verbose Controls verbosity, 0 means no diagnostic output
+ *
+ * @returns ::MS_NOERROR and populates an ::MS3Record struct, at \a
+ * *ppmsr, on successful read.  On error, a (negative) libmseed error
+ * code is returned and *ppmsr is set to NULL.
+ * @retval ::MS_ENDOFFILE on reaching the end of a stream
+ *
+ * \sa @ref data-selections
+ *
+ * \ref MessageOnError - this function logs a message on error
+ *
+ * \sa ms3_readmsr_r()
+ * \sa ms3_readmsr_selection()
+ ***************************************************************************/
+int
+ms3_readmsr (MS3Record **ppmsr, const char *mspath, uint32_t flags, int8_t verbose)
+{
+  MS3FileParam *msfp = &gMS3FileParam;
+
+  return ms3_readmsr_selection (&msfp, ppmsr, mspath, flags, NULL, verbose);
+} /* End of ms3_readmsr() */
+
+/** ************************************************************************
+ * @copydoc ms3_readmsr()
+ *
+ * This function is identical to ms3_readmsr() but with the additonal \a ppmsfp
+ * parameter enabling re-entrant capabilities. This function is thread safe and
+ * can be used to read more than one stream at a time as long as separate
+ * ::MS3FileParam instances are used for each stream.
+ *
+ * @param[out] ppmsfp Pointer-to-pointer of an ::MS3FileParam, which
+ * contains the state of stream reading across iterative calls of this
+ * function.
+ *
+ * A ::MS3FileParam container will be allocated if \c *ppmsfp is \c NULL.
+ ***************************************************************************/
+int
+ms3_readmsr_r (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath, uint32_t flags,
+               int8_t verbose)
+{
+  return ms3_readmsr_selection (ppmsfp, ppmsr, mspath, flags, NULL, verbose);
+} /* End of ms_readmsr_r() */
+
+/** ************************************************************************
+ * @copydoc ms3_readmsr()
+ *
+ * This function is identical to ms3_readmsr() but with the additonal \a ppmsfp
+ * and \a selections parameters:
+ *
+ * @param[out] ppmsfp Pointer-to-pointer of an ::MS3FileParam, which contains
+ * the state of stream reading across iterative calls of this function. A
+ * ::MS3FileParam container will be allocated if \c *ppmsfp is \c NULL.
+ *
+ * @param[in] selections Specify limits to which data should be
+ * returned, see @ref data-selections
+ ***************************************************************************/
+int
+ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath, uint32_t flags,
+                       const MS3Selections *selections, int8_t verbose)
+{
+  return _ms3_readmsr_impl (ppmsfp, ppmsr, mspath, flags, selections, verbose);
+}
+
+/** ************************************************************************
  * @brief Read miniSEED from a file into a trace list
  *
  * This is a simple wrapper for ms3_readtracelist_selection() that
@@ -582,17 +586,16 @@ ms3_readmsr_selection (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *msp
  * \ref MessageOnError - this function logs a message on error
  *
  * \sa @ref trace-list
- *********************************************************************/
+ ***************************************************************************/
 int
-ms3_readtracelist (MS3TraceList **ppmstl, const char *mspath,
-                   const MS3Tolerance *tolerance, int8_t splitversion,
-                   uint32_t flags, int8_t verbose)
+ms3_readtracelist (MS3TraceList **ppmstl, const char *mspath, const MS3Tolerance *tolerance,
+                   int8_t splitversion, uint32_t flags, int8_t verbose)
 {
-  return ms3_readtracelist_selection (ppmstl, mspath, tolerance, NULL,
-                                      splitversion, flags, verbose);
+  return ms3_readtracelist_selection (ppmstl, mspath, tolerance, NULL, splitversion, flags,
+                                      verbose);
 } /* End of ms3_readtracelist() */
 
-/****************************************************************/ /**
+/** ************************************************************************
  * @brief Read miniSEED from a file into a trace list, with time range
  * selection
  *
@@ -607,32 +610,30 @@ ms3_readtracelist (MS3TraceList **ppmstl, const char *mspath,
  * \ref MessageOnError - this function logs a message on error
  *
  * \sa @ref trace-list
- *********************************************************************/
+ ***************************************************************************/
 int
-ms3_readtracelist_timewin (MS3TraceList **ppmstl, const char *mspath,
-                           const MS3Tolerance *tolerance,
-                           nstime_t starttime, nstime_t endtime,
-                           int8_t splitversion, uint32_t flags, int8_t verbose)
+ms3_readtracelist_timewin (MS3TraceList **ppmstl, const char *mspath, const MS3Tolerance *tolerance,
+                           nstime_t starttime, nstime_t endtime, int8_t splitversion,
+                           uint32_t flags, int8_t verbose)
 {
   MS3Selections selection;
   MS3SelectTime selecttime;
 
   selection.sidpattern[0] = '*';
   selection.sidpattern[1] = '\0';
-  selection.timewindows   = &selecttime;
-  selection.pubversion    = 0;
-  selection.next          = NULL;
+  selection.timewindows = &selecttime;
+  selection.pubversion = 0;
+  selection.next = NULL;
 
   selecttime.starttime = starttime;
-  selecttime.endtime   = endtime;
-  selecttime.next      = NULL;
+  selecttime.endtime = endtime;
+  selecttime.next = NULL;
 
-  return ms3_readtracelist_selection (ppmstl, mspath, tolerance,
-                                      &selection, splitversion, flags,
+  return ms3_readtracelist_selection (ppmstl, mspath, tolerance, &selection, splitversion, flags,
                                       verbose);
 } /* End of ms3_readtracelist_timewin() */
 
-/****************************************************************/ /**
+/** ************************************************************************
  * @brief Read miniSEED from a file into a trace list, with selection
  * filtering
  *
@@ -671,15 +672,15 @@ ms3_readtracelist_timewin (MS3TraceList **ppmstl, const char *mspath,
  *
  * \sa @ref trace-list
  * \sa @ref data-selections
- *********************************************************************/
+ ***************************************************************************/
 int
 ms3_readtracelist_selection (MS3TraceList **ppmstl, const char *mspath,
                              const MS3Tolerance *tolerance, const MS3Selections *selections,
                              int8_t splitversion, uint32_t flags, int8_t verbose)
 {
-  MS3Record *msr     = NULL;
+  MS3Record *msr = NULL;
   MS3FileParam *msfp = NULL;
-  MS3TraceSeg *seg   = NULL;
+  MS3TraceSeg *seg = NULL;
   MS3RecordPtr *recordptr = NULL;
   uint32_t dataoffset;
   uint32_t datasize;
@@ -704,8 +705,8 @@ ms3_readtracelist_selection (MS3TraceList **ppmstl, const char *mspath,
   }
 
   /* Loop over the input file and add each record to trace list */
-  while ((retcode = ms3_readmsr_selection (&msfp, &msr, mspath,
-                                           flags, selections, verbose)) == MS_NOERROR)
+  while ((retcode = ms3_readmsr_selection (&msfp, &msr, mspath, flags, selections, verbose)) ==
+         MS_NOERROR)
   {
     seg = mstl3_addmsr_recordptr (*ppmstl, msr, (flags & MSF_RECORDLIST) ? &recordptr : NULL,
                                   splitversion, 1, flags, tolerance);
@@ -728,12 +729,12 @@ ms3_readtracelist_selection (MS3TraceList **ppmstl, const char *mspath,
         break;
       }
 
-      recordptr->bufferptr  = NULL;
-      recordptr->fileptr    = NULL;
-      recordptr->filename   = mspath;
+      recordptr->bufferptr = NULL;
+      recordptr->fileptr = NULL;
+      recordptr->filename = mspath;
       recordptr->fileoffset = msfp->streampos - msr->reclen;
       recordptr->dataoffset = dataoffset;
-      recordptr->prvtptr    = NULL;
+      recordptr->prvtptr = NULL;
     }
   }
 
@@ -746,7 +747,7 @@ ms3_readtracelist_selection (MS3TraceList **ppmstl, const char *mspath,
   return retcode;
 } /* End of ms3_readtracelist_selection() */
 
-/*****************************************************************/ /**
+/** ************************************************************************
  * @brief Set User-Agent header for URL-based requests.
  *
  * Configure global User-Agent header for URL-based requests
@@ -763,7 +764,7 @@ ms3_readtracelist_selection (MS3TraceList **ppmstl, const char *mspath,
  * @returns 0 on succes and a negative library error code on error.
  *
  * \ref MessageOnError - this function logs a message on error
- *********************************************************************/
+ ***************************************************************************/
 int
 ms3_url_useragent (const char *program, const char *version)
 {
@@ -777,7 +778,7 @@ ms3_url_useragent (const char *program, const char *version)
 #endif
 } /* End of ms3_url_useragent() */
 
-/*****************************************************************/ /**
+/** ************************************************************************
  * @brief Set authentication credentials for URL-based requests.
  *
  * Sets global user and password for authentication for URL-based
@@ -793,12 +794,12 @@ ms3_url_useragent (const char *program, const char *version)
  * @returns 0 on succes and a negative library error code on error.
  *
  * \ref MessageOnError - this function logs a message on error
- *********************************************************************/
+ ***************************************************************************/
 int
 ms3_url_userpassword (const char *userpassword)
 {
 #if !defined(LIBMSEED_URL)
-  (void) userpassword; /* Unused */
+  (void)userpassword; /* Unused */
   ms_log (2, "URL support not included in library\n");
   return -1;
 #else
@@ -806,7 +807,7 @@ ms3_url_userpassword (const char *userpassword)
 #endif
 } /* End of ms3_url_userpassword() */
 
-/*****************************************************************/ /**
+/** ************************************************************************
  * @brief Add header to any URL-based requests.
  *
  * Sets global header to be included in URL-based requests generated
@@ -822,7 +823,7 @@ ms3_url_userpassword (const char *userpassword)
  * @returns 0 on succes and a negative library error code on error.
  *
  * \ref MessageOnError - this function logs a message on error
- *********************************************************************/
+ ***************************************************************************/
 int
 ms3_url_addheader (const char *header)
 {
@@ -835,14 +836,14 @@ ms3_url_addheader (const char *header)
 #endif
 } /* End of ms3_url_addheader() */
 
-/*****************************************************************/ /**
+/** ************************************************************************
  * @brief Free all set headers for URL-based requests.
  *
  * Free all global headers for URL-based requests as set by
  * ms3_url_addheader().
  *
  * @sa ms3_url_addheader()
- *********************************************************************/
+ ***************************************************************************/
 void
 ms3_url_freeheaders (void)
 {
@@ -853,7 +854,6 @@ ms3_url_freeheaders (void)
   msio_url_freeheaders ();
 #endif
 } /* End of ms3_url_freeheaders() */
-
 
 /***************************************************************************
  *
@@ -870,7 +870,7 @@ ms_record_handler_int (char *record, int reclen, void *ofp)
   }
 } /* End of ms_record_handler_int() */
 
-/**********************************************************************/ /**
+/** ************************************************************************
  * @brief Write miniSEED from an ::MS3Record container to a file
  *
  * Pack ::MS3Record data into miniSEED record(s) by calling
@@ -896,11 +896,11 @@ ms_record_handler_int (char *record, int reclen, void *ofp)
  * \sa msr3_pack()
  ***************************************************************************/
 int64_t
-msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overwrite,
-                 uint32_t flags, int8_t verbose)
+msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overwrite, uint32_t flags,
+                 int8_t verbose)
 {
   FILE *ofp;
-  const char *perms     = (overwrite) ? "wb" : "ab";
+  const char *perms = (overwrite) ? "wb" : "ab";
   int64_t packedrecords = 0;
 
   if (!msr || !mspath)
@@ -929,7 +929,7 @@ msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overwrite,
   return packedrecords;
 } /* End of msr3_writemseed() */
 
-/**********************************************************************/ /**
+/** ************************************************************************
  * @brief Write miniSEED from an ::MS3TraceList container to a file
  *
  * Pack ::MS3TraceList data into miniSEED record(s) by calling
@@ -957,11 +957,11 @@ msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overwrite,
  * \sa msr3_pack()
  ***************************************************************************/
 int64_t
-mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite,
-                  int maxreclen, int8_t encoding, uint32_t flags, int8_t verbose)
+mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite, int maxreclen,
+                  int8_t encoding, uint32_t flags, int8_t verbose)
 {
   FILE *ofp;
-  const char *perms     = (overwrite) ? "wb" : "ab";
+  const char *perms = (overwrite) ? "wb" : "ab";
   int64_t packedrecords = 0;
 
   if (!mstl || !mspath)
@@ -987,8 +987,8 @@ mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite,
   /* Pack all data */
   flags |= MSF_FLUSHDATA;
 
-  packedrecords = mstl3_pack (mstl, &ms_record_handler_int, ofp, maxreclen,
-                              encoding, NULL, flags, verbose, NULL);
+  packedrecords = mstl3_pack (mstl, &ms_record_handler_int, ofp, maxreclen, encoding, NULL, flags,
+                              verbose, NULL);
 
   /* Close file and return record count */
   fclose (ofp);
@@ -996,8 +996,7 @@ mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite,
   return packedrecords;
 } /* End of mstl3_writemseed() */
 
-
-/*****************************************************************/ /**
+/** ************************************************************************
  * Parse a range from the end of a string.
  *
  * Expected format is: 'PATH@START-END'
@@ -1008,16 +1007,16 @@ mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite,
  * Expected variations: '@START', '@START-END', '@-END'
  *
  * @returns Pointer to '@' starting valid range on success, otherwise NULL.
- *********************************************************************/
+ ***************************************************************************/
 char *
 parse_pathname_range (const char *string, int64_t *start, int64_t *end)
 {
-  char startstr[21]   = {0}; /* Maximum of 20 digit value */
-  char endstr[21]     = {0}; /* Maximum of 20 digit value */
+  char startstr[21] = {0}; /* Maximum of 20 digit value */
+  char endstr[21] = {0};   /* Maximum of 20 digit value */
   uint8_t startdigits = 0;
-  uint8_t enddigits   = 0;
-  char *dash          = NULL;
-  char *at            = NULL;
+  uint8_t enddigits = 0;
+  char *dash = NULL;
+  char *at = NULL;
   char *ptr;
 
   if (!string || (!start || !end))
@@ -1032,10 +1031,10 @@ parse_pathname_range (const char *string, int64_t *start, int64_t *end)
     while (*(++ptr) != '\0')
     {
       /* If a digit before dash, part of start */
-      if (isdigit((int)*ptr) && dash == NULL)
+      if (isdigit ((int)*ptr) && dash == NULL)
         startstr[startdigits++] = *ptr;
       /* If a digit after dash, part of end */
-      else if (isdigit((int)*ptr) && dash != NULL)
+      else if (isdigit ((int)*ptr) && dash != NULL)
         endstr[enddigits++] = *ptr;
       /* If a dash after a dash, not a valid range */
       else if (*ptr == '-' && dash != NULL)
@@ -1048,16 +1047,16 @@ parse_pathname_range (const char *string, int64_t *start, int64_t *end)
         return NULL;
 
       /* If digit sequences have exceeded limits, not a valid range */
-      if (startdigits >= sizeof(startstr) || enddigits >= sizeof(endstr))
+      if (startdigits >= sizeof (startstr) || enddigits >= sizeof (endstr))
         return NULL;
     }
 
     /* Convert start and end values to numbers if non-zero length */
     if (start && startdigits)
-      *start = (int64_t) strtoull (startstr, NULL, 10);
+      *start = (int64_t)strtoull (startstr, NULL, 10);
 
     if (end && enddigits)
-      *end = (int64_t) strtoull (endstr, NULL, 10);
+      *end = (int64_t)strtoull (endstr, NULL, 10);
   }
 
   return at;
