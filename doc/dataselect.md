@@ -69,6 +69,10 @@ dataselect [options] file1 [file2 file3 ...]
 
 <p style="padding-left: 30px;">Consider all publication versions (or v2 qualities) equal when determining priority for pruning.  By default priority is given to the data with the highest publication version.</p>
 
+<b>-F</b>\fP
+
+<p style="padding-left: 30px;">Use input file order for 'best' prioritization, lowest to highest, for pruning regardless of publication version (or v2 quality).  Data in input files specified later will be considered higher priority than data in input files specified earlier.</p>
+
 <b>-s </b><i>selectfile</i>
 
 <p style="padding-left: 30px;">Limit processing to miniSEED records that match a selection in the specified file.  The selection file contains parameters to match the SourceID (network, station, location, channel), publication version (or v2 quality), and time range for input records. As a special case, specifying "-" will result in selection lines being read from stdin.  For more details see the <b>SELECTION FILE</b> section below.</p>
@@ -268,4 +272,4 @@ EarthScope Data Services
 </pre>
 
 
-(man page 2024/10/23)
+(man page 2025/10/25)

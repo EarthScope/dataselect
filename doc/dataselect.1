@@ -1,4 +1,4 @@
-.TH DATASELECT 1 2024/10/23
+.TH DATASELECT 1 2025/10/25
 .SH NAME
 miniSEED data selection, sorting and pruning
 
@@ -79,6 +79,12 @@ data.
 Consider all publication versions (or v2 qualities) equal when
 determining priority for pruning.  By default priority is given to
 the data with the highest publication version.
+
+.IP "-F\fP"
+Use input file order for 'best' prioritization, lowest to highest,
+for pruning regardless of publication version (or v2 quality).  Data
+in input files specified later will be considered higher priority
+than data in input files specified earlier.
 
 .IP "-s \fIselectfile\fP"
 Limit processing to miniSEED records that match a selection in the

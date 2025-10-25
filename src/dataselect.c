@@ -90,7 +90,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "4.1.2"
+#define VERSION "4.2.0"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */
@@ -164,12 +164,12 @@ static void usage (int level);
 
 static int8_t verbose = 0;
 static int8_t skipnotdata = 0;    /* Controls skipping of non-miniSEED data */
-static int8_t bestversion = 1;    /* Use publication version to retain the "best" data when pruning */
+static int8_t bestversion = 1;    /* Prioritization of 'best' data when pruning: 0 = equal, 1 = use version, 2 = use file order */
 static int8_t prunedata = 0;      /* Prune data: 'r= record level, 's' = sample level, 'e' = edges only */
 static uint8_t setpubver = 0;     /* Set publication version/quality indicator on output records */
 static double timetol = -1.0;     /* Time tolerance for continuous traces */
 static double sampratetol = -1.0; /* Sample rate tolerance for continuous traces */
-static MS3Tolerance tolerance = {.time = NULL, .samprate = NULL};
+static MS3Tolerance tolerance = MS3Tolerance_INITIALIZER;
 
 /* Trivial callback functions for fixed time and sample rate tolerances */
 double
@@ -208,6 +208,7 @@ main (int argc, char **argv)
   uint32_t flags = 0;
   int totalfiles = 0;
   int retcode;
+  int8_t splitversion = bestversion;
 
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
@@ -239,6 +240,21 @@ main (int argc, char **argv)
   if (skipnotdata)
     flags |= MSF_SKIPNOTDATA;
 
+  /* Determine how to split the data into time-series segments */
+  switch (bestversion)
+  {
+  case 0:
+    splitversion = 0; /* Consider all versions/qualities equal */
+    break;
+  case 1: /* Use publication version for 'best' prioritization */
+    splitversion = 1;
+    break;
+  case 2: /* Use input file order for 'best' prioritization */
+    flags |= MSF_SPLITISVERSION;
+    splitversion = 0;
+    break;
+  }
+
   flp = filelist;
   while (flp)
   {
@@ -250,9 +266,17 @@ main (int argc, char **argv)
         ms_log (1, "Reading: %s (specified as %s)\n", flp->infilename, flp->infilename_raw);
     }
 
+    if (bestversion == 2)
+    {
+      splitversion += 1;
+
+      if (verbose)
+        ms_log (1, "File order priority: %d\n", splitversion);
+    }
+
     /* Read all miniSEED into a trace list, limiting to selections */
     retcode = ms3_readtracelist_selection (&mstl, flp->infilename_raw, &tolerance,
-                                           selections, bestversion, flags, verbose);
+                                           selections, splitversion, flags, verbose);
 
     /* Critical error if file was not read properly */
     if (retcode != MS_NOERROR)
@@ -1976,6 +2000,10 @@ processparam (int argcount, char **argvec)
     {
       bestversion = 0;
     }
+    else if (strcmp (argvec[optind], "-F") == 0)
+    {
+      bestversion = 2;
+    }
     else if (strcmp (argvec[optind], "-s") == 0)
     {
       selectfile = getoptval (argcount, argvec, optind++);
@@ -2484,7 +2512,8 @@ usage (int level)
            " -tt secs     Specify a time tolerance for continuous traces\n"
            " -rt diff     Specify a sample rate tolerance for continuous traces\n"
            " -snd         Skip non-miniSEED data, otherwise quit on unrecognized input\n"
-           " -E           Consider all qualities equal instead of 'best' prioritization\n"
+           " -E           Consider all versions/qualities equal instead of 'best' prioritization\n"
+           " -F           Use input file order for 'best' prioritization, lowest to highest\n"
            "\n"
            " ## Data selection options ##\n"
            " -s file      Specify a file containing selection criteria\n"
