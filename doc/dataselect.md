@@ -65,11 +65,11 @@ dataselect [options] file1 [file2 file3 ...]
 
 <p style="padding-left: 30px;">Skip non-miniSEED records.  By default the program will stop when it encounters data that cannot be identified as a miniSEED record. This option can be useful with full SEED volumes or files with bad data.</p>
 
-<b>-E</b>\fP
+<b></b><i>-E</i>
 
 <p style="padding-left: 30px;">Consider all publication versions (or v2 qualities) equal when determining priority for pruning.  By default priority is given to the data with the highest publication version.</p>
 
-<b>-F</b>\fP
+<b></b><i>-F</i>
 
 <p style="padding-left: 30px;">Use input file order for 'best' prioritization, lowest to highest, for pruning regardless of publication version (or v2 quality).  Data in input files specified later will be considered higher priority than data in input files specified earlier.</p>
 
@@ -99,7 +99,7 @@ dataselect [options] file1 [file2 file3 ...]
 
 <b>-CHAN </b><i>directory</i>
 
-<b>-CHAN </b>\fVCHANLAYOUT\fP
+<b>-VCHAN </b><i>CHANLAYOUT</i>
 
 <b>-QCHAN </b><i>directory</i>
 
