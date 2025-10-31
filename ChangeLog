@@ -1,5 +1,6 @@
-2025.303:
+2025.303: v4.2.1
 	- Use new libmseed feature to optimize reading traces by skipping adjacent records.
+	- Add "-O2" to CFLAGS for recommend optimization during build.
 	- Update libmseed to v3.1.11.
 
 2025.298: v4.2.0

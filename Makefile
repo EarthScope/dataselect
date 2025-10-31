@@ -9,12 +9,19 @@ ifndef WITHOUTURL
   endif
 endif
 
+# Add recommended compiler optimization level
+CFLAGS += -O2
+
 ifneq (,$(CURL_CONFIG))
   export LM_CURL_VERSION=$(shell $(CURL_CONFIG) --version)
-  export CFLAGS:=$(CFLAGS) -DLIBMSEED_URL
-  export LDFLAGS:=$(LDFLAGS) $(shell $(CURL_CONFIG) --libs)
+  CFLAGS += -DLIBMSEED_URL
+  LDFLAGS += $(shell $(CURL_CONFIG) --libs)
   $(info Configured with $(LM_CURL_VERSION))
 endif
+
+# Export for sub-makes
+export CFLAGS
+export LDFLAGS
 
 .PHONY: all clean
 all clean: libmseed
