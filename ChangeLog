@@ -1,5 +1,9 @@
+2025.303:
+	- Use new libmseed feature to optimize reading traces by skipping adjacent records.
+	- Update libmseed to v3.1.11.
+
 2025.298: v4.2.0
-  - Add -F option to use input file order for 'best' prioritization, lowest to highest
+	- Add -F option to use input file order for 'best' prioritization, lowest to highest
 	- Update libmseed to v3.1.10.
 
 2025.234: v4.1.2

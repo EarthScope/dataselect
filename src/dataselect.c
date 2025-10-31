@@ -240,6 +240,10 @@ main (int argc, char **argv)
   if (skipnotdata)
     flags |= MSF_SKIPNOTDATA;
 
+  /* Skip adjacent duplicate records when pruning data at record or sample level */
+  if (prunedata == 'r' || prunedata == 's')
+    flags |= MSF_SKIPADJACENTDUPLICATES;
+
   /* Determine how to split the data into time-series segments */
   switch (bestversion)
   {
