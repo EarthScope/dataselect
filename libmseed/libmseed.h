@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.1.10"   //!< Library version
-#define LIBMSEED_RELEASE "2025.298" //!< Library release date
+#define LIBMSEED_VERSION "3.1.11"   //!< Library version
+#define LIBMSEED_RELEASE "2025.303" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -1561,6 +1561,7 @@ extern void *libmseed_memory_prealloc (void *ptr, size_t size, size_t *currentsi
   0x0400 //!< [TraceList] Store update time (as nstime_t) at ::MS3TraceSeg.prvtptr
 #define MSF_SPLITISVERSION \
   0x0800 //!< [TraceList] Use the splitversion value as version instead of record version
+#define MSF_SKIPADJACENTDUPLICATES 0x1000 //!< [TraceList] Skip adjacent duplicate records
 /** @} */
 
 #ifdef __cplusplus
