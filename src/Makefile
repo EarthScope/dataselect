@@ -13,7 +13,7 @@ OBJS = $(SRCS:.c=.o)
 EXTRACFLAGS = -I../libmseed
 EXTRALDFLAGS = -L../libmseed
 
-LDLIBS = -lmseed
+LDLIBS = -lmseed -lcurl
 
 all: $(BIN)
 
