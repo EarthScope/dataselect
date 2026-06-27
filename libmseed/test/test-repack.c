@@ -40,7 +40,7 @@ TEST (repack, v3)
 
   CHECK (fd != NULL, "Failed to open output file");
 
-  rv = fwrite (buffer, 1, packedlength, fd);
+  rv = (int)fwrite (buffer, 1, packedlength, fd);
 
   CHECK (rv == packedlength, "Failed to write output file");
   CHECK (fclose (fd) == 0, "Failed to close output file");
@@ -84,7 +84,7 @@ TEST (repack, v2)
 
   CHECK (fd != NULL, "Failed to open output file");
 
-  rv = fwrite (buffer, 1, packedlength, fd);
+  rv = (int)fwrite (buffer, 1, packedlength, fd);
 
   CHECK (rv == packedlength, "Failed to write output file");
   CHECK (fclose (fd) == 0, "Failed to close output file");

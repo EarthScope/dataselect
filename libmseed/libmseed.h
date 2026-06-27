@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.1.11"   //!< Library version
-#define LIBMSEED_RELEASE "2025.303" //!< Library release date
+#define LIBMSEED_VERSION "3.4.1"    //!< Library version
+#define LIBMSEED_RELEASE "2026.167" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -79,6 +79,7 @@ extern "C"
 #include <sys/timeb.h>
 #include <sys/types.h>
 #include <windows.h>
+#include <io.h>
 
 /* Re-define print conversion for size_t values */
 #undef PRIsize_t
@@ -113,10 +114,11 @@ typedef unsigned __int64 uint64_t;
 
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
-#define strcasecmp _stricmp
-#define strncasecmp _strnicmp
 #define strtoull _strtoui64
 #define fileno _fileno
+#define dup _dup
+#define dup2 _dup2
+#define close _close
 #define fdopen _fdopen
 #endif
 
@@ -134,6 +136,7 @@ typedef unsigned __int64 uint64_t;
 /* All other platforms */
 #include <inttypes.h>
 #include <sys/time.h>
+#include <unistd.h>
 #endif
 
 #define MINRECLEN 40       //!< Minimum miniSEED record length supported
@@ -392,7 +395,8 @@ typedef struct MS3Record
 } MS3Record;
 
 /** @def MS3Record_INITIALIZER
-    @brief Initialializer for a ::MS3Record */
+    @brief Initializer for a ::MS3Record to define default values.  Be careful using this directly
+    as msr3_free() cannot be used and dynamic memory associated will not be freed. */
 #define MS3Record_INITIALIZER                                                                      \
   {.record = NULL,                                                                                 \
    .reclen = -1,                                                                                   \
@@ -419,6 +423,13 @@ extern int msr3_parse (const char *record, uint64_t recbuflen, MS3Record **ppmsr
 
 extern int msr3_pack (const MS3Record *msr, void (*record_handler) (char *, int, void *),
                       void *handlerdata, int64_t *packedsamples, uint32_t flags, int8_t verbose);
+
+/** @brief Opaque packing context for MS3Record generator-style interface */
+typedef struct MS3RecordPacker MS3RecordPacker;
+
+extern MS3RecordPacker *msr3_pack_init (const MS3Record *msr, uint32_t flags, int8_t verbose);
+extern int msr3_pack_next (MS3RecordPacker *packer, char **record, int32_t *reclen);
+extern void msr3_pack_free (MS3RecordPacker **packer, int64_t *packedsamples);
 
 extern int msr3_repack_mseed3 (const MS3Record *msr, char *record, uint32_t recbuflen,
                                int8_t verbose);
@@ -516,6 +527,10 @@ extern void ms3_printselections (const MS3Selections *selections);
  * fileoffset), or the location in a file (\a filename and \a
  * fileoffset).
  *
+ * The filename field is a pointer to the original file name passed to
+ * the library, not a copy.  The caller is responsible for ensuring that
+ * the file name remains valid for the lifetime of the record list.
+ *
  * A ::MS3Record is stored with and contains the bit flags, extra
  * headers, etc. for the record.
  *
@@ -532,7 +547,7 @@ typedef struct MS3RecordPtr
 {
   const char *bufferptr; //!< Pointer in buffer to record, NULL if not used
   FILE *fileptr;         //!< Pointer to open FILE containing record, NULL if not used
-  const char *filename;  //!< Pointer to file name containing record, NULL if not used
+  const char *filename;  //!< Pointer (borrowed) to file name containing record, NULL if not used
   int64_t fileoffset;    //!< Offset into file to record for \a fileptr or \a filename
   MS3Record *msr;        //!< Pointer to ::MS3Record for this record
   nstime_t endtime;      //!< End time of record, time of last sample
@@ -692,12 +707,23 @@ extern int mstl3_resize_buffers (MS3TraceList *mstl);
 extern int64_t mstl3_pack (MS3TraceList *mstl, void (*record_handler) (char *, int, void *),
                            void *handlerdata, int reclen, int8_t encoding, int64_t *packedsamples,
                            uint32_t flags, int8_t verbose, char *extra);
+
+/** @brief Opaque packing context for MS3TraceList generator-style interface */
+typedef struct MS3TraceListPacker MS3TraceListPacker;
+
+extern MS3TraceListPacker *mstl3_pack_init (MS3TraceList *mstl, int reclen, int8_t encoding,
+                                            uint32_t flags, int8_t verbose, char *extra,
+                                            uint32_t flush_idle_seconds);
+extern int mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int32_t *reclen);
+extern void mstl3_pack_free (MS3TraceListPacker **packer, int64_t *packedsamples);
+
 extern int64_t mstl3_pack_ppupdate_flushidle (MS3TraceList *mstl,
                                               void (*record_handler) (char *, int, void *),
                                               void *handlerdata, int reclen, int8_t encoding,
                                               int64_t *packedsamples, uint32_t flags,
                                               int8_t verbose, char *extra,
                                               uint32_t flush_idle_seconds);
+
 extern int64_t mstl3_pack_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg,
                                    void (*record_handler) (char *, int, void *), void *handlerdata,
                                    int reclen, int8_t encoding, int64_t *packedsamples,
@@ -826,7 +852,10 @@ extern int64_t msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overw
 extern int64_t mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite,
                                  int maxreclen, int8_t encoding, uint32_t flags, int8_t verbose);
 extern int libmseed_url_support (void);
-extern MS3FileParam *ms3_mstl_init_fd (int fd);
+extern MS3FileParam *ms3_msfp_init (int64_t startoffset, int64_t endoffset, int fd);
+extern MS3FileParam *ms3_msfp_init_fd (int fd);
+/** Backwards compatibility alias for misnamed ms3_msfp_init_fd() */
+#define ms3_mstl_init_fd(fd) ms3_msfp_init_fd(fd)
 /** @} */
 
 /** @addtogroup string-functions
@@ -982,18 +1011,24 @@ typedef struct MSEHRecenter
  */
 typedef struct LM_PARSED_JSON_s LM_PARSED_JSON;
 
+extern int mseh_get_ptr_type (const MS3Record *msr, const char *ptr, LM_PARSED_JSON **parsestate);
+
 /** @def mseh_get
     @brief A simple wrapper to access any type of extra header */
 #define mseh_get(msr, ptr, valueptr, type, maxlength)                                              \
   mseh_get_ptr_r (msr, ptr, valueptr, type, maxlength, NULL)
 
+/** @def mseh_get_uint64
+    @brief A simple wrapper to access an unsigned integer type extra header */
+#define mseh_get_uint64(msr, ptr, valueptr) mseh_get_ptr_r (msr, ptr, valueptr, 'u', 0, NULL)
+
+/** @def mseh_get_int64
+        @brief A simple wrapper to access an integer type extra header */
+#define mseh_get_int64(msr, ptr, valueptr) mseh_get_ptr_r (msr, ptr, valueptr, 'i', 0, NULL)
+
 /** @def mseh_get_number
     @brief A simple wrapper to access a number type extra header */
 #define mseh_get_number(msr, ptr, valueptr) mseh_get_ptr_r (msr, ptr, valueptr, 'n', 0, NULL)
-
-/** @def mseh_get_int64
-    @brief A simple wrapper to access a number type extra header */
-#define mseh_get_int64(msr, ptr, valueptr) mseh_get_ptr_r (msr, ptr, valueptr, 'i', 0, NULL)
 
 /** @def mseh_get_string
     @brief A simple wrapper to access a string type extra header */
@@ -1015,13 +1050,17 @@ extern int mseh_get_ptr_r (const MS3Record *msr, const char *ptr, void *value, c
     @brief A simple wrapper to set any type of extra header */
 #define mseh_set(msr, ptr, valueptr, type) mseh_set_ptr_r (msr, ptr, valueptr, type, NULL)
 
-/** @def mseh_set_number
-    @brief A simple wrapper to set a number type extra header */
-#define mseh_set_number(msr, ptr, valueptr) mseh_set_ptr_r (msr, ptr, valueptr, 'n', NULL)
+/** @def mseh_set_uint64
+    @brief A simple wrapper to set an unsigned integer type extra header */
+#define mseh_set_uint64(msr, ptr, valueptr) mseh_set_ptr_r (msr, ptr, valueptr, 'u', NULL)
 
 /** @def mseh_set_int64
     @brief A simple wrapper to set a number type extra header */
 #define mseh_set_int64(msr, ptr, valueptr) mseh_set_ptr_r (msr, ptr, valueptr, 'i', NULL)
+
+/** @def mseh_set_number
+    @brief A simple wrapper to set a number type extra header */
+#define mseh_set_number(msr, ptr, valueptr) mseh_set_ptr_r (msr, ptr, valueptr, 'n', NULL)
 
 /** @def mseh_set_string
     @brief A simple wrapper to set a string type extra header */
@@ -1248,6 +1287,7 @@ extern MSLogParam *ms_rloginit_l (MSLogParam *logp, void (*log_print) (const cha
                                   const char *logprefix, void (*diag_print) (const char *),
                                   const char *errprefix, int maxmessages);
 extern int ms_rlog_emit (MSLogParam *logp, int count, int context);
+extern int ms_rlog_pop (MSLogParam *logp, char *message, size_t size, int context);
 extern int ms_rlog_free (MSLogParam *logp);
 
 /** @} */
@@ -1320,6 +1360,8 @@ extern int lmp_fseek64 (FILE *stream, int64_t offset, int whence);
 extern uint64_t lmp_nanosleep (uint64_t nanoseconds);
 /** Portable function to return the current system time */
 extern nstime_t lmp_systemtime (void);
+/** Portable function for case-insensitive, ASCII-only string comparison */
+extern int lmp_strncasecmp (const char *s1, const char *s2, size_t n);
 
 /** Return CRC32C value of supplied buffer, with optional starting CRC32C value */
 extern uint32_t ms_crc32c (const uint8_t *input, int length, uint32_t previousCRC32C);
@@ -1332,7 +1374,7 @@ ms_gswap2 (void *data2)
 
   memcpy (&dat, data2, 2);
 
-  dat = ((dat & 0xff00) >> 8) | ((dat & 0x00ff) << 8);
+  dat = (uint16_t)(((dat & 0xff00) >> 8) | ((dat & 0x00ff) << 8));
 
   memcpy (data2, &dat, 2);
 }

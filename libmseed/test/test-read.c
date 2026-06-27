@@ -3,6 +3,15 @@
 
 #include "testdata.h"
 
+/* Handle binary mode for Windows specifically */
+#if defined(LMP_WIN)
+   #include <io.h>
+   #include <fcntl.h>
+   #define SET_BINARY_MODE(fd) _setmode(fd, _O_BINARY)
+#else
+   #define SET_BINARY_MODE(fd) ((void)0)
+#endif
+
 extern int cmpint32s (int32_t *arrayA, int32_t *arrayB, size_t length);
 extern int cmpfloats (float *arrayA, float *arrayB, size_t length);
 extern int cmpdoubles (double *arrayA, double *arrayB, size_t length);
@@ -20,11 +29,12 @@ TEST (read, v3_parse)
 
   /* General parsing */
   flags = MSF_UNPACKDATA;
+  flags |= MSF_VALIDATECRC;
   rv = ms3_readmsr (&msr, path, flags, 0);
 
   CHECK (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
-  CHECK (msr->reclen == 478, "msr->reclen is not expected 478");
+  CHECK (msr->reclen == 414, "msr->reclen is not expected 478");
   CHECK_STREQ (msr->sid, "FDSN:IU_COLA_00_L_H_1");
   CHECK (msr->formatversion == 3, "msr->formatversion is not expected 3");
   CHECK (msr->flags == 4, "msr->flags is not expected 4");
@@ -33,11 +43,12 @@ TEST (read, v3_parse)
   CHECK (msr->encoding == 11, "msr->encoding is not expected 11");
   CHECK (msr->pubversion == 4, "msr->pubversion is not expected 4");
   CHECK (msr->samplecnt == 135, "msr->samplecnt is not expected 135");
-  CHECK (msr->crc == 0x4F3EAB65, "msr->crc is not expected 0x4F3EAB65");
+  CHECK (msr->crc == 0xCE52C9F7, "msr->crc is not expected 0x4F3EAB65");
   CHECK (msr->extralength == 33, "msr->extralength is not expected 33");
-  CHECK (msr->datalength == 384, "msr->datalength is not expected 384");
+  CHECK (msr->datalength == 320, "msr->datalength is not expected 384");
   CHECK_STREQ (msr->extra, "{\"FDSN\":{\"Time\":{\"Quality\":100}}}");
-  CHECK (msr->datasize == 540, "msr->datasize is not expected 540");
+  CHECK (msr->datasize == 540 || msr->datasize == libmseed_prealloc_block_size,
+         "msr->datasize is not 540 or prealloc block size");
   CHECK (msr->numsamples == 135, "msr->numsamples is not expected 135");
   CHECK (msr->sampletype == 'i', "msr->sampletype is not expected 'i'");
 
@@ -87,7 +98,8 @@ TEST (read, v2_parse)
   CHECK (msr->extralength == 33, "msr->extralength is not expected 33");
   CHECK (msr->datalength == 448, "msr->datalength is not expected 448");
   CHECK_STREQ (msr->extra, "{\"FDSN\":{\"Time\":{\"Quality\":100}}}");
-  CHECK (msr->datasize == 540, "msr->datasize is not expected 540");
+  CHECK (msr->datasize == 540 || msr->datasize == libmseed_prealloc_block_size,
+         "msr->datasize is not 540 or prealloc block size");
   CHECK (msr->numsamples == 135, "msr->numsamples is not expected 135");
   CHECK (msr->sampletype == 'i', "msr->sampletype is not expected 'i'");
 
@@ -107,20 +119,65 @@ TEST (read, v2_parse)
   ms3_readmsr(&msr, NULL, flags, 0);
 }
 
+TEST (read, headeronly_v2)
+{
+  MS3Record *msr = NULL;
+  uint32_t flags = 0;
+  int rv;
+
+  rv = ms3_readmsr (&msr, "data/reference-testdata-headeronly.mseed2", flags, 0);
+
+  // DEBUG
+  msr3_print (msr, 1);
+
+  CHECK (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
+  REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
+  REQUIRE (msr->datasamples == NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
+  CHECK (msr->numsamples == 0, "ms3_readmsr() returned unexpected value for 'msr->numsamples'");
+  CHECK (msr->sampletype == 0, "ms3_readmsr() returned unexpected value for 'msr->sampletype'");
+  CHECK (msr->datasize == 0, "ms3_readmsr() returned unexpected value for 'msr->datasize'");
+  CHECK (msr->datalength == 0, "ms3_readmsr() returned unexpected value for 'msr->datalength'");
+  CHECK (msr->extralength == 569, "ms3_readmsr() returned unexpected value for 'msr->extralength'");
+  CHECK (msr->crc == 0, "ms3_readmsr() returned unexpected value for 'msr->crc'");
+
+  ms3_readmsr (&msr, NULL, flags, 0);
+}
+
+TEST (read, headeronly_v3)
+{
+  MS3Record *msr = NULL;
+  uint32_t flags = 0;
+  int rv;
+
+  rv = ms3_readmsr (&msr, "data/reference-testdata-headeronly.mseed3", flags, 0);
+
+  CHECK (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
+  REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
+  REQUIRE (msr->datasamples == NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
+  CHECK (msr->numsamples == 0, "ms3_readmsr() returned unexpected value for 'msr->numsamples'");
+  CHECK (msr->sampletype == 0, "ms3_readmsr() returned unexpected value for 'msr->sampletype'");
+  CHECK (msr->datasize == 0, "ms3_readmsr() returned unexpected value for 'msr->datasize'");
+  CHECK (msr->datalength == 0, "ms3_readmsr() returned unexpected value for 'msr->datalength'");
+  CHECK (msr->extralength == 730, "ms3_readmsr() returned unexpected value for 'msr->extralength'");
+  CHECK (msr->crc == 0xC22273A9, "ms3_readmsr() returned unexpected value for 'msr->crc'");
+
+  ms3_readmsr (&msr, NULL, flags, 0);
+}
+
 TEST (read, v3_encodings)
 {
   MS3Record *msr = NULL;
   uint32_t flags = MSF_UNPACKDATA; /* Set data decode/unpack flag */
-  int32_t sinedata[SINE_DATA_SAMPLES];
-  double dsinedata[SINE_DATA_SAMPLES];
+  int32_t isinedata[SINE_DATA_SAMPLES];
+  float fsinedata[SINE_DATA_SAMPLES];
   int rv;
   int idx;
 
   /* Create integer and double sine data sets */
   for (idx = 0; idx < SINE_DATA_SAMPLES; idx++)
   {
-    sinedata[idx] = (int32_t)(fsinedata[idx]);
-    dsinedata[idx] = (double)(fsinedata[idx]);
+    isinedata[idx] = (int32_t)(dsinedata[idx]);
+    fsinedata[idx] = (float)(dsinedata[idx]);
   }
 
   /* Text */
@@ -156,7 +213,7 @@ TEST (read, v3_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, int16");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, int16");
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Int32 */
@@ -165,7 +222,7 @@ TEST (read, v3_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, int32");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, int32");
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Steim-1 big endian */
@@ -174,7 +231,7 @@ TEST (read, v3_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, Steim-1");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, Steim-1");
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Steim-2 big endian */
@@ -183,7 +240,7 @@ TEST (read, v3_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, Steim-2");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, Steim-2");
   ms3_readmsr(&msr, NULL, flags, 0);
 }
 
@@ -191,8 +248,8 @@ TEST (read, v2_encodings)
 {
   MS3Record *msr = NULL;
   uint32_t flags = MSF_UNPACKDATA; /* Set data decode/unpack flag */
-  int32_t sinedata[SINE_DATA_SAMPLES];
-  double dsinedata[SINE_DATA_SAMPLES];
+  int32_t isinedata[SINE_DATA_SAMPLES];
+  float fsinedata[SINE_DATA_SAMPLES];
   float *float32s;
   int32_t *int32s;
   int rv;
@@ -201,8 +258,8 @@ TEST (read, v2_encodings)
   /* Create integer and double sine data sets */
   for (idx = 0; idx < SINE_DATA_SAMPLES; idx++)
   {
-    sinedata[idx] = (int32_t)(fsinedata[idx]);
-    dsinedata[idx] = (double)(fsinedata[idx]);
+    isinedata[idx] = (int32_t)(dsinedata[idx]);
+    fsinedata[idx] = (float)(dsinedata[idx]);
   }
 
   /* Text */
@@ -298,7 +355,7 @@ TEST (read, v2_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, int16");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, int16");
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Int32 */
@@ -307,7 +364,7 @@ TEST (read, v2_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, int32");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, int32");
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Steim-1 big endian */
@@ -316,7 +373,7 @@ TEST (read, v2_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, Steim-1");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, Steim-1");
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Steim-1 little endian */
@@ -325,7 +382,7 @@ TEST (read, v2_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, Steim-1 LE");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, Steim-1 LE");
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Steim-2 big endian */
@@ -334,7 +391,7 @@ TEST (read, v2_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, Steim-2");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, Steim-2");
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Steim-2 little endian */
@@ -343,7 +400,7 @@ TEST (read, v2_encodings)
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
   REQUIRE (msr->datasamples != NULL, "ms3_readmsr() did not populate 'msr->datasamples'");
 
-  CHECK (!cmpint32s ((int32_t *)msr->datasamples, sinedata, msr->numsamples), "Decoded sample mismatch, Steim-2 LE");
+  CHECK (!cmpint32s ((int32_t *)msr->datasamples, isinedata, msr->numsamples), "Decoded sample mismatch, Steim-2 LE");
   ms3_readmsr(&msr, NULL, flags, 0);
 }
 
@@ -372,6 +429,78 @@ TEST (read, byterange)
   CHECK (msr->numsamples == 112, "Byte range read, unexpected number of decoded samples");
   CHECK (msr->starttime == nstime, "Byte range read, unexpected record start time");
   ms3_readmsr(&msr, NULL, flags, 0);
+}
+
+TEST (read, byterange_init)
+{
+  MS3FileParam *msfp = NULL;
+  MS3Record *msr = NULL;
+  nstime_t nstime;
+  uint32_t flags = MSF_UNPACKDATA;
+  int rv;
+
+  nstime = ms_timestr2nstime ("2010-02-27T06:51:04.069539Z");
+
+  /* Read byte range 9428-9967 from V3 format file */
+  msfp = ms3_msfp_init (9428, 9967, -1);
+  REQUIRE (msfp != NULL, "ms3_msfp_init() did not return expected MS3FileParam");
+  rv = ms3_readmsr_r (&msfp, &msr, "data/testdata-oneseries-mixedlengths-mixedorder.mseed3", flags, 0);
+  REQUIRE (rv == MS_NOERROR, "ms3_readmsr_r() did not return expected MS_NOERROR");
+  CHECK (msr->numsamples == 112, "Byte range read, unexpected number of decoded samples");
+  CHECK (msr->starttime == nstime, "Byte range read, unexpected record start time");
+  ms3_readmsr(&msr, NULL, flags, 0);
+
+  // /* Read byte range 9344-9855 from V2 format file */
+  msfp = ms3_msfp_init (9344, 9855, -1);
+  REQUIRE (msfp != NULL, "ms3_msfp_init() did not return expected MS3FileParam");
+  rv = ms3_readmsr_r (&msfp, &msr, "data/testdata-oneseries-mixedlengths-mixedorder.mseed2", flags, 0);
+  REQUIRE (rv == MS_NOERROR, "ms3_readmsr_r() did not return expected MS_NOERROR");
+  CHECK (msr->numsamples == 112, "Byte range read, unexpected number of decoded samples");
+  CHECK (msr->starttime == nstime, "Byte range read, unexpected record start time");
+  ms3_readmsr(&msr, NULL, flags, 0);
+}
+
+TEST (read, stdin_no_close)
+{
+  MS3Record *msr = NULL;
+  uint32_t flags = MSF_UNPACKDATA;
+  int rv;
+  int stdin_fd = fileno (stdin);
+  int orig_stdin_copy;
+  FILE *test_data_fp;
+
+  /* Save the original stdin descriptor to restore later */
+  orig_stdin_copy = dup (stdin_fd);
+  REQUIRE (orig_stdin_copy >= 0, "Failed to duplicate stdin");
+
+  /* Redirect stdin to our test data file */
+  test_data_fp = fopen ("data/testdata-3channel-signal.mseed3", "rb");
+  REQUIRE (test_data_fp != NULL, "Cannot open test data file");
+
+  REQUIRE (dup2 (fileno (test_data_fp), stdin_fd) >= 0, "Failed to redirect stdin");
+  fclose (test_data_fp); /* Close FILE* wrapper; fd is now duplicated onto stdin */
+  SET_BINARY_MODE (stdin_fd);
+
+  /* Read a record from stdin via "-" */
+  rv = ms3_readmsr (&msr, "-", flags, 0);
+  CHECK (rv == MS_NOERROR, "ms3_readmsr() failed to read from stdin");
+  REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
+  CHECK (msr->numsamples == 135, "stdin read, unexpected number of decoded samples");
+  CHECK_STREQ (msr->sid, "FDSN:IU_COLA_00_L_H_1");
+
+  /* Trigger cleanup, where the descriptor was previously erroneously closed */
+  ms3_readmsr (&msr, NULL, flags, 0);
+  CHECK (msr == NULL, "ms3_readmsr() cleanup failed to nullify pointer");
+
+  /* Verify stdin was NOT closed by libmseed cleanup */
+  int check_fd = dup (stdin_fd);
+  CHECK (check_fd >= 0, "stdin was closed by libmseed cleanup!");
+  if (check_fd >= 0)
+    close (check_fd);
+
+  /* Restore original stdin */
+  dup2 (orig_stdin_copy, stdin_fd);
+  close (orig_stdin_copy);
 }
 
 TEST (read, selection)

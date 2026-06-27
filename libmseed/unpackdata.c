@@ -217,7 +217,7 @@ msr_decode_steim1 (int32_t *input, uint64_t inputlength, uint64_t samplecount, i
     return -1;
 
   /* Make sure output buffer is sufficient for all output samples */
-  if (outputlength < (samplecount * sizeof (int32_t)))
+  if (samplecount > outputlength / sizeof (int32_t))
   {
     ms_log (2, "%s(%s) Output buffer not large enough for decoded samples\n", __func__, srcname);
     return -1;
@@ -408,7 +408,7 @@ msr_decode_steim2 (int32_t *input, uint64_t inputlength, uint64_t samplecount, i
     return -1;
 
   /* Make sure output buffer is sufficient for all output samples */
-  if (outputlength < (samplecount * sizeof (int32_t)))
+  if (samplecount > outputlength / sizeof (int32_t))
   {
     ms_log (2, "%s(%s) Output buffer not large enough for decoded samples\n", __func__, srcname);
     return -1;
@@ -620,7 +620,7 @@ msr_decode_steim2 (int32_t *input, uint64_t inputlength, uint64_t samplecount, i
  *
  * Return number of samples in output buffer on success, -1 on error.
  *
- * \ref MessageOnError - this function logs a message on error
+ * @ref MessageOnError - this function logs a message on error
  ************************************************************************/
 int64_t
 msr_decode_geoscope (char *input, uint64_t samplecount, float *output, uint64_t outputlength,
@@ -911,8 +911,10 @@ msr_decode_sro (int16_t *input, uint64_t samplecount, int32_t *output, uint64_t 
       return MS_GENERROR;
     }
 
-    /* Calculate sample as mantissa * 2^exponent */
-    sample = mantissa * ((uint64_t)1 << exponent);
+    /* Calculate sample as mantissa * 2^exponent.  Use signed arithmetic so a
+     * negative mantissa is scaled correctly; exponent is bounded to 0..10
+     * above, so (1 << exponent) and the product are well within int64_t. */
+    sample = (int32_t)(mantissa * (int64_t)(1 << exponent));
 
     /* Save sample in output array */
     output[idx] = sample;

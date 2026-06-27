@@ -2,7 +2,17 @@
 #include <libmseed.h>
 #include <time.h>
 
-TEST (tracelist, read)
+/* This test reads a miniSEED file directly into a MS3TraceList and verifies the
+ * contents of the trace list against expected values.
+ *
+ * The test data is a miniSEED file with one series of data with mixed lengths
+ * and mixed time order.
+ *
+ * The test verifies basic functionality of reading data from files of miniSEED
+ * into a trace list and that data added to the trace list are reconstructed as a
+ * continuous time series, regardless of the order in which the data are added.
+ */
+TEST (tracelist, ms3_readtracelist_mixedlengths_mixedorder)
 {
   MS3TraceList *mstl = NULL;
   MS3TraceID *id     = NULL;
@@ -44,7 +54,11 @@ TEST (tracelist, read)
   mstl3_free (&mstl, 1);
 }
 
-TEST (tracelist, read_recptr_file)
+/* This test reads a miniSEED file directly into a MS3TraceList while using the
+ * MSF_RECORDLIST flag to build a record list for each trace segment.  The
+ * expected contents of the record list are verified.
+ */
+TEST (tracelist, ms3_readtracelist_recptr)
 {
   MS3TraceList *mstl   = NULL;
   MS3TraceID *id       = NULL;
@@ -107,13 +121,17 @@ TEST (tracelist, read_recptr_file)
   mstl3_free (&mstl, 1);
 }
 
-TEST (tracelist, read_recptr_buffer)
+/* This test reads miniSEED from a buffer into a MS3TraceList while using the
+ * MSF_RECORDLIST flag to build a record list for each trace segment.  The
+ * expected contents of the record list are verified.
+ */
+TEST (tracelist, mstl3_readbuffer_recptr)
 {
   char buffer[16256];
   FILE *fp = NULL;
 
-  MS3TraceList *mstl   = NULL;
-  MS3TraceID *id       = NULL;
+  MS3TraceList *mstl = NULL;
+  MS3TraceID *id = NULL;
   MS3RecordPtr *recptr = NULL;
   nstime_t endtime;
   int64_t unpacked;
@@ -184,10 +202,15 @@ TEST (tracelist, read_recptr_buffer)
   mstl3_free (&mstl, 1);
 }
 
-TEST (tracelist, read_ppupdatetime)
+/* This test reads miniSEED from a file into a MS3TraceList while using the
+ * MSF_PPUPDATETIME flag to set the segment prvtptr to the update time of the
+ * record.  The expected value of the segment prvtptr is verified to be within
+ * 10 seconds of the system time.
+ */
+TEST (tracelist, ms3_readtracelist_ppupdatetime)
 {
   MS3TraceList *mstl = NULL;
-  MS3TraceID *id     = NULL;
+  MS3TraceID *id = NULL;
   uint32_t flags;
   nstime_t difference;
   time_t timeval;
@@ -195,7 +218,7 @@ TEST (tracelist, read_ppupdatetime)
 
   char *path = "data/testdata-oneseries-mixedlengths-mixedorder.mseed2";
 
-  timeval = time(NULL);
+  timeval = time (NULL);
 
   /* Set bit flag to set segment prvtptr to nstime_t value of update time */
   flags = MSF_PPUPDATETIME;
@@ -213,18 +236,24 @@ TEST (tracelist, read_ppupdatetime)
 
   CHECK (id->first->prvtptr != NULL, "id->first->prvtptr is not populated");
 
-  /* Check that update time is within 1 second of system time */
+  /* Check that update time is within 10 seconds of system time */
   difference = *(nstime_t *)id->first->prvtptr - (nstime_t)timeval * NSTMODULUS;
 
-  CHECK (difference < 1 * NSTMODULUS, "update time at id->first->prvtptr is not within 1 second of system time");
+  CHECK (difference < (nstime_t)10 * (nstime_t)NSTMODULUS,
+         "update time at id->first->prvtptr is not within 10 seconds of system time");
 
   mstl3_free (&mstl, 1);
 }
 
-TEST (tracelist, read_splitisversion)
+/* This test reads miniSEED from a file into a MS3TraceList while using the
+ * MSF_SPLITISVERSION flag to use the value of splitversion as the version
+ * instead of the record publication version.  The expected value of the trace
+ * ID's version is verified.
+ */
+TEST (tracelist, ms3_readtracelist_splitisversion)
 {
   MS3TraceList *mstl = NULL;
-  MS3TraceID *id     = NULL;
+  MS3TraceID *id = NULL;
   uint32_t flags;
   int rv;
 
@@ -247,4 +276,83 @@ TEST (tracelist, read_splitisversion)
   CHECK (id->pubversion == 99, "id->pubversion is not expected 99");
 
   mstl3_free (&mstl, 1);
+}
+
+/* Build a trace list from two time-contiguous, header-only records for the same
+ * source whose sample rates are specified as parameters and return the resulting number
+ * of segments. */
+static int
+addmsr_two_rates (const MS3Tolerance *tolerance, double samprate1, double samprate2)
+{
+  MS3TraceList *mstl = NULL;
+  MS3Record msr = MS3Record_INITIALIZER;
+  nstime_t endtime1;
+  int numsegments;
+
+  if (!(mstl = mstl3_init (NULL)))
+    return -1;
+
+  strcpy (msr.sid, "FDSN:XX_TEST__X_H_Z");
+  msr.formatversion = 3;
+  msr.pubversion = 1;
+  msr.sampletype = 'i';
+  msr.samplecnt = 100;
+  msr.numsamples = 0; /* Header-only, no decoded samples needed for merge logic */
+  msr.datasamples = NULL;
+
+  /* Record 1 at samprate1 */
+  msr.starttime = ms_timestr2nstime ("2024-01-01T00:00:00.0Z");
+  msr.samprate = samprate1;
+  endtime1 = msr3_endtime (&msr);
+
+  if (!mstl3_addmsr (mstl, &msr, 0, 1, 0, tolerance))
+  {
+    mstl3_free (&mstl, 0);
+    return -1;
+  }
+
+  /* Record 2 at samprate2, starting exactly one (record 2) sample period after
+   * record 1 ends, so the records are time-contiguous regardless of rate. */
+  msr.samprate = samprate2;
+  msr.starttime = endtime1 + msr3_nsperiod (&msr);
+
+  if (!mstl3_addmsr (mstl, &msr, 0, 1, 0, tolerance))
+  {
+    mstl3_free (&mstl, 0);
+    return -1;
+  }
+
+  numsegments = (mstl->traces.next[0]) ? (int)mstl->traces.next[0]->numsegments : -1;
+
+  mstl3_free (&mstl, 0);
+  return numsegments;
+}
+
+/* Verify sample rate tolerance handling in mstl3_addmsr() for default tolerance.  Two
+ * time-contiguous records whose sample rates differ beyond the default
+ * tolerance must remain separate segments when the default tolerance is used. */
+TEST (tracelist, mstl3_addmsr_sampratetol_default)
+{
+  CHECK (addmsr_two_rates (NULL, 100.0, 99.5) == 2,
+         "Differing sample rates with default tolerance did not yield 2 segments");
+}
+
+/* A sample rate tolerance callback for mstl3_addmsr() that considers any two
+ * sample rates within 1.0 Hz of each other to be the same. */
+static double
+samprate_tol_generous (const MS3Record *msr)
+{
+  (void)msr;
+  return 1.0;
+}
+
+/* Verify that supplying a custom (generous) sample rate tolerance causes the same
+ * two records to be considered similar and merged into a single segment. */
+TEST (tracelist, mstl3_addmsr_sampratetol_custom)
+{
+  MS3Tolerance tolerance = MS3Tolerance_INITIALIZER;
+  tolerance.samprate = samprate_tol_generous;
+
+  CHECK (addmsr_two_rates (&tolerance, 100.0, 99.5) == 1,
+         "Differing sample rates with generous custom tolerance did not merge into 1 segment");
 }

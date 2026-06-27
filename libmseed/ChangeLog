@@ -1,3 +1,86 @@
+2026.167: v3.4.1
+  - Improve correctness of internal glob matching routines.
+  - Fix inverted sample rate comparison with custom tolerance for trace lists.
+  - Fix selection matching for open-ended query time windows.
+  - Always return error from msr3_writemseed() on write or packing failure.
+  - Fix ms3_msfp_init() to seek the dup'd descriptor to startoffset and
+    set streampos accordingly.
+  - Avoid spurious read error when record buffer is full.
+  - Detect precision loss for negative samples in mstl3_convertsamples().
+  - Fix buffer overflow in B201 MEDSNR packing.
+  - Fix out-of-bounds access on long or failed log messages.
+  - Fix out-of-bounds read in v2 blockette chain traversal.
+  - Fix out-of-bounds write truncating long path with byte range suffix.
+  - Fix NULL dereference in msio_fopen() byte range handling.
+  - Use libmseed_memory.free for log registry entries.
+  - Fix data size truncation for large fixed-length-encoded records.
+  - Fix integer overflow computing v3 record length in ms3_detect().
+  - Fix out-of-bounds read in msr3_data_bounds() from unvalidated v2 data offset.
+  - Fix dangling stack pointer retained by libcurl header callback.
+  - Fix resource leaks on msio_fopen() error paths.
+  - Fix lookup for v2 Blockette lengths for uncommon blockettes for bounds checks.
+  - Validate input payload size against sample count in ms_decode_data().
+  - Propagate extra-header serialization failures in mseh_set_ptr_r().
+  - Fix size_t underflow in ms_sid2nslc_n() on zero-size buffers.
+  - Limit samples per record to 16-bit limit when packing miniSEED 2.
+  - Accept value 255 for B201 MEDLookback and MEDPickAlgorithm.
+  - Avoid undefined shift from Blockette 1000 record length exponent.
+  - Reject Blockette 1000 record length larger than supplied buffer.
+  - Guard NULL Xnp pointer in Steim byte-swap.
+  - Reject day-of-month 0 in VALIDMONTHDAY check.
+  - Fix memory leaks on error paths in extraheaders.c and tracelist.c.
+  - Pass unsigned char to ctype functions.
+  - Fix buffer overflow in msr3_repack_mseed3() from undersized buffer check.
+  - Limit indent in mseh_print() to avoid negative field width.
+  - Build: force "lib" prefix on Windows CMake library output for consistency.
+  - Fix tutorial example code, thanks to P. Schmidt for reporting.
+
+2026.094: v3.4.0
+  - Support writing header-only records and add tests for header-only records.
+
+2026.088: v3.3.0
+  - Add `ms3_msfp_init()` to initialized MS3FileParam with start/end offsets.
+  - Avoid closing I/O streams not opened by the library when reading or
+  writing miniSEED, specifically stdin and stdout or a provided descriptor.
+  - Update GitHub Actions dependencies for Node 24 changes.
+
+NOTE Behavior change: I/O streams provided by the caller, such as stdin
+and stdout, are no longer closed by the library.
+
+2026.024: v3.2.4
+  - Add ms_rlog_pop() to return messages from the error/warning log registry
+  - Fix return value from ms_rlog_emit()
+  - Fix tracking of message count in log registry.
+  - Add tests for logging facility.
+  - Add example/lm_extraheaders.c to demonstrate extra header functionality.
+
+2026.001: v3.2.3
+  - Add mseh_get_ptr_type() to determine type of an extra header.
+  - Add unsigned integer (uint64_t) support to `mseh_set_ptr_r()` and `mseh_get_ptr_r()`.
+
+2025.369: v3.2.2
+  - Allow mseh_set_ptr_r() to create extra headers when none exist for a merge patch
+  using the root pointer ("").  Pointers to non-root locations still must exist.
+
+2025.354: v3.2.1
+  - Rename ms3_mstl_init_fd() to ms3_msfp_init_fd() and add backward compatibility.
+  - Add -fPIC to the build options for the static library target.
+  - Update internal selection matching to support `!` in addition to `^` for
+  character class negation and handle edge cases more robustly.
+  - Avoid modifying record buffer during v3 CRC check and add CRC validation to testing.
+  - Add v3 parsing test for ensuring header-indicated lengths are sane.
+  - Small fixes of logic errors and increased portability.
+  - Add GitHub action to build and test on multiple platforms.
+  - Fix Windows symbol issues and CMake configuration.
+
+2025.315: v3.2.0
+  - Add generator-style packing interfaces for MS3Record and MS3TraceList.
+  Specifically msr3_pack_init(), msr_pack_next(), msr_pack_free() and
+  mstl3_pack_init(), mstl3_pack_next(), mstl_pack_free().
+  - Fix mstl3_pack_ppupdate_flushidle() logic to flush only idle streams.
+  - Fix memory leak in mseh_replace().
+  - Addition of a CMake build system contributed by @lsawade, thank you!
+
 2025.303: v3.1.11
   - Fix byte swapping in ms3_detect() for v3 records for big-endian systems.
   - Add MSF_SKIPADJACENTDUPLICATES to skip adjacent duplicate records while

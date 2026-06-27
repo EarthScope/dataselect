@@ -117,7 +117,7 @@ header_callback (char *buffer, size_t size, size_t num, void *userdata)
 
   /* Parse and store: "Content-Range: bytes START-END/TOTAL"
    * e.g. Content-Range: bytes 512-1023/4096 */
-  if (size > 22 && strncasecmp (buffer, "Content-Range: bytes", 20) == 0)
+  if (size > 22 && lmp_strncasecmp (buffer, "Content-Range: bytes", 20) == 0)
   {
     /* Process each character, starting just afer "bytes" unit */
     for (ptr = buffer + 20; *ptr != '\0' && (ptr - buffer) < (ptrdiff_t)size; ptr++)
@@ -126,10 +126,10 @@ header_callback (char *buffer, size_t size, size_t num, void *userdata)
       if (*ptr == ' ' && startdigits == 0)
         continue;
       /* Digits before dash, part of start */
-      else if (isdigit (*ptr) && dash == NULL)
+      else if (isdigit ((unsigned char)*ptr) && dash == NULL)
         startstr[startdigits++] = *ptr;
       /* Digits after dash, part of end */
-      else if (isdigit (*ptr) && dash != NULL)
+      else if (isdigit ((unsigned char)*ptr) && dash != NULL)
         endstr[enddigits++] = *ptr;
       /* If first dash found, store pointer */
       else if (*ptr == '-' && dash == NULL)
@@ -177,7 +177,7 @@ header_callback (char *buffer, size_t size, size_t num, void *userdata)
  *
  * Return 0 on success and -1 on error.
  *
- * \ref MessageOnError - this function logs a message on error
+ * @ref MessageOnError - this function logs a message on error
  ***************************************************************************/
 int
 msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, int64_t *endoffset)
@@ -191,7 +191,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     mode = "rb";
 
   /* Treat "file://" specifications as local files by removing the scheme */
-  if (!strncasecmp (path, "file://", 7))
+  if (lmp_strncasecmp (path, "file://", 7) == 0)
   {
     path += 7;
     knownfile = 1;
@@ -209,6 +209,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     struct header_callback_parameters hcp;
 
     io->type = LMIO_URL;
+    io->handle2 = NULL;
 
     /* Check for URL debugging environment variable */
     if (libmseed_url_debug < 0)
@@ -241,7 +242,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     if (libmseed_url_debug && curl_easy_setopt (io->handle, CURLOPT_VERBOSE, 1L) != CURLE_OK)
     {
       ms_log (2, "Cannot set CURLOPT_VERBOSE\n");
-      return -1;
+      goto onerror;
     }
 
     /* SSL peer and host verification */
@@ -250,14 +251,14 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
          curl_easy_setopt (io->handle, CURLOPT_SSL_VERIFYHOST, 0L) != CURLE_OK))
     {
       ms_log (2, "Cannot set CURLOPT_SSL_VERIFYPEER and/or CURLOPT_SSL_VERIFYHOST\n");
-      return -1;
+      goto onerror;
     }
 
     /* Set URL */
     if (curl_easy_setopt (io->handle, CURLOPT_URL, path) != CURLE_OK)
     {
       ms_log (2, "Cannot set CURLOPT_URL\n");
-      return -1;
+      goto onerror;
     }
 
     /* Set default User-Agent header, can be overridden via custom header */
@@ -265,48 +266,48 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
                           "libmseed/" LIBMSEED_VERSION " libcurl/" LIBCURL_VERSION) != CURLE_OK)
     {
       ms_log (2, "Cannot set default CURLOPT_USERAGENT\n");
-      return -1;
+      goto onerror;
     }
 
     /* Disable signals */
     if (curl_easy_setopt (io->handle, CURLOPT_NOSIGNAL, 1L) != CURLE_OK)
     {
       ms_log (2, "Cannot set CURLOPT_NOSIGNAL\n");
-      return -1;
+      goto onerror;
     }
 
     /* Return failure codes on errors */
     if (curl_easy_setopt (io->handle, CURLOPT_FAILONERROR, 1L) != CURLE_OK)
     {
       ms_log (2, "Cannot set CURLOPT_FAILONERROR\n");
-      return -1;
+      goto onerror;
     }
 
     /* Follow HTTP redirects */
     if (curl_easy_setopt (io->handle, CURLOPT_FOLLOWLOCATION, 1L) != CURLE_OK)
     {
       ms_log (2, "Cannot set CURLOPT_FOLLOWLOCATION\n");
-      return -1;
+      goto onerror;
     }
 
     /* Configure write callback for recv'ed data */
     if (curl_easy_setopt (io->handle, CURLOPT_WRITEFUNCTION, recv_callback) != CURLE_OK)
     {
       ms_log (2, "Cannot set CURLOPT_WRITEFUNCTION\n");
-      return -1;
+      goto onerror;
     }
 
     /* Configure the libcurl multi handle, for use with the asynchronous interface */
     if ((io->handle2 = curl_multi_init ()) == NULL)
     {
       ms_log (2, "Cannot initialize CURL multi handle\n");
-      return -1;
+      goto onerror;
     }
 
     if (curl_multi_add_handle (io->handle2, io->handle) != CURLM_OK)
     {
       ms_log (2, "Cannot add CURL handle to multi handle\n");
-      return -1;
+      goto onerror;
     }
 
     /* Set byte ranging */
@@ -318,11 +319,11 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
 
       /* Build Range header value.
        * If start is undefined set it to zero if end is defined. */
-      if (*startoffset > 0)
+      if (startoffset && *startoffset > 0)
         snprintf (startstr, sizeof (startstr), "%" PRId64, *startoffset);
-      else if (*endoffset > 0)
+      else if (endoffset && *endoffset > 0)
         snprintf (startstr, sizeof (startstr), "0");
-      if (*endoffset > 0)
+      if (endoffset && *endoffset > 0)
         snprintf (endstr, sizeof (endstr), "%" PRId64, *endoffset);
 
       snprintf (rangestr, sizeof (rangestr), "%s-%s", startstr, endstr);
@@ -331,7 +332,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
       if (curl_easy_setopt (io->handle, CURLOPT_RANGE, rangestr) != CURLE_OK)
       {
         ms_log (2, "Cannot set CURLOPT_RANGE to '%s'\n", rangestr);
-        return -1;
+        goto onerror;
       }
     }
 
@@ -345,13 +346,13 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
       if (curl_easy_setopt (io->handle, CURLOPT_HEADERFUNCTION, header_callback) != CURLE_OK)
       {
         ms_log (2, "Cannot set CURLOPT_HEADERFUNCTION\n");
-        return -1;
+        goto onerror;
       }
 
       if (curl_easy_setopt (io->handle, CURLOPT_HEADERDATA, (void *)&hcp) != CURLE_OK)
       {
         ms_log (2, "Cannot set CURLOPT_HEADERDATA\n");
-        return -1;
+        goto onerror;
       }
     }
 
@@ -359,7 +360,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     if (gCURLheaders && curl_easy_setopt (io->handle, CURLOPT_HTTPHEADER, gCURLheaders) != CURLE_OK)
     {
       ms_log (2, "Cannot set CURLOPT_HTTPHEADER\n");
-      return -1;
+      goto onerror;
     }
 
     /* Set connection as still running */
@@ -368,17 +369,23 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     /* Start connection, get status & headers, without consuming any data */
     msio_fread (io, NULL, 0);
 
+    /* Detach the header callback's data pointer (a local on this stack frame)
+     * now that the response headers have been consumed, so a later header
+     * callback (e.g. on trailing headers) cannot dereference it after return. */
+    if (startoffset || endoffset)
+      curl_easy_setopt (io->handle, CURLOPT_HEADERDATA, NULL);
+
     curl_easy_getinfo (io->handle, CURLINFO_RESPONSE_CODE, &response_code);
 
     if (response_code == 404)
     {
       ms_log (2, "Cannot open %s: Not Found (404)\n", path);
-      return -1;
+      goto onerror;
     }
     else if (response_code >= 400 && response_code < 600)
     {
       ms_log (2, "Cannot open %s: response code %ld\n", path, response_code);
-      return -1;
+      goto onerror;
     }
 #endif /* defined(LIBMSEED_URL) */
   }
@@ -389,7 +396,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     if ((io->handle = fopen (path, mode)) == NULL)
     {
       ms_log (2, "Cannot open: %s (%s)\n", path, strerror (errno));
-      return -1;
+      goto onerror;
     }
 
     /* Seek to position if start offset is provided */
@@ -398,12 +405,18 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
       if (lmp_fseek64 (io->handle, *startoffset, SEEK_SET))
       {
         ms_log (2, "Cannot seek in %s to offset %" PRId64 "\n", path, *startoffset);
-        return -1;
+        goto onerror;
       }
     }
   }
 
   return 0;
+
+onerror:
+  /* Release any open handle so it does not leak on error */
+  msio_fclose (io);
+
+  return -1;
 } /* End of msio_fopen() */
 
 /*********************************************************************
@@ -413,7 +426,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
  *
  * Returns 0 on success and negative value on error.
  *
- * \ref MessageOnError - this function logs a message on error
+ * @ref MessageOnError - this function logs a message on error
  *********************************************************************/
 int
 msio_fclose (LMIO *io)
@@ -473,7 +486,7 @@ msio_fclose (LMIO *io)
  * Returns the number of bytes read on success and a negative value on
  * error.
  *********************************************************************/
-size_t
+int64_t
 msio_fread (LMIO *io, void *buffer, size_t size)
 {
   size_t read = 0;
@@ -483,7 +496,13 @@ msio_fread (LMIO *io, void *buffer, size_t size)
 
   if (!buffer && size > 0)
   {
-    ms_log (2, "No buffer specified for size is > 0\n");
+    ms_log (2, "%s(): No buffer specified for non-zero size\n", __func__);
+    return -1;
+  }
+
+  if (size > INT64_MAX)
+  {
+    ms_log (2, "%s(): Unsupported size, greater than INT64_MAX: %zu\n", __func__, size);
     return -1;
   }
 
@@ -578,7 +597,7 @@ msio_fread (LMIO *io, void *buffer, size_t size)
 #endif /* defined(LIBMSEED_URL) */
   }
 
-  return read;
+  return (int64_t)read;
 } /* End of msio_fread() */
 
 /*********************************************************************
@@ -627,9 +646,9 @@ msio_feof (LMIO *io)
  * The header is built as "PROGRAM/VERSION libmseed/version libcurl/version"
  * where VERSION is optional.
  *
- * Returns 0 on succes non-zero otherwise.
+ * Returns 0 on success non-zero otherwise.
  *
- * \ref MessageOnError - this function logs a message on error
+ * @ref MessageOnError - this function logs a message on error
  *********************************************************************/
 int
 msio_url_useragent (const char *program, const char *version)
@@ -663,9 +682,9 @@ msio_url_useragent (const char *program, const char *version)
  *
  * Set global user-password credentials for URL-based IO.
  *
- * Returns 0 on succes non-zero otherwise.
+ * Returns 0 on success non-zero otherwise.
  *
- * \ref MessageOnError - this function logs a message on error
+ * @ref MessageOnError - this function logs a message on error
  *********************************************************************/
 int
 msio_url_userpassword (const char *userpassword)
@@ -705,9 +724,9 @@ msio_url_userpassword (const char *userpassword)
  *
  * Add header to global list for URL-based IO.
  *
- * Returns 0 on succes non-zero otherwise.
+ * Returns 0 on success non-zero otherwise.
  *
- * \ref MessageOnError - this function logs a message on error
+ * @ref MessageOnError - this function logs a message on error
  *********************************************************************/
 int
 msio_url_addheader (const char *header)
