@@ -17,7 +17,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Copyright (C) 2025:
+ * Copyright (C) 2026:
  * @author Chad Trabant, EarthScope Data Services
  ***************************************************************************/
 
@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.4.1"    //!< Library version
-#define LIBMSEED_RELEASE "2026.167" //!< Library release date
+#define LIBMSEED_VERSION "3.5.1"    //!< Library version
+#define LIBMSEED_RELEASE "2026.206" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -454,6 +454,7 @@ extern int64_t ms_decode_data (const void *input, uint64_t inputsize, uint8_t en
 extern MS3Record *msr3_init (MS3Record *msr);
 extern void msr3_free (MS3Record **ppmsr);
 extern MS3Record *msr3_duplicate (const MS3Record *msr, int8_t datadup);
+extern MS3Record *msr3_duplicate_extra (const MS3Record *msr, int8_t datadup, int8_t extradup);
 extern nstime_t msr3_endtime (const MS3Record *msr);
 extern void msr3_print (const MS3Record *msr, int8_t details);
 extern int msr3_resize_buffer (MS3Record *msr);
@@ -532,7 +533,10 @@ extern void ms3_printselections (const MS3Selections *selections);
  * the file name remains valid for the lifetime of the record list.
  *
  * A ::MS3Record is stored with and contains the bit flags, extra
- * headers, etc. for the record.
+ * headers, etc. for the record.  The raw record pointer (\a
+ * MS3Record.record) is only populated when the record remains
+ * available in a caller-supplied buffer; it is NULL otherwise, for
+ * example for records read from files.
  *
  * The \a dataoffset to the encoded data is stored to enable direct
  * decoding of data samples without re-parsing the header, used by
@@ -549,7 +553,7 @@ typedef struct MS3RecordPtr
   FILE *fileptr;         //!< Pointer to open FILE containing record, NULL if not used
   const char *filename;  //!< Pointer (borrowed) to file name containing record, NULL if not used
   int64_t fileoffset;    //!< Offset into file to record for \a fileptr or \a filename
-  MS3Record *msr;        //!< Pointer to ::MS3Record for this record
+  MS3Record *msr;        //!< Pointer to ::MS3Record for this record, \a msr->record is only valid if from a caller-supplied buffer
   nstime_t endtime;      //!< End time of record, time of last sample
   uint32_t dataoffset;   //!< Offset from start of record to encoded data
   void *prvtptr;         //!< Private pointer, will not be populated by library but will be free'd
@@ -657,7 +661,9 @@ typedef struct MS3TraceList
  *
  * The \c samprate(MS3Record) function must return a sampling rate tolerance in Hertz.
  *
- * For any function pointer set to NULL a default tolerance will be used.
+ * For any function pointer set to NULL a default tolerance will be used.  A
+ * returned value of 0.0 requires an exact match.  A negative returned value
+ * is invalid; it is ignored and the default tolerance is used instead.
  *
  * Illustrated usage:
  * @code
@@ -758,6 +764,8 @@ extern void mstl3_printgaplist (const MS3TraceList *mstl, ms_timeformat_t timefo
     - set the User-Agent header with @ref ms3_url_useragent()
     - set username and password for authentication with @ref ms3_url_userpassword()
     - set arbitrary headers with @ref ms3_url_addheader()
+    - set connection and stall timeouts with @ref ms3_url_timeout(), or the stall timeout with
+   the \b LIBMSEED_URL_TIMEOUT environment variable
     - disable TLS/SSL peer and host verficiation by setting \b LIBMSEED_SSL_NOVERIFY environment
    variable
 
@@ -772,7 +780,12 @@ extern void mstl3_printgaplist (const MS3TraceList *mstl, ms_timeformat_t timefo
     \sa mstl3_writemseed()
     @{ */
 
-/** @brief Type definition for data source I/O: file-system versus URL */
+/** @brief Type definition for data source I/O: file-system versus URL
+ *
+ * INTERNAL: Callers should not create, inspect, or modify ::LMIO values;
+ * the layout and members may change without notice.  Use the public reading
+ * interfaces and ::MS3FileParam instead.
+ */
 typedef struct LMIO
 {
   enum
@@ -785,18 +798,21 @@ typedef struct LMIO
   void *handle;      //!< Primary IO handle, either file or URL
   void *handle2;     //!< Secondary IO handle for URL
   int still_running; //!< Fetch status flag for URL transmissions
+  int urlfail;       //!< Transfer failure flag for URL transmissions
 } LMIO;
 
 /** @def LMIO_INITIALIZER
     @brief Initialializer for the internal stream handle ::LMIO */
-#define LMIO_INITIALIZER {.type = LMIO_NULL, .handle = NULL, .handle2 = NULL, .still_running = 0}
+#define LMIO_INITIALIZER {.type = LMIO_NULL, .handle = NULL, .handle2 = NULL, .still_running = 0, .urlfail = 0}
 
 /** @brief State container for reading miniSEED records from files or URLs.
 
-    In general these values should not be directly set or accessed.  It is
-    possible to allocate a structure and set the \c path, \c startoffset,
+    INTERNAL: In general these values should not be directly set or accessed.
+    It is possible to allocate a structure and set the \c path, \c startoffset,
     and \c endoffset values for advanced usage.  Note that file/URL start
     and end offsets can also be parsed from the path name as well.
+
+    The ::LMIO structure is embedded in ::MS3FileParam.
 */
 typedef struct MS3FileParam
 {
@@ -844,6 +860,7 @@ extern int ms3_readtracelist_selection (MS3TraceList **ppmstl, const char *mspat
                                         const MS3Selections *selections, int8_t splitversion,
                                         uint32_t flags, int8_t verbose);
 extern int ms3_url_useragent (const char *program, const char *version);
+extern int ms3_url_timeout (long connecttimeout, long stalltimeout);
 extern int ms3_url_userpassword (const char *userpassword);
 extern int ms3_url_addheader (const char *header);
 extern void ms3_url_freeheaders (void);
@@ -914,6 +931,10 @@ extern int ms_strncpopen (char *dest, const char *source, int length);
  * Actual values are optional, with special values indicating an unset
  * state.
  *
+ * INTERNAL: Callers should not create, inspect, or modify ::MSEHEventDetection values;
+ * the layout and members may change without notice.  Use the public extra header
+ * functions instead.
+ *
  * @see mseh_add_event_detection_r
  */
 typedef struct MSEHEventDetection
@@ -939,6 +960,10 @@ typedef struct MSEHEventDetection
  *
  * Actual values are optional, with special values indicating an unset
  * state.
+ *
+ * INTERNAL: Callers should not create, inspect, or modify ::MSEHCalibration values;
+ * the layout and members may change without notice.  Use the public extra header
+ * functions instead.
  *
  * @see mseh_add_calibration
  */
@@ -972,7 +997,13 @@ typedef struct MSEHCalibration
  * @brief Container for timing exception parameters for use in extra headers
  *
  * Actual values are optional, with special values indicating an unset
- * state.
+ * state.  The @a type and @a clockstatus fields are sized to match the
+ * v2 Blockette 500 fields exactly, so a full-width value need not be
+ * null terminated; trailing spaces are treated as padding and ignored.
+ *
+ * INTERNAL: Callers should not create, inspect, or modify ::MSEHTimingException values;
+ * the layout and members may change without notice.  Use the public extra header
+ * functions instead.
  *
  * @see mseh_add_timing_exception
  */
@@ -983,9 +1014,9 @@ typedef struct MSEHTimingException
   int usec;             /**< [DEPRECATED] microsecond time offset, 0 = not included */
   int receptionquality; /**< Reception quality, 0 to 100% clock accurracy, <0 = not included */
   uint32_t count;       /**< The count thereof, 0 = not included */
-  char type[16];        /**< E.g. "MISSING" or "UNEXPECTED", zero length = not included */
+  char type[16];        /**< E.g. "MISSING" or "UNEXPECTED", all spaces or zero length = not included */
   char
-      clockstatus[128]; /**< Description of clock-specific parameters, zero length = not included */
+      clockstatus[128]; /**< Description of clock-specific parameters, all spaces or zero length = not included */
 } MSEHTimingException;
 
 /**
@@ -993,6 +1024,10 @@ typedef struct MSEHTimingException
  *
  * Actual values are optional, with special values indicating an unset
  * state.
+ *
+ * INTERNAL: Callers should not create, inspect, or modify ::MSEHRecenter values;
+ * the layout and members may change without notice.  Use the public extra header
+ * functions instead.
  *
  * @see mseh_add_recenter
  */
@@ -1594,15 +1629,12 @@ extern void *libmseed_memory_prealloc (void *ptr, size_t size, size_t *currentsi
 #define MSF_PNAMERANGE 0x0008  //!< [Parsing] Parse and utilize byte range from path name suffix
 #define MSF_ATENDOFFILE 0x0010 //!< [Parsing] Reading routine is at the end of the file
 #define MSF_SEQUENCE 0x0020    //!< [Packing] UNSUPPORTED: Maintain a record-level sequence number
-#define MSF_FLUSHDATA                                                                              \
-  0x0040 //!< [Packing] Pack all available data even if final record would not be filled
+#define MSF_FLUSHDATA 0x0040   //!< [Packing] Pack all available data even if final record would not be filled
 #define MSF_PACKVER2 0x0080     //!< [Packing] Pack as miniSEED version 2 instead of 3
 #define MSF_RECORDLIST 0x0100   //!< [TraceList] Build a ::MS3RecordList for each ::MS3TraceSeg
 #define MSF_MAINTAINMSTL 0x0200 //!< [TraceList] Do not modify a trace list when packing
-#define MSF_PPUPDATETIME                                                                           \
-  0x0400 //!< [TraceList] Store update time (as nstime_t) at ::MS3TraceSeg.prvtptr
-#define MSF_SPLITISVERSION \
-  0x0800 //!< [TraceList] Use the splitversion value as version instead of record version
+#define MSF_PPUPDATETIME 0x0400 //!< [TraceList] Store update time (as nstime_t) at ::MS3TraceSeg.prvtptr
+#define MSF_SPLITISVERSION 0x0800 //!< [TraceList] Use the splitversion value as version instead of record version
 #define MSF_SKIPADJACENTDUPLICATES 0x1000 //!< [TraceList] Skip adjacent duplicate records
 /** @} */
 

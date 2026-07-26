@@ -26,7 +26,7 @@ The stream/file reading functions in the library will automatically detect URLs 
 and there is no need to do anything special to use this feature.
 
 Specifics of the URL support can be configured with @ref ms3_url_useragent(), @ref ms3_url_userpassword(),
-and @ref ms3_url_addheader().
+@ref ms3_url_addheader(), and @ref ms3_url_timeout().
 
 To disable TLS/SSL peer and host verification set the **LIBMSEED_SSL_NOVERIFY** environment variable.
 

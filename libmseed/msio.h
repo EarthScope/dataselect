@@ -33,6 +33,7 @@ extern int msio_fclose (LMIO *io);
 extern int64_t msio_fread (LMIO *io, void *buffer, size_t size);
 extern int msio_feof (LMIO *io);
 extern int msio_url_useragent (const char *program, const char *version);
+extern int msio_url_timeout (long connecttimeout, long stalltimeout);
 extern int msio_url_userpassword (const char *userpassword);
 extern int msio_url_addheader (const char *header);
 extern void msio_url_freeheaders (void);

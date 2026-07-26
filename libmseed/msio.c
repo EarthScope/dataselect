@@ -31,11 +31,19 @@
 
 #include <curl/curl.h>
 
+/* Default timeouts, in seconds, for URL connections */
+#define LIBMSEED_URL_CONNECTTIMEOUT_DEFAULT 60
+#define LIBMSEED_URL_STALLTIMEOUT_DEFAULT 300
+
 /* Control for enabling debugging information */
 int libmseed_url_debug = -1;
 
 /* Control for SSL peer and host verification */
 long libmseed_ssl_noverify = -1;
+
+/* Timeouts, in seconds, for URL connections; negative means unset */
+long libmseed_url_connecttimeout = -1;
+long libmseed_url_stalltimeout = -1;
 
 /* A global libcurl easy handle for configuration options */
 CURL *gCURLeasy = NULL;
@@ -56,6 +64,7 @@ struct header_callback_parameters
 {
   int64_t *startoffset;
   int64_t *endoffset;
+  int range_honored;
 };
 
 /*********************************************************************
@@ -105,13 +114,15 @@ header_callback (char *buffer, size_t size, size_t num, void *userdata)
 
   char startstr[21] = {0}; /* Maximum of 20 digit value */
   char endstr[21] = {0};   /* Maximum of 20 digit value */
+  unsigned long long startval = 0;
+  unsigned long long endval = 0;
   uint8_t startdigits = 0;
   uint8_t enddigits = 0;
   char *dash = NULL;
   char *ptr;
 
   if (!buffer || !userdata)
-    return 0;
+    return size * num;
 
   size *= num;
 
@@ -119,7 +130,7 @@ header_callback (char *buffer, size_t size, size_t num, void *userdata)
    * e.g. Content-Range: bytes 512-1023/4096 */
   if (size > 22 && lmp_strncasecmp (buffer, "Content-Range: bytes", 20) == 0)
   {
-    /* Process each character, starting just afer "bytes" unit */
+    /* Process each character, starting just after "bytes" unit */
     for (ptr = buffer + 20; *ptr != '\0' && (ptr - buffer) < (ptrdiff_t)size; ptr++)
     {
       /* Skip spaces before start of range */
@@ -147,12 +158,42 @@ header_callback (char *buffer, size_t size, size_t num, void *userdata)
       }
     }
 
-    /* Convert start and end values to numbers if non-zero length */
+    /* Convert start and end values to numbers if non-zero length,
+     * rejecting values that overflow a signed 64-bit offset */
+    if (startdigits)
+    {
+      startval = strtoull (startstr, NULL, 10);
+
+      if (startval > INT64_MAX)
+      {
+        startdigits = 0;
+        enddigits = 0;
+      }
+    }
+
+    if (enddigits)
+    {
+      endval = strtoull (endstr, NULL, 10);
+
+      if (endval > INT64_MAX)
+      {
+        startdigits = 0;
+        enddigits = 0;
+      }
+    }
+
+    /* The range is only honored if an offset was actually applied */
     if (hcp->startoffset && startdigits)
-      *hcp->startoffset = (int64_t)strtoull (startstr, NULL, 10);
+    {
+      *hcp->startoffset = (int64_t)startval;
+      hcp->range_honored = 1;
+    }
 
     if (hcp->endoffset && enddigits)
-      *hcp->endoffset = (int64_t)strtoull (endstr, NULL, 10);
+    {
+      *hcp->endoffset = (int64_t)endval;
+      hcp->range_honored = 1;
+    }
   }
 
   return size;
@@ -207,6 +248,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
 #else
     long response_code;
     struct header_callback_parameters hcp;
+    int range_requested = 0;
 
     io->type = LMIO_URL;
     io->handle2 = NULL;
@@ -228,6 +270,21 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
       else
         libmseed_ssl_noverify = 0;
     }
+
+    /* Check for stall (low-speed) timeout environment variable */
+    if (libmseed_url_stalltimeout < 0)
+    {
+      char *timeoutstr = getenv ("LIBMSEED_URL_TIMEOUT");
+      long timeoutval;
+
+      if (timeoutstr && (timeoutval = strtol (timeoutstr, NULL, 10)) > 0)
+        libmseed_url_stalltimeout = timeoutval;
+      else
+        libmseed_url_stalltimeout = LIBMSEED_URL_STALLTIMEOUT_DEFAULT;
+    }
+
+    if (libmseed_url_connecttimeout < 0)
+      libmseed_url_connecttimeout = LIBMSEED_URL_CONNECTTIMEOUT_DEFAULT;
 
     /* Configure the libcurl easy handle, duplicate global options if present */
     io->handle = (gCURLeasy) ? curl_easy_duphandle (gCURLeasy) : curl_easy_init ();
@@ -276,6 +333,25 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
       goto onerror;
     }
 
+    /* Connection timeout, 0 disables */
+    if (libmseed_url_connecttimeout > 0 &&
+        curl_easy_setopt (io->handle, CURLOPT_CONNECTTIMEOUT, libmseed_url_connecttimeout) !=
+            CURLE_OK)
+    {
+      ms_log (2, "Cannot set CURLOPT_CONNECTTIMEOUT\n");
+      goto onerror;
+    }
+
+    /* Abort the transfer if it stalls below 1 byte/second, 0 disables */
+    if (libmseed_url_stalltimeout > 0 &&
+        (curl_easy_setopt (io->handle, CURLOPT_LOW_SPEED_LIMIT, 1L) != CURLE_OK ||
+         curl_easy_setopt (io->handle, CURLOPT_LOW_SPEED_TIME, libmseed_url_stalltimeout) !=
+             CURLE_OK))
+    {
+      ms_log (2, "Cannot set CURLOPT_LOW_SPEED_LIMIT and/or CURLOPT_LOW_SPEED_TIME\n");
+      goto onerror;
+    }
+
     /* Return failure codes on errors */
     if (curl_easy_setopt (io->handle, CURLOPT_FAILONERROR, 1L) != CURLE_OK)
     {
@@ -317,6 +393,8 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
       char endstr[21] = {0};
       char rangestr[42];
 
+      range_requested = 1;
+
       /* Build Range header value.
        * If start is undefined set it to zero if end is defined. */
       if (startoffset && *startoffset > 0)
@@ -341,6 +419,7 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     {
       hcp.startoffset = startoffset;
       hcp.endoffset = endoffset;
+      hcp.range_honored = 0;
 
       /* Configure header callback */
       if (curl_easy_setopt (io->handle, CURLOPT_HEADERFUNCTION, header_callback) != CURLE_OK)
@@ -369,11 +448,15 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     /* Start connection, get status & headers, without consuming any data */
     msio_fread (io, NULL, 0);
 
-    /* Detach the header callback's data pointer (a local on this stack frame)
-     * now that the response headers have been consumed, so a later header
-     * callback (e.g. on trailing headers) cannot dereference it after return. */
+    /* Detach the header callback and its data pointer (a local on this stack
+     * frame) now that the response headers have been consumed, so a later
+     * header callback (e.g. on trailing headers) cannot dereference the
+     * pointer or abort the transfer by returning a short count. */
     if (startoffset || endoffset)
+    {
+      curl_easy_setopt (io->handle, CURLOPT_HEADERFUNCTION, NULL);
       curl_easy_setopt (io->handle, CURLOPT_HEADERDATA, NULL);
+    }
 
     curl_easy_getinfo (io->handle, CURLINFO_RESPONSE_CODE, &response_code);
 
@@ -385,6 +468,22 @@ msio_fopen (LMIO *io, const char *path, const char *mode, int64_t *startoffset, 
     else if (response_code >= 400 && response_code < 600)
     {
       ms_log (2, "Cannot open %s: response code %ld\n", path, response_code);
+      goto onerror;
+    }
+
+    /* Detect transfer-level failures with no HTTP status, e.g. connection errors */
+    if (io->urlfail)
+    {
+      ms_log (2, "Cannot open %s: transfer failed\n", path);
+      goto onerror;
+    }
+
+    /* Fail if a byte range was requested but the server did not honor it
+     * (no Content-Range in the response); the full body starts at offset 0
+     * and would otherwise silently include data outside the requested range. */
+    if (range_requested && !hcp.range_honored)
+    {
+      ms_log (2, "Cannot open %s: server did not honor requested byte range\n", path);
       goto onerror;
     }
 #endif /* defined(LIBMSEED_URL) */
@@ -467,6 +566,7 @@ msio_fclose (LMIO *io)
   io->type = LMIO_NULL;
   io->handle = NULL;
   io->handle2 = NULL;
+  io->urlfail = 0;
 
   return 0;
 } /* End of msio_fclose() */
@@ -527,6 +627,10 @@ msio_fread (LMIO *io, void *buffer, size_t size)
     int maxfd = -1;
     int rc;
 
+    /* Report an error if a previous transfer failure was detected */
+    if (io->urlfail)
+      return -1;
+
     if (!io->still_running)
       return 0;
 
@@ -540,8 +644,8 @@ msio_fread (LMIO *io, void *buffer, size_t size)
     }
 
     /* Unpause connection */
-    curl_easy_pause (io->handle, CURLPAUSE_CONT);
     rcp.is_paused = 0;
+    curl_easy_pause (io->handle, CURLPAUSE_CONT);
 
     /* Receive data while connection running, destination space available
      * and connection is not paused. */
@@ -583,6 +687,18 @@ msio_fread (LMIO *io, void *buffer, size_t size)
       else
       {
         rc = select (maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout);
+
+        /* An interrupted select() is not an error, let libcurl proceed */
+        if (rc < 0 && errno == EINTR)
+        {
+          rc = 0;
+        }
+        else if (rc < 0)
+        {
+          ms_log (2, "Error with select(): %s\n", strerror (errno));
+          io->urlfail = 1;
+          return -1;
+        }
       }
 
       /* Receive data */
@@ -593,6 +709,28 @@ msio_fread (LMIO *io, void *buffer, size_t size)
     } while (io->still_running > 0 && !rcp.is_paused && (rcp.size > 0 || rcp.buffer == NULL));
 
     read = size - rcp.size;
+
+    /* When the transfer is no longer running, check its completion status.
+     * A non-OK result means the transfer failed (e.g. connection reset)
+     * rather than reaching a clean end of stream. */
+    if (!io->still_running)
+    {
+      CURLMsg *msg;
+      int msgs_left;
+
+      while ((msg = curl_multi_info_read (io->handle2, &msgs_left)))
+      {
+        if (msg->msg == CURLMSG_DONE && msg->data.result != CURLE_OK)
+        {
+          ms_log (2, "Error transferring data: %s\n", curl_easy_strerror (msg->data.result));
+          io->urlfail = 1;
+        }
+      }
+
+      /* Report an error if no data were received before the failure */
+      if (io->urlfail && read == 0)
+        return -1;
+    }
 
 #endif /* defined(LIBMSEED_URL) */
   }
@@ -627,6 +765,10 @@ msio_feof (LMIO *io)
     ms_log (2, "URL support not included in library\n");
     return -1;
 #else
+    /* A failed transfer is not a clean end of stream */
+    if (io->urlfail)
+      return 0;
+
     /* The still_running flag is only changed by curl_multi_perform()
      * and indicates current "transfers in progress".  Presumably no data
      * are in internal libcurl buffers either. */
@@ -676,6 +818,36 @@ msio_url_useragent (const char *program, const char *version)
 
   return 0;
 } /* End of msio_url_useragent() */
+
+/*********************************************************************
+ * msio_url_timeout:
+ *
+ * Set global connection and stall timeouts, in seconds, for
+ * URL-based IO.  A value of 0 disables the respective timeout and a
+ * negative value leaves it unchanged.
+ *
+ * Returns 0 on success non-zero otherwise.
+ *
+ * @ref MessageOnError - this function logs a message on error
+ *********************************************************************/
+int
+msio_url_timeout (long connecttimeout, long stalltimeout)
+{
+#if !defined(LIBMSEED_URL)
+  (void)connecttimeout; /* Unused */
+  (void)stalltimeout;   /* Unused */
+  ms_log (2, "URL support not included in library\n");
+  return -1;
+#else
+  if (connecttimeout >= 0)
+    libmseed_url_connecttimeout = connecttimeout;
+
+  if (stalltimeout >= 0)
+    libmseed_url_stalltimeout = stalltimeout;
+#endif
+
+  return 0;
+} /* End of msio_url_timeout() */
 
 /*********************************************************************
  * msio_url_userpassword:

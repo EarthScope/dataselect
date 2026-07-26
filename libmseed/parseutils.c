@@ -837,6 +837,14 @@ ms_parse_raw2 (const char *record, int maxreclen, int8_t details, int8_t swapfla
         ms_log (0, "              next blockette: %u\n", next_blkt);
       }
 
+      /* Ensure that Blockette 2000 length field is within buffer before ms2_blktlen() call */
+      if (blkt_type == 2000 && (uint64_t)blkt_offset + 6 > maxreclen)
+      {
+        ms_log (2, "%s: Blockette 2000 length field extends beyond record size, truncated?\n", sid);
+        retval++;
+        break;
+      }
+
       blkt_length = ms2_blktlen (blkt_type, record + blkt_offset, swapflag);
       if (blkt_length == 0)
       {
@@ -1301,6 +1309,16 @@ ms_parse_raw2 (const char *record, int maxreclen, int8_t details, int8_t swapfla
       else if (blkt_type == 2000)
       {
         char order[40];
+
+        /* The fixed B2000 header (through the number-of-headers field) spans 15
+         * bytes; a declared blockette length shorter than this would otherwise
+         * allow the field reads below to run past the buffer */
+        if ((uint64_t)blkt_offset + 15 > maxreclen)
+        {
+          ms_log (2, "%s: Blockette 2000 header extends beyond record size, truncated?\n", sid);
+          retval++;
+          break;
+        }
 
         /* Big or little endian? */
         if (*pMS2B2000_BYTEORDER (record + blkt_offset) == 0)

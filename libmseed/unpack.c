@@ -205,6 +205,12 @@ msr3_unpack_mseed3 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
   memcpy (&samprate, pMS3FSDH_SAMPLERATE (record), sizeof (double));
   msr->samprate = HO8f (samprate, msr->swapflag);
 
+  if (msr->samprate != 0.0 && !isnormal (msr->samprate))
+  {
+    ms_log (2, "%.*s: Invalid sample rate: %g\n", sidlength, pMS3FSDH_SID (record), msr->samprate);
+    return MS_GENERROR;
+  }
+
   uint32_t numsamples;
   memcpy (&numsamples, pMS3FSDH_NUMSAMPLES (record), sizeof (uint32_t));
   msr->samplecnt = HO4u (numsamples, msr->swapflag);
@@ -464,7 +470,8 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
      * must be within the record buffer before ms2_blktlen() reads it */
     if (blkt_type == 2000 && (blkt_offset + 6) > reclen)
     {
-      ms_log (2, "%s: Blockette 2000 length field extends beyond record size, truncated?\n", msr->sid);
+      ms_log (2, "%s: Blockette 2000 length field extends beyond record size, truncated?\n",
+              msr->sid);
       break;
     }
 
@@ -488,7 +495,12 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
 
     if (blkt_type == 100)
     {
-      msr->samprate = HO4f (*pMS2B100_SAMPRATE (record + blkt_offset), msr->swapflag);
+      float b100rate = HO4f (*pMS2B100_SAMPRATE (record + blkt_offset), msr->swapflag);
+
+      if (b100rate < 0.0 || (b100rate != 0.0 && !isnormal (b100rate)))
+        ms_log (1, "%s: Ignoring invalid Blockette 100 sample rate: %g\n", msr->sid, b100rate);
+      else
+        msr->samprate = b100rate;
     }
 
     /* Blockette 200, generic event detection */
@@ -531,7 +543,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_event_detection_r (msr, NULL, &eventdetection, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 200 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -565,7 +577,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_event_detection_r (msr, NULL, &eventdetection, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 201 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -624,7 +636,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 300 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -683,7 +695,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 310 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -736,7 +748,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 320 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -784,7 +796,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 390 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -821,7 +833,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 395 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -848,8 +860,9 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       exception.time =
           ms_btime2nstime ((uint8_t *)pMS2B500_YEAR (record + blkt_offset), msr->swapflag);
 
-      /* Apply microsecond precision if non-zero */
-      if (*pMS2B500_MICROSECOND (record + blkt_offset) != 0)
+      /* Apply microsecond precision if non-zero, only to a valid decoded time */
+      if (*pMS2B500_MICROSECOND (record + blkt_offset) != 0 && exception.time != NSTUNSET &&
+          exception.time != NSTERROR)
       {
         exception.time +=
             (nstime_t)*pMS2B500_MICROSECOND (record + blkt_offset) * (NSTMODULUS / 1000000);
@@ -857,13 +870,15 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
 
       exception.receptionquality = *pMS2B500_RECEPTIONQUALITY (record + blkt_offset);
       exception.count = HO4u (*pMS2B500_EXCEPTIONCOUNT (record + blkt_offset), msr->swapflag);
-      ms_strncpcleantail (exception.type, pMS2B500_EXCEPTIONTYPE (record + blkt_offset), 16);
-      ms_strncpcleantail (exception.clockstatus, pMS2B500_CLOCKSTATUS (record + blkt_offset), 128);
+      ms_strncpopen (exception.type, pMS2B500_EXCEPTIONTYPE (record + blkt_offset),
+                     (int)sizeof (exception.type));
+      ms_strncpopen (exception.clockstatus, pMS2B500_CLOCKSTATUS (record + blkt_offset),
+                     (int)sizeof (exception.clockstatus));
 
       if (mseh_add_timing_exception_r (msr, NULL, &exception, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 500 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
 
       /* Clock model maps to a single value at /FDSN/Clock/Model */
@@ -888,7 +903,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
         {
           ms_log (2, "%s: Record length in Blockette 1000 (%u) exceeds the buffer length (%d)\n",
                   msr->sid, b1000reclen, reclen);
-          return MS_GENERROR;
+          goto error_return;
         }
 
         msr->reclen = b1000reclen;
@@ -912,7 +927,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       B1001offset = blkt_offset;
 
       /* Optimization: if no other extra headers yet, directly print this common value */
-      if (parsestate == NULL)
+      if (parsestate == NULL && msr->extra == NULL)
       {
         length = snprintf (sval, sizeof (sval), "{\"FDSN\":{\"Time\":{\"Quality\":%d}}}",
                            *pMS2B1001_TIMINGQUALITY (record + blkt_offset));
@@ -920,7 +935,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
         if (!(msr->extra = (char *)libmseed_memory.malloc (length + 1)))
         {
           ms_log (2, "%s: Cannot allocate memory for extra headers\n", msr->sid);
-          return MS_GENERROR;
+          goto error_return;
         }
         memcpy (msr->extra, sval, length + 1);
 
@@ -1001,9 +1016,9 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
             msr->sid, *pMS2FSDH_NUMBLOCKETTES (record), blkt_count);
   }
 
-  /* Calculate start time */
+  /* Calculate start time, rejecting an unset (year 0) or invalid time */
   msr->starttime = ms_btime2nstime ((uint8_t *)pMS2FSDH_YEAR (record), msr->swapflag);
-  if (msr->starttime == NSTERROR)
+  if (msr->starttime == NSTERROR || msr->starttime == NSTUNSET)
   {
     ms_log (2, "%s: Cannot convert start time to internal time stamp\n", msr->sid);
     return MS_GENERROR;
@@ -1073,6 +1088,11 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
   }
 
   return MS_NOERROR;
+
+error_return:
+  if (parsestate)
+    mseh_free_parsestate (&parsestate);
+  return MS_GENERROR;
 } /* End of msr3_unpack_mseed2() */
 
 /** ************************************************************************
@@ -1126,8 +1146,8 @@ msr3_data_bounds (const MS3Record *msr, uint32_t *dataoffset, uint32_t *datasize
     /* Validate data offset is within the record to avoid unsigned underflow */
     if (*dataoffset >= (uint32_t)msr->reclen)
     {
-      ms_log (2, "%s: Data offset (%u) is beyond record length (%d)\n",
-              msr->sid, *dataoffset, msr->reclen);
+      ms_log (2, "%s: Data offset (%u) is beyond record length (%d)\n", msr->sid, *dataoffset,
+              msr->reclen);
       return MS_GENERROR;
     }
 
@@ -1178,7 +1198,8 @@ msr3_data_bounds (const MS3Record *msr, uint32_t *dataoffset, uint32_t *datasize
    * trailing, zeroed (empty) frames and subtract them from the size. */
   if (*datasize % 64 == 0 && (msr->encoding == DE_STEIM1 || msr->encoding == DE_STEIM2))
   {
-    while (*datasize > 0 && memcmp (msr->record + (*datasize - 64), nullframe, 64) == 0)
+    while (*datasize > 0 &&
+           memcmp (msr->record + *dataoffset + (*datasize - 64), nullframe, 64) == 0)
     {
       *datasize -= 64;
     }
@@ -1302,26 +1323,33 @@ msr3_unpack_data (MS3Record *msr, int8_t verbose)
   /* (Re)Allocate space for the unpacked data */
   if (unpacksize > 0)
   {
+    void *resized;
+
     if (libmseed_prealloc_block_size)
     {
       size_t current_size = msr->datasize;
-      msr->datasamples = libmseed_memory_prealloc (msr->datasamples, unpacksize, &current_size);
-      msr->datasize = current_size;
+      resized = libmseed_memory_prealloc (msr->datasamples, unpacksize, &current_size);
+
+      if (resized != NULL)
+        msr->datasize = current_size;
     }
     else
     {
-      msr->datasamples = libmseed_memory.realloc (msr->datasamples, unpacksize);
-      msr->datasize = unpacksize;
+      resized = libmseed_memory.realloc (msr->datasamples, unpacksize);
+
+      if (resized != NULL)
+        msr->datasize = unpacksize;
     }
 
-    if (msr->datasamples == NULL)
+    if (resized == NULL)
     {
       ms_log (2, "%s: Cannot (re)allocate memory\n", msr->sid);
-      msr->datasize = 0;
       if (encoded_allocated)
         libmseed_memory.free (encoded_allocated);
       return MS_GENERROR;
     }
+
+    msr->datasamples = resized;
   }
   else
   {

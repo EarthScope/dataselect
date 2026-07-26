@@ -18,6 +18,8 @@
  * limitations under the License.
  ***************************************************************************/
 
+#include <float.h>
+
 #include "extraheaders.h"
 #include "libmseed.h"
 
@@ -42,6 +44,16 @@ _priv_free (void *ctx, void *ptr)
 {
   UNUSED (ctx);
   libmseed_memory.free (ptr);
+}
+
+/* Mark a real for single-precision serialization, but only when the
+ * value is finite and within the single-precision range so large-magnitude
+ * values keep full precision instead of failing to serialize. */
+static void
+limit_real_precision (yyjson_mut_val *val, double v)
+{
+  if (isfinite (v) && fabs (v) <= (double)FLT_MAX)
+    yyjson_mut_set_fp_to_float (val, true);
 }
 
 /***************************************************************************
@@ -162,13 +174,13 @@ mseh_get_ptr_type (const MS3Record *msr, const char *ptr, LM_PARSED_JSON **parse
     return MS_GENERROR;
   }
 
-  /* Nothing can be found in no headers */
-  if (!msr->extralength)
+  /* Nothing can be found without extra headers or a populated parse state */
+  if (!msr->extralength && (parsed == NULL || (parsed->doc == NULL && parsed->mut_doc == NULL)))
   {
     return 0;
   }
 
-  if (!msr->extra)
+  if (!msr->extra && parsed == NULL)
   {
     ms_log (2, "%s() Expected extra headers (msr->extra) are not present\n", __func__);
     return MS_GENERROR;
@@ -308,6 +320,7 @@ mseh_get_ptr_r (const MS3Record *msr, const char *ptr, void *value, char type, u
                 LM_PARSED_JSON **parsestate)
 {
   LM_PARSED_JSON *parsed = NULL;
+  LM_PARSED_JSON *statep = (parsestate) ? *parsestate : NULL;
   yyjson_val *extravalue = NULL;
   const char *stringvalue = NULL;
 
@@ -320,13 +333,13 @@ mseh_get_ptr_r (const MS3Record *msr, const char *ptr, void *value, char type, u
     return MS_GENERROR;
   }
 
-  /* Nothing can be found in no headers */
-  if (!msr->extralength)
+  /* Nothing can be found without extra headers or a populated parse state */
+  if (!msr->extralength && (statep == NULL || (statep->doc == NULL && statep->mut_doc == NULL)))
   {
     return 1;
   }
 
-  if (!msr->extra)
+  if (!msr->extra && statep == NULL)
   {
     ms_log (2, "%s() Expected extra headers (msr->extra) are not present\n", __func__);
     return MS_GENERROR;
@@ -361,7 +374,8 @@ mseh_get_ptr_r (const MS3Record *msr, const char *ptr, void *value, char type, u
     if (value)
       *((uint64_t *)value) = unsafe_yyjson_get_uint (extravalue);
   }
-  else if (type == 'i' && yyjson_is_int (extravalue))
+  else if (type == 'i' && yyjson_is_int (extravalue) &&
+           (yyjson_is_sint (extravalue) || unsafe_yyjson_get_uint (extravalue) <= INT64_MAX))
   {
     if (value)
       *((int64_t *)value) = unsafe_yyjson_get_sint (extravalue);
@@ -460,6 +474,7 @@ mseh_set_ptr_r (MS3Record *msr, const char *ptr, void *value, char type,
   yyjson_mut_val *merged_val = NULL;
   yyjson_mut_val *target_val = NULL;
   yyjson_mut_val *array_val = NULL;
+  yyjson_mut_val *new_val = NULL;
   bool rv = false;
 
   if (!msr || !ptr || !value)
@@ -529,24 +544,32 @@ mseh_set_ptr_r (MS3Record *msr, const char *ptr, void *value, char type,
   switch (type)
   {
   case 'u':
-    rv = yyjson_mut_doc_ptr_set (parsed->mut_doc, ptr,
-                                 yyjson_mut_uint (parsed->mut_doc, *((uint64_t *)value)));
-    break;
+    new_val = yyjson_mut_uint (parsed->mut_doc, *((uint64_t *)value));
+    goto set_new_val;
   case 'i':
-    rv = yyjson_mut_doc_ptr_set (parsed->mut_doc, ptr,
-                                 yyjson_mut_sint (parsed->mut_doc, *((int64_t *)value)));
-    break;
+    new_val = yyjson_mut_sint (parsed->mut_doc, *((int64_t *)value));
+    goto set_new_val;
   case 'n':
-    rv = yyjson_mut_doc_ptr_set (parsed->mut_doc, ptr,
-                                 yyjson_mut_real (parsed->mut_doc, *((double *)value)));
-    break;
+    new_val = yyjson_mut_real (parsed->mut_doc, *((double *)value));
+    if (new_val)
+      limit_real_precision (new_val, *((double *)value));
+    goto set_new_val;
   case 's':
-    rv = yyjson_mut_doc_ptr_set (parsed->mut_doc, ptr,
-                                 yyjson_mut_strcpy (parsed->mut_doc, (const char *)value));
-    break;
+    new_val = yyjson_mut_strcpy (parsed->mut_doc, (const char *)value);
+    goto set_new_val;
   case 'b':
-    rv = yyjson_mut_doc_ptr_set (parsed->mut_doc, ptr,
-                                 yyjson_mut_bool (parsed->mut_doc, *((int *)value) ? true : false));
+    new_val = yyjson_mut_bool (parsed->mut_doc, *((int *)value) ? true : false);
+    goto set_new_val;
+  case 'V':
+    new_val = yyjson_mut_val_mut_copy (parsed->mut_doc, (yyjson_mut_val *)value);
+
+  set_new_val:
+    /* Only set the value if it was created successfully, otherwise a NULL
+     * value would be interpreted by yyjson as a request to remove ptr */
+    if (new_val)
+      rv = yyjson_mut_doc_ptr_set (parsed->mut_doc, ptr, new_val);
+    else
+      ms_log (2, "%s() Cannot create JSON value, out of memory?\n", __func__);
     break;
   case 'M':
     /* Parse supplied patch */
@@ -586,10 +609,6 @@ mseh_set_ptr_r (MS3Record *msr, const char *ptr, void *value, char type,
     yyjson_doc_free (patch_idoc);
     yyjson_mut_doc_free (patch_doc);
 
-    break;
-  case 'V':
-    rv = yyjson_mut_doc_ptr_set (
-        parsed->mut_doc, ptr, yyjson_mut_val_mut_copy (parsed->mut_doc, (yyjson_mut_val *)value));
     break;
   case 'A':
     /* Search for existing array, create if necessary */
@@ -685,18 +704,21 @@ mseh_add_event_detection_r (MS3Record *msr, const char *ptr, MSEHEventDetection 
   {
     yyjson_mut_set_str (&sigamp_key, "SignalAmplitude");
     yyjson_mut_set_real (&sigamp, eventdetection->signalamplitude);
+    limit_real_precision (&sigamp, eventdetection->signalamplitude);
     yyjson_mut_obj_add (&entry, &sigamp_key, &sigamp);
   }
   if (eventdetection->signalperiod != 0.0)
   {
     yyjson_mut_set_str (&sigper_key, "SignalPeriod");
     yyjson_mut_set_real (&sigper, eventdetection->signalperiod);
+    limit_real_precision (&sigper, eventdetection->signalperiod);
     yyjson_mut_obj_add (&entry, &sigper_key, &sigper);
   }
   if (eventdetection->backgroundestimate != 0.0)
   {
     yyjson_mut_set_str (&bgest_key, "BackgroundEstimate");
     yyjson_mut_set_real (&bgest, eventdetection->backgroundestimate);
+    limit_real_precision (&bgest, eventdetection->backgroundestimate);
     yyjson_mut_obj_add (&entry, &bgest_key, &bgest);
   }
   if (eventdetection->wave[0])
@@ -711,7 +733,7 @@ mseh_add_event_detection_r (MS3Record *msr, const char *ptr, MSEHEventDetection 
     yyjson_mut_set_str (&units, eventdetection->units);
     yyjson_mut_obj_add (&entry, &units_key, &units);
   }
-  if (eventdetection->onsettime != NSTUNSET)
+  if (eventdetection->onsettime != NSTUNSET && eventdetection->onsettime != NSTERROR)
   {
     if (ms_nstime2timestr_n (eventdetection->onsettime, timestring, sizeof (timestring),
                              ISOMONTHDAY_Z, NANO_MICRO_NONE))
@@ -825,7 +847,7 @@ mseh_add_calibration_r (MS3Record *msr, const char *ptr, MSEHCalibration *calibr
     yyjson_mut_set_str (&type, calibration->type);
     yyjson_mut_obj_add (&entry, &type_key, &type);
   }
-  if (calibration->begintime != NSTUNSET)
+  if (calibration->begintime != NSTUNSET && calibration->begintime != NSTERROR)
   {
     if (ms_nstime2timestr_n (calibration->begintime, beginstring, sizeof (beginstring),
                              ISOMONTHDAY_Z, NANO_MICRO_NONE))
@@ -841,7 +863,7 @@ mseh_add_calibration_r (MS3Record *msr, const char *ptr, MSEHCalibration *calibr
       return MS_GENERROR;
     }
   }
-  if (calibration->endtime != NSTUNSET)
+  if (calibration->endtime != NSTUNSET && calibration->endtime != NSTERROR)
   {
     if (ms_nstime2timestr_n (calibration->endtime, endstring, sizeof (endstring), ISOMONTHDAY_Z,
                              NANO_MICRO_NONE))
@@ -891,6 +913,7 @@ mseh_add_calibration_r (MS3Record *msr, const char *ptr, MSEHCalibration *calibr
   {
     yyjson_mut_set_str (&amplitude_key, "Amplitude");
     yyjson_mut_set_real (&amplitude, calibration->amplitude);
+    limit_real_precision (&amplitude, calibration->amplitude);
     yyjson_mut_obj_add (&entry, &amplitude_key, &amplitude);
   }
   if (calibration->inputunits[0])
@@ -909,18 +932,21 @@ mseh_add_calibration_r (MS3Record *msr, const char *ptr, MSEHCalibration *calibr
   {
     yyjson_mut_set_str (&duration_key, "Duration");
     yyjson_mut_set_real (&duration, calibration->duration);
+    limit_real_precision (&duration, calibration->duration);
     yyjson_mut_obj_add (&entry, &duration_key, &duration);
   }
   if (calibration->sineperiod != 0.0)
   {
     yyjson_mut_set_str (&sineperiod_key, "SinePeriod");
     yyjson_mut_set_real (&sineperiod, calibration->sineperiod);
+    limit_real_precision (&sineperiod, calibration->sineperiod);
     yyjson_mut_obj_add (&entry, &sineperiod_key, &sineperiod);
   }
   if (calibration->stepbetween != 0.0)
   {
     yyjson_mut_set_str (&stepbetween_key, "StepBetween");
     yyjson_mut_set_real (&stepbetween, calibration->stepbetween);
+    limit_real_precision (&stepbetween, calibration->stepbetween);
     yyjson_mut_obj_add (&entry, &stepbetween_key, &stepbetween);
   }
   if (calibration->inputchannel[0])
@@ -933,6 +959,7 @@ mseh_add_calibration_r (MS3Record *msr, const char *ptr, MSEHCalibration *calibr
   {
     yyjson_mut_set_str (&refamp_key, "ReferenceAmplitude");
     yyjson_mut_set_real (&refamp, calibration->refamplitude);
+    limit_real_precision (&refamp, calibration->refamplitude);
     yyjson_mut_obj_add (&entry, &refamp_key, &refamp);
     ;
   }
@@ -965,6 +992,33 @@ mseh_add_calibration_r (MS3Record *msr, const char *ptr, MSEHCalibration *calibr
 } /* End of mseh_add_calibration_r() */
 
 /** ************************************************************************
+ * @brief Length of a fixed-width, space-padded field
+ *
+ * Return the length of @p field, a fixed-width buffer of @p size bytes
+ * that may or may not be null terminated, stopping at a terminator if
+ * present and ignoring trailing spaces.
+ *
+ * @param[in] field Fixed-width field, e.g. a decoded SEED text field
+ * @param[in] size Size of @p field in bytes
+ *
+ * @returns The length of the field, excluding any terminator and
+ * trailing spaces.
+ ***************************************************************************/
+static size_t
+field_length (const char *field, size_t size)
+{
+  size_t length = 0;
+
+  while (length < size && field[length] != '\0')
+    length++;
+
+  while (length > 0 && field[length - 1] == ' ')
+    length--;
+
+  return length;
+}
+
+/** ************************************************************************
  * @brief Add timing exception to the extra headers of the given record.
  *
  * If @p ptr is NULL, the default is @c '/FDSN/Time/Exception'.
@@ -991,6 +1045,7 @@ mseh_add_timing_exception_r (MS3Record *msr, const char *ptr, MSEHTimingExceptio
   yyjson_mut_val clockstatus_key, clockstatus;
 
   char timestring[40];
+  size_t length;
 
   if (!msr || !exception)
   {
@@ -1001,7 +1056,7 @@ mseh_add_timing_exception_r (MS3Record *msr, const char *ptr, MSEHTimingExceptio
   yyjson_mut_set_obj (&entry);
 
   /* Add elements to new object */
-  if (exception->time != NSTUNSET)
+  if (exception->time != NSTUNSET && exception->time != NSTERROR)
   {
     if (ms_nstime2timestr_n (exception->time, timestring, sizeof (timestring), ISOMONTHDAY_Z,
                              NANO_MICRO_NONE))
@@ -1020,6 +1075,7 @@ mseh_add_timing_exception_r (MS3Record *msr, const char *ptr, MSEHTimingExceptio
   {
     yyjson_mut_set_str (&vcocorr_key, "VCOCorrection");
     yyjson_mut_set_real (&vcocorr, exception->vcocorrection);
+    limit_real_precision (&vcocorr, exception->vcocorrection);
     yyjson_mut_obj_add (&entry, &vcocorr_key, &vcocorr);
   }
   if (exception->receptionquality >= 0)
@@ -1034,16 +1090,20 @@ mseh_add_timing_exception_r (MS3Record *msr, const char *ptr, MSEHTimingExceptio
     yyjson_mut_set_sint (&count, exception->count);
     yyjson_mut_obj_add (&entry, &count_key, &count);
   }
-  if (exception->type[0])
+
+  length = field_length (exception->type, sizeof (exception->type));
+  if (length > 0)
   {
     yyjson_mut_set_str (&type_key, "Type");
-    yyjson_mut_set_str (&type, exception->type);
+    yyjson_mut_set_strn (&type, exception->type, length);
     yyjson_mut_obj_add (&entry, &type_key, &type);
   }
-  if (exception->clockstatus[0])
+
+  length = field_length (exception->clockstatus, sizeof (exception->clockstatus));
+  if (length > 0)
   {
     yyjson_mut_set_str (&clockstatus_key, "ClockStatus");
-    yyjson_mut_set_str (&clockstatus, exception->clockstatus);
+    yyjson_mut_set_strn (&clockstatus, exception->clockstatus, length);
     yyjson_mut_obj_add (&entry, &clockstatus_key, &clockstatus);
   }
 
@@ -1097,7 +1157,7 @@ mseh_add_recenter_r (MS3Record *msr, const char *ptr, MSEHRecenter *recenter,
     yyjson_mut_set_str (&type, recenter->type);
     yyjson_mut_obj_add (&entry, &type_key, &type);
   }
-  if (recenter->begintime != NSTUNSET)
+  if (recenter->begintime != NSTUNSET && recenter->begintime != NSTERROR)
   {
     if (ms_nstime2timestr_n (recenter->begintime, beginstring, sizeof (beginstring), ISOMONTHDAY_Z,
                              NANO_MICRO_NONE))
@@ -1112,7 +1172,7 @@ mseh_add_recenter_r (MS3Record *msr, const char *ptr, MSEHRecenter *recenter,
       return MS_GENERROR;
     }
   }
-  if (recenter->endtime != NSTUNSET)
+  if (recenter->endtime != NSTUNSET && recenter->endtime != NSTERROR)
   {
     if (ms_nstime2timestr_n (recenter->endtime, endstring, sizeof (endstring), ISOMONTHDAY_Z,
                              NANO_MICRO_NONE))
@@ -1159,7 +1219,7 @@ mseh_add_recenter_r (MS3Record *msr, const char *ptr, MSEHRecenter *recenter,
 int
 mseh_serialize (MS3Record *msr, LM_PARSED_JSON **parsestate)
 {
-  yyjson_write_flag flg;
+  yyjson_write_flag flg = YYJSON_WRITE_NOFLAG;
   yyjson_write_err err;
   yyjson_alc alc = {_priv_malloc, _priv_realloc, _priv_free, NULL};
 
@@ -1174,10 +1234,6 @@ mseh_serialize (MS3Record *msr, LM_PARSED_JSON **parsestate)
 
   if (!parsed || !parsed->mut_doc)
     return 0;
-
-  /* Limit float point values to single precision to avoid unrealistically
-   * high precision values in the output. */
-  flg = YYJSON_WRITE_FP_TO_FLOAT;
 
   /* Serialize new JSON string */
   serialized = yyjson_mut_write_opts (parsed->mut_doc, flg, &alc, &serialsize, &err);
@@ -1331,6 +1387,7 @@ mseh_print (const MS3Record *msr, int indent)
   char *extra;
   int idx;
   int instring = 0;
+  int escaped = 0;
 
   if (!msr)
     return MS_GENERROR;
@@ -1351,9 +1408,13 @@ mseh_print (const MS3Record *msr, int indent)
   ms_log (0, "%*s", indent, "");
   for (idx = 1; idx < (msr->extralength - 1); idx++)
   {
-    /* Toggle "in string" flag for double quotes */
-    if (extra[idx] == '"')
+    /* Toggle "in string" flag for unescaped double quotes */
+    if (extra[idx] == '"' && !escaped)
       instring = (instring) ? 0 : 1;
+
+    /* Track backslash escapes within strings so an escaped quote
+     * is not mistaken for a string delimiter */
+    escaped = (instring && !escaped && extra[idx] == '\\') ? 1 : 0;
 
     if (!instring)
     {

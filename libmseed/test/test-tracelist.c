@@ -100,6 +100,7 @@ TEST (tracelist, ms3_readtracelist_recptr)
   CHECK (recptr->fileptr == NULL, "recptr->fileptr is not expected NULL");     /* File is not currently open, closed by read routine */
   CHECK (recptr->fileoffset == 1152, "recptr->fileoffset is not expected 1152");
   CHECK (recptr->msr != NULL, "recptr->msr is not expected NULL");
+  CHECK (recptr->msr->record == NULL, "recptr->msr->record is not expected NULL"); /* Record is not in a buffer */
   CHECK (recptr->endtime == endtime, "recptr->endtime is not expected '2010-02-27T07:55:51.069539Z'");
   CHECK (recptr->dataoffset == 64, "recptr->dataoffset is not expected 64");
   CHECK (recptr->next == NULL, "recptr->next is not exected NULL");
@@ -181,6 +182,7 @@ TEST (tracelist, mstl3_readbuffer_recptr)
 
   CHECK (recptr->fileoffset == 0, "recptr->fileoffset is not expected 0");
   CHECK (recptr->msr != NULL, "recptr->msr is not expected NULL");
+  CHECK (recptr->msr->record == recptr->bufferptr, "recptr->msr->record is not expected recptr->bufferptr");
   CHECK (recptr->endtime == endtime, "recptr->endtime is not expected '2010-02-27T07:55:51.069539Z'");
   CHECK (recptr->dataoffset == 64, "recptr->dataoffset is not expected 64");
   CHECK (recptr->next == NULL, "recptr->next is not expected NULL");
@@ -355,4 +357,249 @@ TEST (tracelist, mstl3_addmsr_sampratetol_custom)
 
   CHECK (addmsr_two_rates (&tolerance, 100.0, 99.5) == 1,
          "Differing sample rates with generous custom tolerance did not merge into 1 segment");
+}
+
+/* A sample rate tolerance callback for mstl3_addmsr() that requires an exact match. */
+static double
+samprate_tol_exact (const MS3Record *msr)
+{
+  (void)msr;
+  return 0.0;
+}
+
+/* Verify that a sample rate tolerance callback returning 0.0 requires an exact
+ * match, rather than falling back to the default relative tolerance.  Rates
+ * that differ within the default tolerance (100.0 vs 100.005 Hz) must remain
+ * separate segments when an exact match is requested. */
+TEST (tracelist, mstl3_addmsr_sampratetol_exact)
+{
+  MS3Tolerance tolerance = MS3Tolerance_INITIALIZER;
+  tolerance.samprate = samprate_tol_exact;
+
+  CHECK (addmsr_two_rates (&tolerance, 100.0, 100.005) == 2,
+         "Sample rates within default tolerance did not remain separate with an exact tolerance");
+}
+
+/* A sample rate tolerance callback for mstl3_addmsr() that returns an invalid
+ * (negative) tolerance. */
+static double
+samprate_tol_negative (const MS3Record *msr)
+{
+  (void)msr;
+  return -1.0;
+}
+
+/* Verify that a negative sample rate tolerance is ignored in favor of the
+ * default tolerance, matching the behavior with no callback at all. */
+TEST (tracelist, mstl3_addmsr_sampratetol_negative)
+{
+  MS3Tolerance tolerance = MS3Tolerance_INITIALIZER;
+  tolerance.samprate = samprate_tol_negative;
+
+  CHECK (addmsr_two_rates (&tolerance, 100.0, 100.005) == 1,
+         "Negative sample rate tolerance did not fall back to the default tolerance");
+  CHECK (addmsr_two_rates (&tolerance, 100.0, 99.5) == 2,
+         "Negative sample rate tolerance did not fall back to the default tolerance");
+}
+
+/* Build a single-segment trace list containing the specified float samples and
+ * convert it to 32-bit integers.  The conversion return value is stored at
+ * 'result', the resulting sample type at 'sampletype', and the first converted
+ * sample at 'firstsample'.
+ *
+ * Returns 0 on success, -1 if the trace list could not be constructed. */
+static int
+convert_float_samples (const float *samples, int64_t count, int8_t truncate, int *result,
+                       char *sampletype, int32_t *firstsample)
+{
+  MS3Record msr = MS3Record_INITIALIZER;
+  MS3TraceList *mstl = NULL;
+  MS3TraceSeg *seg = NULL;
+
+  if (!(mstl = mstl3_init (NULL)))
+    return -1;
+
+  strcpy (msr.sid, "FDSN:XX_TEST__X_H_Z");
+  msr.reclen = 512;
+  msr.formatversion = 3;
+  msr.pubversion = 1;
+  msr.samprate = 100.0;
+  msr.starttime = ms_timestr2nstime ("2024-01-01T00:00:00.0Z");
+  msr.sampletype = 'f';
+  msr.datasamples = (void *)samples;
+  msr.numsamples = count;
+  msr.samplecnt = count;
+
+  if (!mstl3_addmsr (mstl, &msr, 0, 1, 0, NULL) || !mstl->traces.next[0])
+  {
+    mstl3_free (&mstl, 0);
+    return -1;
+  }
+
+  seg = mstl->traces.next[0]->first;
+
+  *result = mstl3_convertsamples (seg, 'i', truncate);
+  *sampletype = seg->sampletype;
+  *firstsample = (seg->sampletype == 'i') ? ((int32_t *)seg->datasamples)[0] : 0;
+
+  mstl3_free (&mstl, 0);
+  return 0;
+}
+
+/* Verify that NaN samples are rejected by mstl3_convertsamples() rather than
+ * being converted to a platform-dependent garbage integer.  Every comparison
+ * against NaN is false, so the loss-of-precision test alone cannot detect it. */
+TEST (tracelist, mstl3_convertsamples_nan)
+{
+  float samples[4] = {1.0f, 2.0f, NAN, 4.0f};
+  char sampletype = 0;
+  int32_t firstsample = 0;
+  int result = 0;
+
+  REQUIRE (convert_float_samples (samples, 4, 0, &result, &sampletype, &firstsample) == 0,
+           "Could not construct trace list for NaN conversion test");
+  CHECK (result == -1, "mstl3_convertsamples() did not reject NaN samples with truncate unset");
+  CHECK (sampletype == 'f', "Sample type changed after a rejected conversion");
+
+  REQUIRE (convert_float_samples (samples, 4, 1, &result, &sampletype, &firstsample) == 0,
+           "Could not construct trace list for NaN conversion test");
+  CHECK (result == -1, "mstl3_convertsamples() did not reject NaN samples with truncate set");
+  CHECK (sampletype == 'f', "Sample type changed after a rejected conversion");
+}
+
+/* Verify that sample values outside the range of a 32-bit integer are rejected,
+ * including when truncation of sub-integer precision is allowed. */
+TEST (tracelist, mstl3_convertsamples_outofrange)
+{
+  float values[4] = {1.0e30f, -1.0e30f, INFINITY, -INFINITY};
+  char sampletype = 0;
+  int32_t firstsample = 0;
+  int result = 0;
+
+  for (int idx = 0; idx < 4; idx++)
+  {
+    float samples[2] = {1.0f, values[idx]};
+
+    for (int8_t truncate = 0; truncate <= 1; truncate++)
+    {
+      REQUIRE (convert_float_samples (samples, 2, truncate, &result, &sampletype,
+                                      &firstsample) == 0,
+               "Could not construct trace list for out-of-range conversion test");
+      CHECK (result == -1, "mstl3_convertsamples() did not reject an out-of-range sample");
+      CHECK (sampletype == 'f', "Sample type changed after a rejected conversion");
+    }
+  }
+}
+
+/* Verify that the range check is not off by one, the extreme representable
+ * 32-bit integer values must still convert successfully. */
+TEST (tracelist, mstl3_convertsamples_boundary)
+{
+  char sampletype = 0;
+  int32_t firstsample = 0;
+  int result = 0;
+
+  /* INT32_MAX is not exactly representable as a float, use the nearest value
+   * that is and rounds within range */
+  float maxsample[1] = {2147483520.0f};
+  float minsample[1] = {-2147483648.0f};
+
+  REQUIRE (convert_float_samples (maxsample, 1, 0, &result, &sampletype, &firstsample) == 0,
+           "Could not construct trace list for boundary conversion test");
+  CHECK (result == 0, "mstl3_convertsamples() rejected a representable maximum sample");
+  CHECK (sampletype == 'i', "Sample type was not converted to integer");
+  CHECK (firstsample == 2147483520, "Maximum sample did not convert to the expected value");
+
+  REQUIRE (convert_float_samples (minsample, 1, 0, &result, &sampletype, &firstsample) == 0,
+           "Could not construct trace list for boundary conversion test");
+  CHECK (result == 0, "mstl3_convertsamples() rejected a representable minimum sample");
+  CHECK (sampletype == 'i', "Sample type was not converted to integer");
+  CHECK (firstsample == INT32_MIN, "Minimum sample did not convert to the expected value");
+}
+
+/* Verify that ordinary samples still convert, that sub-integer precision is
+ * rejected unless truncation is allowed, and that rounding is unchanged. */
+TEST (tracelist, mstl3_convertsamples_valid)
+{
+  float integral[3] = {-2.0f, 0.0f, 3.0f};
+  float fractional[1] = {1.4f};
+  float negfractional[1] = {-1.4f};
+  char sampletype = 0;
+  int32_t firstsample = 0;
+  int result = 0;
+
+  REQUIRE (convert_float_samples (integral, 3, 0, &result, &sampletype, &firstsample) == 0,
+           "Could not construct trace list for valid conversion test");
+  CHECK (result == 0, "mstl3_convertsamples() rejected integral float samples");
+  CHECK (sampletype == 'i', "Sample type was not converted to integer");
+  CHECK (firstsample == -2, "Integral sample did not convert to the expected value");
+
+  REQUIRE (convert_float_samples (fractional, 1, 0, &result, &sampletype, &firstsample) == 0,
+           "Could not construct trace list for valid conversion test");
+  CHECK (result == -1, "mstl3_convertsamples() did not detect loss of precision");
+
+  REQUIRE (convert_float_samples (fractional, 1, 1, &result, &sampletype, &firstsample) == 0,
+           "Could not construct trace list for valid conversion test");
+  CHECK (result == 0, "mstl3_convertsamples() rejected a truncated conversion");
+  CHECK (firstsample == 1, "Fractional sample did not round as expected");
+
+  REQUIRE (convert_float_samples (negfractional, 1, 1, &result, &sampletype, &firstsample) == 0,
+           "Could not construct trace list for valid conversion test");
+  CHECK (result == 0, "mstl3_convertsamples() rejected a truncated conversion");
+  CHECK (firstsample == -1, "Negative fractional sample did not round as expected");
+}
+
+/* Verify that the double sample branch of mstl3_convertsamples() rejects NaN and
+ * out-of-range values, and still converts representable values. */
+TEST (tracelist, mstl3_convertsamples_double)
+{
+  MS3Record msr = MS3Record_INITIALIZER;
+  MS3TraceList *mstl = NULL;
+  MS3TraceSeg *seg = NULL;
+  double samples[3] = {1.0, 2.0, 3.0};
+
+  strcpy (msr.sid, "FDSN:XX_TEST__X_H_Z");
+  msr.reclen = 512;
+  msr.formatversion = 3;
+  msr.pubversion = 1;
+  msr.samprate = 100.0;
+  msr.starttime = ms_timestr2nstime ("2024-01-01T00:00:00.0Z");
+  msr.sampletype = 'd';
+  msr.datasamples = samples;
+  msr.numsamples = 3;
+  msr.samplecnt = 3;
+
+  /* NaN must be rejected and leave the samples unconverted */
+  samples[1] = NAN;
+  REQUIRE ((mstl = mstl3_init (NULL)) != NULL, "mstl3_init() returned unexpected NULL");
+  REQUIRE (mstl3_addmsr (mstl, &msr, 0, 1, 0, NULL) != NULL,
+           "mstl3_addmsr() returned unexpected NULL");
+  seg = mstl->traces.next[0]->first;
+  CHECK (mstl3_convertsamples (seg, 'i', 1) == -1,
+         "mstl3_convertsamples() did not reject a NaN double sample");
+  CHECK (seg->sampletype == 'd', "Sample type changed after a rejected conversion");
+  mstl3_free (&mstl, 0);
+
+  /* Out-of-range must be rejected */
+  samples[1] = 1.0e30;
+  REQUIRE ((mstl = mstl3_init (NULL)) != NULL, "mstl3_init() returned unexpected NULL");
+  REQUIRE (mstl3_addmsr (mstl, &msr, 0, 1, 0, NULL) != NULL,
+           "mstl3_addmsr() returned unexpected NULL");
+  seg = mstl->traces.next[0]->first;
+  CHECK (mstl3_convertsamples (seg, 'i', 1) == -1,
+         "mstl3_convertsamples() did not reject an out-of-range double sample");
+  CHECK (seg->sampletype == 'd', "Sample type changed after a rejected conversion");
+  mstl3_free (&mstl, 0);
+
+  /* Representable values must still convert */
+  samples[1] = -2.0;
+  REQUIRE ((mstl = mstl3_init (NULL)) != NULL, "mstl3_init() returned unexpected NULL");
+  REQUIRE (mstl3_addmsr (mstl, &msr, 0, 1, 0, NULL) != NULL,
+           "mstl3_addmsr() returned unexpected NULL");
+  seg = mstl->traces.next[0]->first;
+  CHECK (mstl3_convertsamples (seg, 'i', 0) == 0,
+         "mstl3_convertsamples() rejected integral double samples");
+  CHECK (seg->sampletype == 'i', "Sample type was not converted to integer");
+  CHECK (((int32_t *)seg->datasamples)[1] == -2, "Double sample did not convert as expected");
+  mstl3_free (&mstl, 0);
 }

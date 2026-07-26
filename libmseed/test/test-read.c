@@ -1,6 +1,8 @@
+#include <math.h>
 #include <tau/tau.h>
 #include <libmseed.h>
 
+#include "mseedformat.h"
 #include "testdata.h"
 
 /* Handle binary mode for Windows specifically */
@@ -43,7 +45,7 @@ TEST (read, v3_parse)
   CHECK (msr->encoding == 11, "msr->encoding is not expected 11");
   CHECK (msr->pubversion == 4, "msr->pubversion is not expected 4");
   CHECK (msr->samplecnt == 135, "msr->samplecnt is not expected 135");
-  CHECK (msr->crc == 0xCE52C9F7, "msr->crc is not expected 0x4F3EAB65");
+  CHECK (msr->crc == 0xCE52C9F7, "msr->crc is not expected 0xCE52C9F7");
   CHECK (msr->extralength == 33, "msr->extralength is not expected 33");
   CHECK (msr->datalength == 320, "msr->datalength is not expected 384");
   CHECK_STREQ (msr->extra, "{\"FDSN\":{\"Time\":{\"Quality\":100}}}");
@@ -406,6 +408,7 @@ TEST (read, v2_encodings)
 
 TEST (read, byterange)
 {
+  MS3FileParam *msfp = NULL;
   MS3Record *msr = NULL;
   nstime_t nstime;
   uint32_t flags = MSF_UNPACKDATA;
@@ -424,11 +427,61 @@ TEST (read, byterange)
   ms3_readmsr(&msr, NULL, flags, 0);
 
   /* Read byte range 9428-9967 from V2 format file */
-  rv = ms3_readmsr (&msr, "data/testdata-oneseries-mixedlengths-mixedorder.mseed2@9344-9855", flags, 0);
+  rv = ms3_readmsr (&msr, "data/testdata-oneseries-mixedlengths-mixedorder.mseed2@9344-9855", flags,
+                    0);
   REQUIRE (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
   CHECK (msr->numsamples == 112, "Byte range read, unexpected number of decoded samples");
   CHECK (msr->starttime == nstime, "Byte range read, unexpected record start time");
-  ms3_readmsr(&msr, NULL, flags, 0);
+  ms3_readmsr (&msr, NULL, flags, 0);
+
+  /* Suppress error messages by accumulating them */
+  ms_rloginit (NULL, NULL, NULL, NULL, 10);
+
+  /* A start or end value beyond INT64_MAX must not wrap to a negative
+   * offset; the suffix is left unrecognized as a range and the open fails */
+  rv = ms3_readmsr (&msr,
+                    "data/testdata-oneseries-mixedlengths-mixedorder.mseed3@-9999999999999999999",
+                    flags, 0);
+  CHECK (rv == MS_GENERROR,
+         "ms3_readmsr() did not return expected MS_GENERROR for oversized end offset");
+  ms3_readmsr (&msr, NULL, flags, 0);
+
+  rv = ms3_readmsr (&msr,
+                    "data/testdata-oneseries-mixedlengths-mixedorder.mseed3@9999999999999999999-",
+                    flags, 0);
+  CHECK (rv == MS_GENERROR,
+         "ms3_readmsr() did not return expected MS_GENERROR for oversized start offset");
+  ms3_readmsr (&msr, NULL, flags, 0);
+
+  /* INT64_MAX itself is still a valid start offset, so the range is accepted
+   * instead of being rejected outright as a malformed pattern.  Reading then
+   * fails, either at the seek or on finding no data beyond the offset,
+   * depending on how far the platform allows a seek, so check the parsed
+   * offset rather than the return code. */
+  rv = ms3_readmsr_r (&msfp, &msr,
+                      "data/testdata-oneseries-mixedlengths-mixedorder.mseed3@9223372036854775807-",
+                      flags, 0);
+  CHECK (rv != MS_NOERROR, "ms3_readmsr_r() did not return an error for boundary start offset");
+  REQUIRE (msfp != NULL, "ms3_readmsr_r() did not populate 'msfp'");
+  CHECK (msfp->startoffset == INT64_MAX, "Boundary start offset was not parsed as a byte range");
+  ms3_readmsr_r (&msfp, &msr, NULL, flags, 0);
+
+  /* A valid start offset past the end of the file is accepted and seeked to,
+   * reading then finds no data */
+  rv = ms3_readmsr (&msr, "data/testdata-oneseries-mixedlengths-mixedorder.mseed3@1000000-",
+                    flags, 0);
+  CHECK (rv == MS_NOTSEED,
+         "ms3_readmsr() did not return expected MS_NOTSEED for start offset past end of file");
+  ms3_readmsr (&msr, NULL, flags, 0);
+
+  /* An end offset of INT64_MAX must not overflow the end-of-range check */
+  rv = ms3_readmsr (&msr,
+                    "data/testdata-oneseries-mixedlengths-mixedorder.mseed3@0-9223372036854775807",
+                    flags, 0);
+  CHECK (rv == MS_NOERROR,
+         "ms3_readmsr() did not return expected MS_NOERROR for maximum end offset");
+  CHECK (msr != NULL && msr->numsamples > 0, "Maximum end offset read no samples");
+  ms3_readmsr (&msr, NULL, flags, 0);
 }
 
 TEST (read, byterange_init)
@@ -599,4 +652,104 @@ TEST (read, error)
   rv = ms3_readmsr (&msr, "Makefile", flags, 0);
   CHECK (rv == MS_NOTSEED, "ms3_readmsr() did not return expected MS_NOTSEED for non-SEED file");
   ms3_readmsr (&msr, NULL, flags, 0);
+}
+
+static char packbuf[1024];
+static int packbuflen = 0;
+
+static void
+record_handler_buf (char *record, int reclen, void *handlerdata)
+{
+  (void)handlerdata;
+
+  if (packbuflen + reclen <= (int)sizeof (packbuf))
+  {
+    memcpy (packbuf + packbuflen, record, reclen);
+    packbuflen += reclen;
+  }
+}
+
+/* Verify a version 3 record with a non-finite fixed-header sample rate is
+ * rejected instead of being used to compute a garbage end time. */
+TEST (read, v3_invalid_samplerate)
+{
+  MS3Record *msr = NULL;
+  MS3Record *parsed = NULL;
+  int8_t swapflag = (ms_bigendianhost ()) ? 1 : 0; /* miniSEED 3 is little endian */
+  int64_t packedsamples = 0;
+  int rv;
+
+  /* Suppress error and warning messages by accumulating them */
+  ms_rloginit (NULL, NULL, NULL, NULL, 10);
+
+  msr = msr3_init (msr);
+  REQUIRE (msr != NULL, "msr3_init() returned unexpected NULL");
+
+  strcpy (msr->sid, "FDSN:XX_TEST__L_H_Z");
+  msr->reclen = 512;
+  msr->formatversion = 3;
+  msr->pubversion = 1;
+  msr->starttime = ms_timestr2nstime ("2020-01-01T00:00:00Z");
+  msr->samprate = 1.0;
+
+  packbuflen = 0;
+  rv = msr3_pack (msr, record_handler_buf, NULL, &packedsamples, MSF_FLUSHDATA, 0);
+  REQUIRE (rv == 1, "msr3_pack() returned unexpected value");
+  REQUIRE (packbuflen > 0, "msr3_pack() did not produce any output");
+
+  /* Patch the fixed-header sample rate to NaN */
+  *pMS3FSDH_SAMPLERATE (packbuf) = HO8f (NAN, swapflag);
+
+  rv = msr3_parse (packbuf, (uint64_t)packbuflen, &parsed, 0, 0);
+  CHECK (rv != MS_NOERROR, "msr3_parse() did not reject a NaN sample rate");
+
+  msr3_free (&msr);
+  msr3_free (&parsed);
+}
+
+/* Verify a Blockette 100 with an invalid (negative) sample rate is ignored,
+ * leaving the nominal fixed-header rate in place, instead of being applied. */
+TEST (read, v2_b100_invalid_samplerate)
+{
+  MS3Record *msr = NULL;
+  MS3Record *parsed = NULL;
+  int8_t swapflag = (ms_bigendianhost ()) ? 0 : 1; /* miniSEED 2 is big endian */
+  int64_t packedsamples = 0;
+  int b100offset = MS2FSDH_LENGTH + 8; /* Fixed header + Blockette 1000 */
+  int rv;
+
+  msr = msr3_init (msr);
+  REQUIRE (msr != NULL, "msr3_init() returned unexpected NULL");
+
+  strcpy (msr->sid, "FDSN:XX_TEST__L_H_Z");
+  msr->reclen = 128;
+  msr->pubversion = 1;
+  msr->starttime = ms_timestr2nstime ("2020-01-01T00:00:00Z");
+  msr->samprate = 1.0;
+
+  packbuflen = 0;
+  rv = msr3_pack (msr, record_handler_buf, NULL, &packedsamples, MSF_FLUSHDATA | MSF_PACKVER2, 0);
+  REQUIRE (rv == 1, "msr3_pack() returned unexpected value");
+  REQUIRE (packbuflen >= b100offset + 12, "msr3_pack() did not produce enough output for a Blockette 100");
+
+  /* Splice in a Blockette 100 with a negative sample rate after the mandatory Blockette 1000 */
+  *pMS2B1000_NEXT (packbuf + MS2FSDH_LENGTH) = HO2u ((uint16_t)b100offset, swapflag);
+  *pMS2FSDH_NUMBLOCKETTES (packbuf) += 1;
+
+  *pMS2B100_TYPE (packbuf + b100offset) = HO2u (100, swapflag);
+  *pMS2B100_NEXT (packbuf + b100offset) = 0;
+  *pMS2B100_SAMPRATE (packbuf + b100offset) = HO4f (-5.0f, swapflag);
+  *pMS2B100_FLAGS (packbuf + b100offset) = 0;
+  memset (pMS2B100_RESERVED (packbuf + b100offset), 0, 3);
+
+  /* Suppress error and warning messages by accumulating them */
+  ms_rloginit (NULL, NULL, NULL, NULL, 10);
+
+  rv = msr3_parse (packbuf, (uint64_t)packbuflen, &parsed, 0, 0);
+  REQUIRE (rv == MS_NOERROR, "msr3_parse() did not return expected MS_NOERROR");
+  REQUIRE (parsed != NULL, "msr3_parse() did not populate 'parsed'");
+  CHECK (parsed->samprate == 1.0, "Invalid Blockette 100 sample rate was not ignored");
+
+  msr3_free (&msr);
+  msr3_free (&parsed);
 }

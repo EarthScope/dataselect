@@ -25,6 +25,7 @@ EXPORTS
    msr3_init
    msr3_free
    msr3_duplicate
+   msr3_duplicate_extra
    msr3_endtime
    msr3_print
    msr3_resize_buffer
@@ -67,12 +68,14 @@ EXPORTS
    ms3_readtracelist_timewin
    ms3_readtracelist_selection
    ms3_url_useragent
+   ms3_url_timeout
    ms3_url_userpassword
    ms3_url_addheader
    ms3_url_freeheaders
    msr3_writemseed
    mstl3_writemseed
    libmseed_url_support
+   ms3_msfp_init
    ms3_msfp_init_fd
    ms_sid2nslc_n
    ms_sid2nslc
@@ -99,6 +102,7 @@ EXPORTS
    ms_rloginit_l
    ms_rlog_emit
    ms_rlog_free
+   ms_rlog_pop
    ms_readleapseconds
    ms_readleapsecondfile
    ms_samplesize
@@ -112,3 +116,4 @@ EXPORTS
    leapsecondlist
    libmseed_memory
    libmseed_prealloc_block_size
+   libmseed_memory_prealloc

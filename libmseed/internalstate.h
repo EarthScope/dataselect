@@ -65,12 +65,13 @@ struct MS3TraceListPacker
 
   MS3TraceID *current_id;      /* Current trace ID */
   MS3TraceSeg *current_seg;    /* Current segment */
+  MS3TraceID *last_id;         /* Trace ID of last completed segment (MSF_MAINTAINMSTL) */
+  MS3TraceSeg *last_seg;       /* Last completed segment (MSF_MAINTAINMSTL) */
   MS3RecordPacker *seg_packing_state; /* Current segment packing state */
   MS3Record msr_template;      /* Template MS3Record for current segment */
   int64_t segpackedsamples;    /* Samples packed from current segment */
   int64_t totalpackedsamples;  /* Total samples packed */
   int64_t totalpackedrecords;  /* Total records packed */
-  uint8_t finished;            /* Packing complete flag */
 };
 
 #ifdef __cplusplus

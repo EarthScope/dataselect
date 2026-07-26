@@ -106,6 +106,8 @@ TEST (selection, error)
 {
   MS3Selections *selections  = NULL;
   const MS3Selections *match = NULL;
+  nstime_t starttime = ms_timestr2nstime ("2010-02-27T06:50:00.069539Z");
+  nstime_t endtime   = ms_timestr2nstime ("2010-02-27T07:55:51.069539Z");
   int rv;
 
   rv = ms3_addselect (NULL, "FDSN:XX_*", NSTUNSET, NSTUNSET, 0);
@@ -114,9 +116,22 @@ TEST (selection, error)
   rv = ms3_addselect (&selections, NULL, NSTUNSET, NSTUNSET, 0);
   REQUIRE (rv == -1, "ms3_addselect() did not return expected -1");
 
+  /* Inverted time window: start later than end */
+  rv = ms3_addselect (&selections, "FDSN:XX_*", endtime, starttime, 0);
+  REQUIRE (rv == -1, "ms3_addselect() did not reject inverted window");
+
+  /* Open-ended windows on either side must still be accepted */
+  rv = ms3_addselect (&selections, "FDSN:XX_*", NSTUNSET, endtime, 0);
+  REQUIRE (rv == 0, "ms3_addselect() did not accept open-ended start");
+
+  rv = ms3_addselect (&selections, "FDSN:XX_*", starttime, NSTUNSET, 0);
+  REQUIRE (rv == 0, "ms3_addselect() did not accept open-ended end");
+
   match = ms3_matchselect (NULL, "FDSN:YY_STA1__L_H_Z", NSTUNSET, NSTUNSET, 1, NULL);
   REQUIRE (match == NULL, "ms3_matchselect() did not return expected NULL");
 
   match = ms3_matchselect (selections, "FDSN:YY_STA1__L_H_Z", NSTUNSET, NSTUNSET, 1, NULL);
   REQUIRE (match == NULL, "ms3_matchselect() did not return expected NULL");
+
+  ms3_freeselections (selections);
 }
