@@ -59,9 +59,16 @@ libmseed_memory_prealloc (void *ptr, size_t size, size_t *currentsize)
     return ptr;
 
   /* Calculate new size needed for request by adding blocks */
+  if (*currentsize > SIZE_MAX - libmseed_prealloc_block_size)
+    return NULL;
+
   newsize = *currentsize + libmseed_prealloc_block_size;
   while (newsize < size)
+  {
+    if (newsize > SIZE_MAX - libmseed_prealloc_block_size)
+      return NULL;
     newsize += libmseed_prealloc_block_size;
+  }
 
   newptr = libmseed_memory.realloc (ptr, newsize);
 
@@ -2052,6 +2059,16 @@ ms_readleapsecondfile (const char *filename)
 
     if (fields == 2)
     {
+      /* Convert NTP epoch to Unix epoch; guard against int64 overflow */
+      leapsecond = leapsecond - NTPPOSIXEPOCHDELTA;
+
+      if (leapsecond > INT64_MAX / NSTMODULUS || leapsecond < INT64_MIN / NSTMODULUS)
+      {
+        ms_log (2, "Leap second epoch is beyond the representable nstime range\n");
+        fclose (fp);
+        return -1;
+      }
+
       if ((ls = (LeapSecond *)libmseed_memory.malloc (sizeof (LeapSecond))) == NULL)
       {
         ms_log (2, "Cannot allocate LeapSecond entry, out of memory?\n");
@@ -2059,8 +2076,7 @@ ms_readleapsecondfile (const char *filename)
         return -1;
       }
 
-      /* Convert NTP epoch time to Unix epoch time and then to nttime_t */
-      ls->leapsecond = MS_EPOCH2NSTIME (leapsecond - NTPPOSIXEPOCHDELTA);
+      ls->leapsecond = MS_EPOCH2NSTIME (leapsecond);
       ls->TAIdelta = TAIdelta;
       ls->next = NULL;
       count++;

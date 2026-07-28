@@ -235,7 +235,8 @@ ms3_detect (const char *record, uint64_t recbuflen, uint8_t *formatversion)
 
     /* Loop through blockettes as long as number is non-zero and the 4-byte
      * blockette header (type and next offset) is fully within the buffer */
-    while (blkt_offset != 0 && blkt_offset > 47 && (uint64_t)blkt_offset + 4 <= recbuflen)
+    while (blkt_offset != 0 && blkt_offset >= MS2FSDH_LENGTH &&
+           (uint64_t)blkt_offset + 4 <= recbuflen)
     {
       memcpy (&blkt_type, record + blkt_offset, 2);
       memcpy (&next_blkt, record + blkt_offset + 2, 2);
@@ -850,6 +851,7 @@ ms_parse_raw2 (const char *record, int maxreclen, int8_t details, int8_t swapfla
       {
         ms_log (2, "%s: Unknown blockette length for type %d\n", sid, blkt_type);
         retval++;
+        break;
       }
 
       /* Track end of blockette chain */
@@ -1397,7 +1399,7 @@ ms_parse_raw2 (const char *record, int maxreclen, int8_t details, int8_t swapfla
       }
 
       /* Sanity check the next blockette offset */
-      if (next_blkt && next_blkt <= endofblockettes)
+      if (next_blkt && (next_blkt == blkt_offset || next_blkt <= endofblockettes))
       {
         ms_log (2, "%s: Next blockette offset (%d) is within current blockette ending at byte %d\n",
                 sid, next_blkt, endofblockettes);

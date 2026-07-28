@@ -456,6 +456,14 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
 
   while ((blkt_offset != 0) && ((blkt_offset + 4) <= reclen) && (blkt_offset < MAXRECLEN))
   {
+    /* Reject an offset within the fixed section of the header */
+    if (blkt_offset < MS2FSDH_LENGTH)
+    {
+      ms_log (2, "%s: Blockette offset (%d) is within the fixed header, impossible\n", msr->sid,
+              blkt_offset);
+      goto error_return;
+    }
+
     /* Every blockette has a similar 4 byte header: type and next */
     memcpy (&blkt_type, record + blkt_offset, 2);
     memcpy (&next_blkt, record + blkt_offset + 2, 2);
@@ -472,7 +480,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
     {
       ms_log (2, "%s: Blockette 2000 length field extends beyond record size, truncated?\n",
               msr->sid);
-      break;
+      goto error_return;
     }
 
     /* Get blockette length */
@@ -481,14 +489,27 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
     if (blkt_length == 0)
     {
       ms_log (2, "%s: Unknown blockette length for type %d\n", msr->sid, blkt_type);
-      break;
+
+      /* A terminated blockette chain with unknown blockette stops here */
+      if (next_blkt == 0)
+        break;
+
+      /* Skip via next offset only when it advances and stays in-bounds */
+      if (next_blkt > blkt_offset && next_blkt >= MS2FSDH_LENGTH && next_blkt <= reclen)
+      {
+        blkt_offset = next_blkt;
+        blkt_count++;
+        continue;
+      }
+
+      goto error_return;
     }
 
     /* Make sure blockette is contained within the msrecord buffer */
     if ((blkt_offset + blkt_length) > reclen)
     {
       ms_log (2, "%s: Blockette %d extends beyond record size, truncated?\n", msr->sid, blkt_type);
-      break;
+      goto error_return;
     }
 
     blkt_end = blkt_offset + blkt_length;
@@ -1287,7 +1308,7 @@ msr3_unpack_data (MS3Record *msr, int8_t verbose)
     return MS_GENERROR;
   }
 
-  /* Fallback encoding for when encoding is unknown */
+  /* Fallback encoding for when encoding is unknown (legacy bare SEED data records) */
   if (msr->encoding < 0)
   {
     if (verbose > 2)
@@ -1710,6 +1731,9 @@ ms2_blktdesc (uint16_t blkttype)
   case 400:
     return "Beam";
     break;
+  case 405:
+    return "Beam Delay";
+    break;
   case 500:
     return "Timing";
     break;
@@ -1767,6 +1791,9 @@ ms2_blktlen (uint16_t blkttype, const char *blkt, int8_t swapflag)
     break;
   case 400: /* Beam */
     blktlen = 16;
+    break;
+  case 405: /* Beam Delay */
+    blktlen = 6;
     break;
   case 500: /* Timing */
     blktlen = 200;

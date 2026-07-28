@@ -623,9 +623,10 @@ TEST (read, oddball)
   CHECK (int32s[3631] == 26, "Decoded sample value mismatch");
   ms3_readmsr(&msr, NULL, flags, 0);
 
-  /* Invalid blockette chain (format version 2).  One could argue these should not be readable. */
+  /* Invalid blockette chain (format version 2): FSDH blockette offset (40)
+   * falls within the 48-byte fixed header, not a valid blockette start. */
   rv = ms3_readmsr (&msr, "data/testdata-invalid-blockette-offsets.mseed2", flags, 0);
-  REQUIRE (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
+  REQUIRE (rv == MS_GENERROR, "ms3_readmsr() did not return expected MS_GENERROR");
   ms3_readmsr (&msr, NULL, flags, 0);
 }
 

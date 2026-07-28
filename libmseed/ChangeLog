@@ -1,4 +1,17 @@
-2026.206: v3.5.1
+2026.208: v3.5.2
+  - Add MSF_RECORDLIST_NOEXTRAS to skip copying extra headers into
+    MS3RecordList entries when building a record list.
+  - Reject a blockette offset within the fixed header as fatal.
+  - Break ms_parse_raw2() blockette walk on unknown length, treat a
+    self-referential next offset as fatal, add Blockette 405 length.
+  - Reject sample count that would overflow size_t when converting to
+    doubles in mstl3_convertsamples(), avoiding undersized malloc on 32-bit.
+  - Reject size_t overflow in libmseed_memory_prealloc() growth loop,
+    avoiding an infinite hang on huge allocation requests.
+  - Free duplicated MS3Record when record-list entry allocation fails.
+  - Reject out-of-range leap-second epochs in ms_readleapsecondfile().
+
+  2026.206: v3.5.1
   - Set MS3RecordPtr.msr->record to NULL when the raw record is not available,
     instead of leaving it dangling to a source buffer that may be freed or
     reused.

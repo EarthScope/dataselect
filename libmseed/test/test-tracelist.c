@@ -204,6 +204,59 @@ TEST (tracelist, mstl3_readbuffer_recptr)
   mstl3_free (&mstl, 1);
 }
 
+/* This test adds a header-only record with extra headers to a MS3TraceList
+ * via mstl3_addmsr_recordptr(), once with default flags and once with the
+ * MSF_RECORDLIST_NOEXTRAS flag set, verifying that the extra headers are
+ * copied to the resulting MS3RecordPtr by default and omitted when the flag
+ * is set.
+ */
+TEST (tracelist, mstl3_addmsr_recordptr_noextras)
+{
+  MS3TraceList *mstl   = NULL;
+  MS3RecordPtr *recptr = NULL;
+  MS3Record msr = MS3Record_INITIALIZER;
+  char *extra = "{\"FDSN\":{\"Time\":{\"Quality\":100}}}";
+
+  strcpy (msr.sid, "FDSN:XX_TEST__X_H_Z");
+  msr.formatversion = 3;
+  msr.pubversion = 1;
+  msr.starttime = ms_timestr2nstime ("2024-01-01T00:00:00.0Z");
+  msr.samprate = 1.0;
+  msr.sampletype = 'i';
+  msr.samplecnt = 100;
+  msr.numsamples = 0;
+  msr.datasamples = NULL;
+  msr.extra = extra;
+  msr.extralength = (uint16_t)strlen (extra);
+
+  /* Default flags: extra headers are copied to the record list entry */
+  REQUIRE (mstl = mstl3_init (NULL), "mstl3_init() returned unexpected NULL");
+  REQUIRE (mstl3_addmsr_recordptr (mstl, &msr, &recptr, 0, 1, 0, NULL) != NULL,
+           "mstl3_addmsr_recordptr() returned unexpected NULL");
+
+  REQUIRE (recptr != NULL, "recptr is unexpected NULL");
+  REQUIRE (recptr->msr != NULL, "recptr->msr is unexpected NULL");
+  CHECK (recptr->msr->extralength == msr.extralength,
+         "recptr->msr->extralength does not match source extralength");
+  REQUIRE (recptr->msr->extra != NULL, "recptr->msr->extra is unexpected NULL");
+  CHECK_STREQ (recptr->msr->extra, extra);
+
+  mstl3_free (&mstl, 0);
+
+  /* MSF_RECORDLIST_NOEXTRAS: extra headers are not copied */
+  recptr = NULL;
+  REQUIRE (mstl = mstl3_init (NULL), "mstl3_init() returned unexpected NULL");
+  REQUIRE (mstl3_addmsr_recordptr (mstl, &msr, &recptr, 0, 1, MSF_RECORDLIST_NOEXTRAS, NULL) != NULL,
+           "mstl3_addmsr_recordptr() returned unexpected NULL");
+
+  REQUIRE (recptr != NULL, "recptr is unexpected NULL");
+  REQUIRE (recptr->msr != NULL, "recptr->msr is unexpected NULL");
+  CHECK (recptr->msr->extralength == 0, "recptr->msr->extralength is not expected 0");
+  CHECK (recptr->msr->extra == NULL, "recptr->msr->extra is not expected NULL");
+
+  mstl3_free (&mstl, 0);
+}
+
 /* This test reads miniSEED from a file into a MS3TraceList while using the
  * MSF_PPUPDATETIME flag to set the segment prvtptr to the update time of the
  * record.  The expected value of the segment prvtptr is verified to be within

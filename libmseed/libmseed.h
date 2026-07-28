@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.5.1"    //!< Library version
-#define LIBMSEED_RELEASE "2026.206" //!< Library release date
+#define LIBMSEED_VERSION "3.5.2"    //!< Library version
+#define LIBMSEED_RELEASE "2026.208" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -1137,6 +1137,8 @@ extern int mseh_print (const MS3Record *msr, int indent);
     the ::MSF_RECORDLIST flag to @ref mstl3_readbuffer() and @ref
     ms3_readtracelist().  Alternatively, a record list can be built by
     adding records to a @ref trace-list using mstl3_addmsr_recordptr().
+    Extra headers are copied into each ::MS3RecordPtr by default; set
+    ::MSF_RECORDLIST_NOEXTRAS to omit them, usually to reduce memory usage.
 
     The main purpose of this functionality is to support an efficient,
     2-pass pattern of first reading a summary of data followed by
@@ -1636,6 +1638,7 @@ extern void *libmseed_memory_prealloc (void *ptr, size_t size, size_t *currentsi
 #define MSF_PPUPDATETIME 0x0400 //!< [TraceList] Store update time (as nstime_t) at ::MS3TraceSeg.prvtptr
 #define MSF_SPLITISVERSION 0x0800 //!< [TraceList] Use the splitversion value as version instead of record version
 #define MSF_SKIPADJACENTDUPLICATES 0x1000 //!< [TraceList] Skip adjacent duplicate records
+#define MSF_RECORDLIST_NOEXTRAS 0x2000 //!< [TraceList] Do not copy extra headers to the record list
 /** @} */
 
 #ifdef __cplusplus

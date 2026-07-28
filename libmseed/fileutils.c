@@ -790,6 +790,7 @@ ms3_readtracelist_timewin (MS3TraceList **ppmstl, const char *mspath, const MS3T
  * If the ::MSF_RECORDLIST flag is set in @p flags, a ::MS3RecordList
  * will be built for each ::MS3TraceSeg.  The ::MS3RecordPtr entries
  * contain the location of the data record, bit flags, extra headers, etc.
+ * Extra headers are omitted if ::MSF_RECORDLIST_NOEXTRAS is also set.
  *
  * @param[out] ppmstl Pointer-to-pointer to a ::MS3TraceList to populate
  * @param[in] mspath File to read
@@ -799,6 +800,7 @@ ms3_readtracelist_timewin (MS3TraceList **ppmstl, const char *mspath, const MS3T
  * @param[in] flags
  * @parblock
  *  - @c ::MSF_RECORDLIST : Build a ::MS3RecordList for each ::MS3TraceSeg
+ *  - @c ::MSF_RECORDLIST_NOEXTRAS : Do not copy extra headers into record list entries
  *  - @c ::MSF_SKIPADJACENTDUPLICATES : Skip adjacent duplicate records
  *  - Flags supported by msr3_parse()
  *  - Flags supported by mstl3_addmsr()
