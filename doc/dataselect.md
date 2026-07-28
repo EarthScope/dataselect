@@ -214,7 +214,7 @@ filename.mseed@[startoffset][-][endoffset]
   <b>H</b> : hour, 2 digits zero padded
   <b>M</b> : minute, 2 digits zero padded
   <b>S</b> : second, 2 digits zero padded
-  <b>F</b> : fractional seconds, 4 digits zero padded
+  <b>N</b> : nanoseconds, 9 digits zero padded
   <b>v</b> : publication version, 1-255
   <b>q</b> : data quality if possible, otherwise pub version (D, R, Q, M, or #)
   <b>L</b> : data record length in bytes

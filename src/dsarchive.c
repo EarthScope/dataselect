@@ -259,7 +259,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
         p = w + 1;
         break;
       case 'N':
-        snprintf (tstr, sizeof (tstr), "%09u", (int)nsec);
+        snprintf (tstr, sizeof (tstr), "%09u", nsec);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));

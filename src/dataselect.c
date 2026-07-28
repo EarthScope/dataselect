@@ -2601,7 +2601,7 @@ usage (int level)
              "  H : hour, 2 digits zero padded\n"
              "  M : minute, 2 digits zero padded\n"
              "  S : second, 2 digits zero padded\n"
-             "  F : fractional seconds, 4 digits zero padded\n"
+             "  N : nanoseconds, 9 digits zero padded\n"
              "  v : publication version, 1-255\n"
              "  q : data quality if possible, otherwise pub version (D, R, Q, M, or #)\n"
              "  L : data record length in bytes\n"
