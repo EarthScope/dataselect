@@ -1039,9 +1039,9 @@ writerecord (char *record, int reclen, void *handlerdata)
         dataquality = 'M';
 
       if (verbose > 2)
-        ms_log (1, "Setting v2 data quality indicator to '%c'\n", setpubver);
+        ms_log (1, "Setting v2 data quality indicator to '%c'\n", dataquality);
 
-      *pMS2FSDH_DATAQUALITY (recordbuf) = dataquality;
+      *pMS2FSDH_DATAQUALITY (record) = dataquality;
     }
     else if (writerdata->recptr->msr->formatversion == 3)
     {
