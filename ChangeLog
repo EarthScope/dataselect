@@ -15,6 +15,7 @@
 	when data is written to stdout.
 	- Avoid a crash if allocation of the written byte counter fails.
 	- Close archive files when done, reporting errors on the final writes.
+	- Free the partial string list when path format parsing cannot allocate.
 	- Update libmseed to v3.5.2.
 
 2026.177: v4.2.2

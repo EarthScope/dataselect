@@ -741,6 +741,9 @@ ds_shutdown (DataStream *datastream)
  * traversed and the memory used is free'd and the list pointer is
  * set to NULL.
  *
+ * On error any partial list is free'd and the list pointer is set to
+ * NULL, the caller does not need to free it.
+ *
  * Returns the number of elements added to the list, 0 when freeing
  * the linked list and -1 on error.
  ***************************************************************************/
@@ -760,6 +763,7 @@ strparse (const char *string, const char *delim, strlist **list)
   {
     total = strlen (string);
     beg = string;
+    *list = NULL;
 
     while (!stop)
     {
@@ -776,6 +780,7 @@ strparse (const char *string, const char *delim, strlist **list)
       if (!(tmplist = (strlist *)malloc (sizeof (strlist))))
       {
         fprintf (stderr, "%s(): ERROR, Cannot allocate memory for string parsing\n", __func__);
+        strparse (NULL, NULL, list);
         return -1;
       }
 
@@ -784,6 +789,8 @@ strparse (const char *string, const char *delim, strlist **list)
       if (!(tmplist->element = (char *)malloc (del - beg + 1)))
       {
         fprintf (stderr, "%s(): ERROR, Cannot allocate memory for string parsing\n", __func__);
+        free (tmplist);
+        strparse (NULL, NULL, list);
         return -1;
       }
 
