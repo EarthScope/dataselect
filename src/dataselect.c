@@ -1123,7 +1123,8 @@ writerecord (char *record, int reclen, void *handlerdata)
           }
         }
 
-        *((int64_t *)seg->prvtptr) += reclen;
+        if (seg->prvtptr)
+          *((int64_t *)seg->prvtptr) += reclen;
       }
     }
   }
@@ -1824,7 +1825,7 @@ printwritten (MS3TraceList *mstl)
       fprintf (ofp, "%s%s|%u|%s|%s|%" PRId64 "|%" PRId64 "\n",
                (writtenprefix) ? writtenprefix : "",
                id->sid, id->pubversion, stime, etime,
-               *((int64_t *)seg->prvtptr),
+               (seg->prvtptr) ? *((int64_t *)seg->prvtptr) : 0,
                seg->samplecnt);
 
       seg = seg->next;
