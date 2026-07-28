@@ -131,6 +131,7 @@ typedef struct WriterData_s
 {
   FILE *ofp;
   MS3RecordPtr *recptr;
+  MS3Record *msr;
   Filelink *flp;
   int8_t *errflagp;
 } WriterData;
@@ -703,6 +704,7 @@ writetraces (MS3TraceList *mstl)
         /* Setup writer data */
         writerdata.ofp = ofp;
         writerdata.recptr = recptr;
+        writerdata.msr = recptr->msr;
         writerdata.flp = flp;
 
         /* Write out the data, either the record needs to be trimmed (and will be
@@ -798,6 +800,7 @@ writetraces (MS3TraceList *mstl)
 static int
 trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 {
+  MS3Record *msr = NULL;
   nstime_t nsperiod;
   nstime_t ostarttime;
   TimeRange *newrange;
@@ -862,19 +865,19 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
     return -2;
   }
 
-  /* Decode data samples */
-  recptr->msr->record = recordbuf;
-  if ((retcode = msr3_unpack_data (recptr->msr, 0)) < 0)
+  /* Re-parse the record to decode samples and extra headers */
+  if ((retcode = msr3_parse (recordbuf, recptr->msr->reclen, &msr, MSF_UNPACKDATA, 0)) != MS_NOERROR)
   {
-    ms_log (2, "Cannot unpack miniSEED record: %s\n", ms_errorstr (retcode));
+    ms_log (2, "Cannot parse miniSEED record: %s\n", ms_errorstr (retcode));
 
+    msr3_free (&msr);
     return -2;
   }
 
   if (verbose > 1)
   {
-    ms_log (1, "Triming record: %s (%u)\n", recptr->msr->sid, recptr->msr->pubversion);
-    ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+    ms_log (1, "Triming record: %s (%u)\n", msr->sid, msr->pubversion);
+    ms_nstime2timestr_n (msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_nstime2timestr_n (recptr->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (1, "       Start: %s        End: %s\n", stime, etime);
     if (newrange->starttime == NSTUNSET)
@@ -889,7 +892,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   }
 
   /* Determine sample period in nanosecond time ticks */
-  nsperiod = msr3_nsperiod(recptr->msr);
+  nsperiod = msr3_nsperiod(msr);
 
   /* Remove samples from the beginning of the record */
   if (newrange->starttime != NSTUNSET && nsperiod)
@@ -898,19 +901,20 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 
     /* Determine new start time and the number of samples to trim */
     trimsamples = 0;
-    newstarttime = recptr->msr->starttime;
+    newstarttime = msr->starttime;
 
-    while (newstarttime < newrange->starttime && trimsamples < recptr->msr->samplecnt)
+    while (newstarttime < newrange->starttime && trimsamples < msr->samplecnt)
     {
       newstarttime += nsperiod;
       trimsamples++;
     }
 
-    if (trimsamples >= recptr->msr->samplecnt)
+    if (trimsamples >= msr->samplecnt)
     {
       if (verbose > 1)
         ms_log (1, "All samples would be trimmed from record, skipping\n");
 
+      msr3_free (&msr);
       return -1;
     }
 
@@ -920,13 +924,13 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
       ms_log (1, "Removing %d samples from the start, new start time: %s\n", trimsamples, stime);
     }
 
-    memmove (recptr->msr->datasamples,
-             (char *)recptr->msr->datasamples + (samplesize * trimsamples),
-             samplesize * (recptr->msr->numsamples - trimsamples));
+    memmove (msr->datasamples,
+             (char *)msr->datasamples + (samplesize * trimsamples),
+             samplesize * (msr->numsamples - trimsamples));
 
-    recptr->msr->numsamples -= trimsamples;
-    recptr->msr->samplecnt -= trimsamples;
-    recptr->msr->starttime = newstarttime;
+    msr->numsamples -= trimsamples;
+    msr->samplecnt -= trimsamples;
+    msr->starttime = newstarttime;
     newrange->starttime = newstarttime;
   }
 
@@ -939,17 +943,18 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
     trimsamples = 0;
     newendtime = recptr->endtime;
 
-    while (newendtime > newrange->endtime && trimsamples < recptr->msr->samplecnt)
+    while (newendtime > newrange->endtime && trimsamples < msr->samplecnt)
     {
       newendtime -= nsperiod;
       trimsamples++;
     }
 
-    if (trimsamples >= recptr->msr->samplecnt)
+    if (trimsamples >= msr->samplecnt)
     {
       if (verbose > 1)
         ms_log (1, "All samples would be trimmed from record, skipping\n");
 
+      msr3_free (&msr);
       return -1;
     }
 
@@ -959,13 +964,13 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
       ms_log (1, "Removing %d samples from the end, new end time: %s\n", trimsamples, etime);
     }
 
-    recptr->msr->numsamples -= trimsamples;
-    recptr->msr->samplecnt -= trimsamples;
+    msr->numsamples -= trimsamples;
+    msr->samplecnt -= trimsamples;
     newrange->endtime = newendtime;
   }
 
   /* Add the v2 "sequence number" to extra headers so it is included in output */
-  if (recptr->msr->formatversion == 2)
+  if (msr->formatversion == 2)
   {
     int64_t seqnum = 0;
     char seqstr[7];
@@ -978,7 +983,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
 
     if (endptr != seqstr)
     {
-      if (mseh_set (recptr->msr, "/FDSN/Sequence", &seqnum, 'i'))
+      if (mseh_set (msr, "/FDSN/Sequence", &seqnum, 'i'))
       {
         ms_log (2, "Cannot set sequence number in extra headers\n");
       }
@@ -986,22 +991,22 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   }
 
   /* Pack the data record into the global record buffer used by writetraces() */
-  packedrecords = msr3_pack (recptr->msr, &writerecord, writerdata,
+  writerdata->msr = msr;
+  packedrecords = msr3_pack (msr, &writerecord, writerdata,
                              &packedsamples, MSF_FLUSHDATA, verbose - 1);
+  writerdata->msr = recptr->msr;
 
   if (packedrecords <= 0)
   {
     ms_nstime2timestr_n (ostarttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, "%s(): Cannot pack miniSEED record for %s %s\n",
-            __func__, recptr->msr->sid, stime);
+            __func__, msr->sid, stime);
 
+    msr3_free (&msr);
     return -2;
   }
 
-  /* Free allocated samples */
-  libmseed_memory.free(recptr->msr->datasamples);
-  recptr->msr->datasamples = NULL;
-  recptr->msr->numsamples = 0;
+  msr3_free (&msr);
 
   return 0;
 } /* End of trimrecord() */
@@ -1020,12 +1025,12 @@ writerecord (char *record, int reclen, void *handlerdata)
     return;
 
   /* Set the embedded record pointer for consistency */
-  writerdata->recptr->msr->record = record;
+  writerdata->msr->record = record;
 
   /* Set v3 publication version or v2 data quality indicator */
   if (setpubver)
   {
-    if (writerdata->recptr->msr->formatversion == 2)
+    if (writerdata->msr->formatversion == 2)
     {
       unsigned char dataquality;
 
@@ -1043,7 +1048,7 @@ writerecord (char *record, int reclen, void *handlerdata)
 
       *pMS2FSDH_DATAQUALITY (record) = dataquality;
     }
-    else if (writerdata->recptr->msr->formatversion == 3)
+    else if (writerdata->msr->formatversion == 3)
     {
       if (verbose > 2)
         ms_log (1, "Setting publication version to %u\n", setpubver);
@@ -1058,7 +1063,7 @@ writerecord (char *record, int reclen, void *handlerdata)
     else
     {
       ms_log (2, "Cannot set publication version for format version %d\n",
-              writerdata->recptr->msr->formatversion);
+              writerdata->msr->formatversion);
     }
   }
 
@@ -1081,7 +1086,7 @@ writerecord (char *record, int reclen, void *handlerdata)
       while (arch)
       {
         if (ds_streamproc (&arch->datastream,
-                           writerdata->recptr->msr,
+                           writerdata->msr,
                            reclen, verbose - 1, NULL))
         {
           *writerdata->errflagp = 1;
@@ -1095,7 +1100,7 @@ writerecord (char *record, int reclen, void *handlerdata)
     {
       MS3TraceSeg *seg;
 
-      if ((seg = mstl3_addmsr (writtentl, writerdata->recptr->msr, 0, 0, 0, NULL)) == NULL)
+      if ((seg = mstl3_addmsr (writtentl, writerdata->msr, 0, 0, 0, NULL)) == NULL)
       {
         ms_log (2, "Error adding MS3Record to MS3TraceList, bah humbug.\n");
       }
