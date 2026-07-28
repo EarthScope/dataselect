@@ -204,6 +204,7 @@ int
 main (int argc, char **argv)
 {
   Filelink *flp;
+  Archive *arch;
   MS3TraceList *mstl = NULL;
 
   uint32_t flags = 0;
@@ -339,7 +340,19 @@ main (int argc, char **argv)
   }
 
   /* Write all MS3TraceSeg associated records to output file(s) */
-  if (writetraces (mstl))
+  retcode = writetraces (mstl);
+
+  /* Close any archive files, reporting errors on the final writes */
+  arch = archiveroot;
+  while (arch)
+  {
+    if (ds_streamproc (&arch->datastream, NULL, 0, verbose - 1, NULL))
+      retcode = 1;
+
+    arch = arch->next;
+  }
+
+  if (retcode)
     return 1;
 
   if (writtenfile)

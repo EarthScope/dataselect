@@ -47,7 +47,7 @@ static DataStreamGroup *ds_getstream (DataStream *datastream, const char *defkey
                                       const char *filename);
 static int ds_openfile (DataStream *datastream, const char *filename);
 static int ds_closeidle (DataStream *datastream, int idletimeout);
-static void ds_shutdown (DataStream *datastream);
+static int ds_shutdown (DataStream *datastream);
 static int strparse (const char *string, const char *delim, strlist **list);
 static void addstring (char *dest, size_t destsize, size_t *destlen, const char *source);
 
@@ -106,8 +106,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
     if (dsverbose >= 1)
       fprintf (stderr, "Closing archiving for: %s\n", datastream->path);
 
-    ds_shutdown (datastream);
-    return 0;
+    return ds_shutdown (datastream);
   }
 
   /* Build file path and name from datastream->path */
@@ -689,12 +688,15 @@ ds_closeidle (DataStream *datastream, int idletimeout)
  *
  * Close all stream files and release all of the DataStreamGroup memory
  * structures.
+ *
+ * Returns 0 on success and -1 if any file could not be closed.
  ***************************************************************************/
-static void
+static int
 ds_shutdown (DataStream *datastream)
 {
   DataStreamGroup *curgroup = NULL;
   DataStreamGroup *prevgroup = NULL;
+  int rv = 0;
 
   curgroup = datastream->grouproot;
 
@@ -706,13 +708,27 @@ ds_shutdown (DataStream *datastream)
     if (dsverbose >= 2)
       fprintf (stderr, "Shutting down stream with key: %s\n", prevgroup->defkey);
 
-    if (prevgroup->filed >= 0 && close (prevgroup->filed))
-      fprintf (stderr, "%s(), closing data stream file, %s\n",
-               __func__, strerror (errno));
+    if (prevgroup->filed >= 0)
+    {
+      if (close (prevgroup->filed))
+      {
+        fprintf (stderr, "%s(), closing data stream file, %s\n",
+                 __func__, strerror (errno));
+        rv = -1;
+      }
+      else
+      {
+        ds_openfilecount--;
+      }
+    }
 
     free (prevgroup->defkey);
     free (prevgroup);
   }
+
+  datastream->grouproot = NULL;
+
+  return rv;
 } /* End of ds_shutdown() */
 
 /***************************************************************************
