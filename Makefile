@@ -35,6 +35,10 @@ all clean:
 	$(MAKE) -C libmseed $@ $(SUBMAKE_ARGS)
 	$(MAKE) -C src $@ $(SUBMAKE_ARGS)
 
+.PHONY: test
+test: all
+	@test/run-tests.py
+
 .PHONY: install
 install:
 	@echo
