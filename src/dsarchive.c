@@ -70,7 +70,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
                int (expand_code) (const char *code, MS3Record *msr,
                                   char *expanded, int expandedlen))
 {
-  (void) expand_code; /* Suppress warnings while unused */
+  (void)expand_code; /* Suppress warnings while unused */
   DataStreamGroup *foundgroup = NULL;
   strlist *fnlist, *fnptr;
   char network[11] = {0};
@@ -491,7 +491,7 @@ ds_getstream (DataStream *datastream, const char *defkey, const char *filename)
     }
 
     foundgroup->defkey = strdup (defkey);
-    foundgroup->filed = 0;
+    foundgroup->filed = -1;
     foundgroup->modtime = -curtime;
     foundgroup->next = NULL;
 
@@ -515,27 +515,33 @@ ds_getstream (DataStream *datastream, const char *defkey, const char *filename)
   /* Close idle stream files */
   ds_closeidle (datastream, datastream->idletimeout);
 
-  /* If no file is open, well, open it */
-  if (foundgroup->filed == 0)
+  /* If no file is open, well, open it.  The descriptor is left closed on any
+   * failure so a later record for this stream will retry the open. */
+  if (foundgroup->filed < 0)
   {
     off_t filepos;
+    int filed;
 
     if (dsverbose >= 1)
       fprintf (stderr, "Opening data stream file %s\n", filename);
 
-    if ((foundgroup->filed = ds_openfile (datastream, filename)) == -1)
+    if ((filed = ds_openfile (datastream, filename)) == -1)
     {
       fprintf (stderr, "%s(): ERROR, cannot open data stream file, %s\n",
                __func__, strerror (errno));
       return NULL;
     }
 
-    if ((filepos = (off_t)lseek (foundgroup->filed, (off_t)0, SEEK_END)) < 0)
+    if ((filepos = (off_t)lseek (filed, (off_t)0, SEEK_END)) < 0)
     {
       fprintf (stderr, "%s(): ERROR, cannot seek in data stream file, %s\n",
                __func__, strerror (errno));
+      close (filed);
+      ds_openfilecount--;
       return NULL;
     }
+
+    foundgroup->filed = filed;
   }
 
   return foundgroup;
@@ -668,12 +674,15 @@ ds_closeidle (DataStream *datastream, int idletimeout)
           datastream->grouproot = NULL;
       }
 
-      /* Close the associated file */
-      if (close (searchgroup->filed))
-        fprintf (stderr, "%s(), closing data stream file, %s\n",
-                 __func__, strerror (errno));
-      else
-        count++;
+      /* Close the associated file, if open */
+      if (searchgroup->filed >= 0)
+      {
+        if (close (searchgroup->filed))
+          fprintf (stderr, "%s(), closing data stream file, %s\n",
+                   __func__, strerror (errno));
+        else
+          count++;
+      }
 
       free (searchgroup->defkey);
       free (searchgroup);
@@ -719,7 +728,7 @@ ds_shutdown (DataStream *datastream)
     if (dsverbose >= 2)
       fprintf (stderr, "Shutting down stream with key: %s\n", prevgroup->defkey);
 
-    if (close (prevgroup->filed))
+    if (prevgroup->filed >= 0 && close (prevgroup->filed))
       fprintf (stderr, "%s(), closing data stream file, %s\n",
                __func__, strerror (errno));
 
