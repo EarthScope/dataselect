@@ -1,6 +1,6 @@
-.TH DATASELECT 1 2025/10/25
+.TH DATASELECT 1 2026/07/28
 .SH NAME
-miniSEED data selection, sorting and pruning
+dataselect \- miniSEED data selection, sorting and pruning
 
 .SH SYNOPSIS
 .nf
@@ -28,10 +28,19 @@ removed if overlaps are detected.  By default the priority is given to
 the highest publication version (or v2 quality data).  When the
 qualities are the same priority is given to the longer segment.
 
+An output destination must be specified, either a single file with
+\fB-o\fP or an archive layout with \fB-A\fP (or a pre-defined layout
+option).  Both may be used together, and \fB-A\fP may be used more
+than once, to write the same output to multiple destinations.  The
+input files are never modified.
+
 Multiple input files will be read in the order specified and processed
 all together as if all the data records were from the same file.  The
-program must read input data from files; input from pipes, etc. is not
-possible.
+program must read input data from regular, seekable files; input from
+pipes, standard input and URLs is not possible.
+
+Records are checked against their CRC when one is present (miniSEED
+v3), and a mismatch is a fatal error unless \fB-snd\fP is specified.
 
 Files on the command line prefixed with a '@' character are input list
 files and are expected to contain a simple list of input files, see
@@ -73,7 +82,7 @@ sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
 Skip non-miniSEED records.  By default the program will stop when
 it encounters data that cannot be identified as a miniSEED record.
 This option can be useful with full SEED volumes or files with bad
-data.
+data.  Records that fail CRC validation are also skipped.
 
 .IP "-E"
 Consider all publication versions (or v2 qualities) equal when
@@ -107,15 +116,21 @@ is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.
 
 .IP "-m \fImatch\fP"
 Limit input to records that match this globbing pattern, the
-\fImatch\fP is tested against the full FDSN Source ID:
-'FDSN:NET_STA_LOC_B_S_SS'.
+\fImatch\fP is tested against the full FDSN Source ID
+\&'FDSN:NET_STA_LOC_B_S_SS'.  The pattern is applied as a logical
+"contains", i.e. it does not need to match the entire Source ID.
+
+The \fB-m\fP, \fB-ts\fP and \fB-te\fP options are combined into a
+single selection.  When they are used together with \fB-s\fP this
+selection is \fIadditional\fP to those in the selection file, records
+matching any selection are processed.
 
 .IP "-o \fIfile\fP"
-Write all output data to output \fIfile\fP instead of replacing the
-original files.  If '-' is specified as the output file all output
-data will be written to standard out.  By default the output file
-will be overwritten, changing the option to \fI+o file\fP appends to
-the output file.
+Write all output data to output \fIfile\fP.  If '-' is specified as
+the output file all output data will be written to standard out.  By
+default the output file will be overwritten, changing the option to
+\fI+o file\fP appends to the output file.  This option may be combined
+with \fB-A\fP to write the same output to more than one destination.
 
 .IP "-A \fIformat\fP"
 All output records will be written to a directory/file layout defined
@@ -126,7 +141,7 @@ FORMAT\fP section below for more details including pre-defined archive
 layouts.
 
 .IP "-CHAN \fIdirectory\fP"
-.IP "-VCHAN \fICHANLAYOUT\fP"
+.IP "-VCHAN \fIdirectory\fP"
 .IP "-QCHAN \fIdirectory\fP"
 .IP "-CDAY \fIdirectory\fP"
 .IP "-SDAY \fIdirectory\fP"
@@ -153,7 +168,8 @@ be in the output untrimmed.
 Prune (trim) returned traces to user specified edges (start and end
 times) at the sample level. This option will not remove overlap data
 within specified start and end time window.  Caveats the same as for
-\fB-Ps\fP.
+\fB-Ps\fP.  This option has no effect unless time limits are specified
+with \fB-ts\fP, \fB-te\fP or a selection file.
 
 .IP "-Q pubversion"
 Change the data publication version or quality indicator for all output
@@ -167,9 +183,12 @@ a publication version of 4 (aka data quality 'M').
 .IP "-out file    "
 Print a summary of output records to the specified file.  Any existing
 file will be appended to.  Specify the file as '-' to print to stdout
-or '--' to print to stderr.  Each summary line contains FDSN Source ID,
-publication version, start time, end time, byte count, and
-sample count for each output trace segment.
+or '--' to print to stderr.  One line is printed per output trace
+segment, containing the following '|' separated fields:
+
+.nf
+SourceID|PubVersion|Starttime|Endtime|Bytes|Samples
+.fi
 
 .IP "-outprefix prefix"
 Include the specified prefix string at the beginning of each line of
@@ -191,23 +210,43 @@ priority time-series until the overlap is minimized or completely
 removed depending on the pruning option specified.
 
 .SH "SELECTION FILE"
-A selection file is used to match input data records based on network,
-station, location and channel information.  Optionally a quality and
-time range may also be specified for more refined selection.  The
+A selection file is used to match input data records based on their
+FDSN Source ID, which contains the network, station, location and
+channel information.  Optionally a publication version (or v2 quality)
+and time range may also be specified for more refined selection.  The
 non-time fields may use the '*' wildcard to match multiple characters
 and the '?' wildcard to match single characters.  Character sets may
 also be used, for example '[ENZ]' will match either E, N or Z.
-The '#' character indicates the remaining portion of the line will be
-ignored.
+Empty lines and lines with a '#' as their first non-whitespace
+character are ignored, trailing comments are not recognized.  A record
+is selected if it matches any entry in the file.
 
-Example selection file entries (the first field is required)
+The Source ID pattern is matched against the entire Source ID, which
+includes the leading 'FDSN:' namespace, so wildcards are needed to
+match a prefix such as a network code.  The time fields, when present,
+must be times; there is no wildcard placeholder for them, and the
+publication version cannot be specified without them.
+
+Example selection file entries (only the Source ID is required)
 .nf
-#SourceID                  Starttime              Endtime             Pubversion
+#SourceID                  Starttime             Endtime               Pubversion
 FDSN:IU_ANMO_*_B_H_?
-FDSN:II                    *                      *                   3
-FDSN:IU_COLA_00_L_H_[ENZ]  *                      *                   1
-FDSN:IU_COLA_00_L_H_Z      2008-4-9T10:00:00Z    2008-4-9T10:30:00Z
+FDSN:IU_COLA_00_L_H_[ENZ]  2008-04-09T10:00:00Z
+FDSN:IU_COLA_00_L_H_Z      2008-04-09T10:00:00Z  2008-04-09T10:30:00Z
+FDSN:II_*                  2008-04-09T00:00:00Z  2008-04-10T00:00:00Z  3
 .fi
+
+For compatibility, entries may alternatively be specified as separate
+network, station, location and channel fields, where all four fields
+are required:
+
+.nf
+#Net  Sta   Loc  Chan  Pubversion  Starttime             Endtime
+IU    ANMO  *    BH?
+IU    COLA  00   LHZ   1           2008-04-09T10:00:00Z  2008-04-09T10:30:00Z
+.fi
+
+Entries that match neither form are skipped with a warning.
 
 \fBWarning:\fP with a selection file it is possible to specify
 multiple, arbitrary selections.  Some combinations of these selects
@@ -231,6 +270,10 @@ data/day2.mseed
 data/day3.mseed
 .fi
 
+Empty lines and lines beginning with a '#' character are ignored.  Each
+entry may include a byte range as described in \fBINPUT FILE RANGE\fP.
+List files cannot be nested.
+
 .SH "INPUT FILE RANGE"
 Each input file may be specified with an associated byte range to
 read.  The program will begin reading at the specified start offset
@@ -244,7 +287,10 @@ filename.mseed@[startoffset][-][endoffset]
 
 For example: "filename.mseed@4096-8192".  Both the start and end
 offsets are optional.  The dash separator is optional if no end
-offset is specified.
+offset is specified.  A ':' is also accepted as the separator for
+compatibility with previous versions.
+
+The start offset must be the beginning of a data record.
 
 .SH "ARCHIVE FORMAT"
 The pre-defined archive layouts are as follows:
@@ -340,11 +386,11 @@ errors were encountered.
 
 With the ability to specify multiple, arbitrary data selections it is
 possible to specify very complex and pathological compound selections.
-When pruning samples from records into order to fit the requested
+When pruning samples from records in order to fit the requested
 selections, this program is limited to trimming samples from the
 beginning and/or end of the record.  This means it is not possible to
 select two or more non-intersecting time ranges from a single record.
-Put another way, one cannot select select data from the beginning and
+Put another way, one cannot select data from the beginning and
 end, but not the middle of a record.  The work-around for this
 limitation is to run the program once for each selection.
 
