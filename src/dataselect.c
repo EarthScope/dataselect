@@ -1073,7 +1073,7 @@ writerecord (char *record, int reclen, void *handlerdata)
       {
         if (ds_streamproc (&arch->datastream,
                            writerdata->recptr->msr,
-                           verbose - 1, NULL))
+                           reclen, verbose - 1, NULL))
         {
           *writerdata->errflagp = 1;
         }

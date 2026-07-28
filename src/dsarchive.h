@@ -36,7 +36,7 @@ DataStream;
 /* Maximum number of open files for all DataStreams */
 extern int ds_maxopenfiles;
 
-extern int ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
+extern int ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
                           int (expand_code) (const char *code, MS3Record *msr,
                                              char *expanded, int expandedlen));
 

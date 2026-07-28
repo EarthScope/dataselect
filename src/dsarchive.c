@@ -61,12 +61,15 @@ static int dsverbose;
  * ds_shutdown() will be called to close all open files and free all
  * associated memory.
  *
+ * The 'reclen' length is used instead of msr->reclen, which is the length
+ * of the original record and not the length of a re-packed record.
+ *
  * NOTE: the expand_code() callback function is not yet implemented.
  *
  * Returns 0 on success, -1 on error.
  ***************************************************************************/
 int
-ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
+ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
                int (expand_code) (const char *code, MS3Record *msr,
                                   char *expanded, int expandedlen))
 {
@@ -303,7 +306,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
         p = w + 1;
         break;
       case 'L':
-        snprintf (tstr, sizeof (tstr), "%d", msr->reclen);
+        snprintf (tstr, sizeof (tstr), "%d", reclen);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
@@ -394,9 +397,9 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
 
     /* Write the record, looping to handle partial writes */
     written = 0;
-    while (written < msr->reclen)
+    while (written < reclen)
     {
-      nwritten = write (foundgroup->filed, msr->record + written, msr->reclen - written);
+      nwritten = write (foundgroup->filed, msr->record + written, reclen - written);
 
       if (nwritten < 0)
       {
@@ -409,7 +412,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
       else if (nwritten == 0)
       {
         fprintf (stderr, "%s: cannot write to %s, no progress after %zd of %d bytes\n",
-                 __func__, filename, written, msr->reclen);
+                 __func__, filename, written, reclen);
         return -1;
       }
 
