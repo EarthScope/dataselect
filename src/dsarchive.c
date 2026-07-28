@@ -157,7 +157,6 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
 
   while (fnptr != 0)
   {
-    uint16_t tdy;
     char quality;
     char *w, *p, def;
 
@@ -220,12 +219,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
         p = w + 1;
         break;
       case 'y':
-        tdy = year;
-        while (tdy > 100)
-        {
-          tdy -= 100;
-        }
-        snprintf (tstr, sizeof (tstr), "%02d", tdy);
+        snprintf (tstr, sizeof (tstr), "%02u", year % 100);
         strncat (filename, tstr, (sizeof (filename) - fnlen));
         if (def)
           strncat (definition, tstr, (sizeof (definition) - fnlen));
