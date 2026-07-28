@@ -96,9 +96,9 @@
 /* Input/output file selection information containers */
 typedef struct Filelink_s
 {
-  char *infilename_raw;   /* Input file name with potential annotation (byte range) */
-  char *infilename;       /* Input file name without annotation (byte range) */
-  FILE *infp;             /* Input file descriptor */
+  char *infilename_raw; /* Input file name with potential annotation (byte range) */
+  char *infilename;     /* Input file name without annotation (byte range) */
+  FILE *infp;           /* Input file descriptor */
   struct Filelink_s *next;
 } Filelink;
 
@@ -289,7 +289,7 @@ main (int argc, char **argv)
     if (retcode != MS_NOERROR)
     {
       ms_log (2, "Cannot read %s: %s\n", flp->infilename, ms_errorstr (retcode));
-      return -1;
+      return 1;
     }
 
     totalfiles++;
@@ -892,7 +892,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   }
 
   /* Determine sample period in nanosecond time ticks */
-  nsperiod = msr3_nsperiod(msr);
+  nsperiod = msr3_nsperiod (msr);
 
   /* Remove samples from the beginning of the record */
   if (newrange->starttime != NSTUNSET && nsperiod)
@@ -1686,7 +1686,6 @@ reconcile_tracetimes (MS3TraceList *mstl)
 
   return 0;
 } /* End of reconcile_tracetimes() */
-
 
 /***************************************************************************
  * Print record list for each MS3TraceSeg to stdout.
@@ -2528,7 +2527,6 @@ addarchive (const char *path, const char *layout)
 
   return 0;
 } /* End of addarchive() */
-
 
 /***************************************************************************
  * Print the usage message.

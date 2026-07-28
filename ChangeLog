@@ -1,4 +1,4 @@
-2026.208:
+2026.209:
 	- Avoid storing unnecessary extra headers in record list to reduce memory usage.
 	- Detect write errors and partial writes when saving records to archive files.
 	- Retry opening archive files on later records instead of reusing a failed descriptor.
@@ -10,6 +10,7 @@
 	- Fix %y archive layout code rendering century years as three digits.
 	- Document the %N archive layout code, replacing the unimplemented %F.
 	- Fix off-by-one bounds in archive path construction.
+	- Consistently return 1 for errors as documented.
 	- Update libmseed to v3.5.2.
 
 2026.177: v4.2.2
