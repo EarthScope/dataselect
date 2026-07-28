@@ -89,6 +89,8 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
   char pathformat[600] = {0};
   char tstr[20] = {0};
   int fnlen = 0;
+  ssize_t nwritten;
+  ssize_t written;
 
   /* Set Verbosity for ds_ functions */
   dsverbose = verbose;
@@ -390,15 +392,31 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int verbose,
     if (dsverbose >= 3)
       fprintf (stderr, "Writing data record to data stream file %s\n", filename);
 
-    if (!write (foundgroup->filed, msr->record, msr->reclen))
+    /* Write the record, looping to handle partial writes */
+    written = 0;
+    while (written < msr->reclen)
     {
-      fprintf (stderr, "%s: failed to write data record\n", __func__);
-      return -1;
+      nwritten = write (foundgroup->filed, msr->record + written, msr->reclen - written);
+
+      if (nwritten < 0)
+      {
+        if (errno == EINTR)
+          continue;
+
+        fprintf (stderr, "%s: error writing to %s: %s\n", __func__, filename, strerror (errno));
+        return -1;
+      }
+      else if (nwritten == 0)
+      {
+        fprintf (stderr, "%s: cannot write to %s, no progress after %zd of %d bytes\n",
+                 __func__, filename, written, msr->reclen);
+        return -1;
+      }
+
+      written += nwritten;
     }
-    else
-    {
-      foundgroup->modtime = time (NULL);
-    }
+
+    foundgroup->modtime = time (NULL);
 
     return 0;
   }
