@@ -3,6 +3,7 @@
 	- Detect write errors and partial writes when saving records to archive files.
 	- Retry opening archive files on later records instead of reusing a failed descriptor.
 	- Write re-packed record lengths to archive files, instead of original lengths.
+	- Do not drop records that cannot be trimmed, write them untrimmed with a warning.
 	- Update libmseed to v3.5.2.
 
 2026.177: v4.2.2

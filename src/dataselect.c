@@ -714,18 +714,24 @@ writetraces (MS3TraceList *mstl)
         {
           rv = trimrecord (recptr, recordbuf, &writerdata);
 
+          /* Nothing left of the record to write */
           if (rv == -1)
           {
             recptr = recptr->next;
             continue;
           }
-          if (rv == -2)
+          /* Record cannot be trimmed, write it as-is, reason already reported */
+          else if (rv == -2)
           {
-            ms_log (1, "Cannot unpack miniSEED from byte offset %" PRId64 " in %s\n",
-                    recptr->fileoffset, flp->infilename);
-            ms_log (1, "  Writing %s record without trimming\n", id->sid);
+            ms_log (1, "Writing %s record from byte offset %" PRId64 " in %s without trimming\n",
+                    id->sid, recptr->fileoffset, flp->infilename);
 
             writerecord (recordbuf, recptr->msr->reclen, &writerdata);
+          }
+          else if (rv == -3)
+          {
+            errflag = 1;
+            break;
           }
         }
         else
@@ -785,7 +791,9 @@ writetraces (MS3TraceList *mstl)
  * times, this routine calculates which samples fit within the new
  * boundaries.
  *
- * Return 0 on success, -1 on failure or skip and -2 on unpacking errors.
+ * Returns 0 when the record was trimmed and written, -1 when there is
+ * nothing left to write, -2 when the record cannot be trimmed and should
+ * be written untrimmed, and -3 on fatal errors.
  ***************************************************************************/
 static int
 trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
@@ -805,7 +813,7 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   int retcode;
 
   if (!recptr || !recordbuf)
-    return -1;
+    return -3;
 
   ostarttime = recptr->msr->starttime;
   newrange = (TimeRange *)(recptr->prvtptr);
@@ -831,26 +839,27 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
       ms_nstime2timestr_n (newrange->endtime, etime, sizeof (etime), ISOMONTHDAY_Z, NANO_MICRO);
     ms_log (2, " Start bound: %-24s End bound: %-24s\n", stime, etime);
 
-    return -1;
+    return -3;
   }
 
+  /* Records that cannot be trimmed are written untrimmed, not an error */
   if (ms_encoding_sizetype (recptr->msr->encoding, &samplesize, &sampletype))
   {
-    ms_log (2, "Cannot determine sample size and type for encoding %d\n", recptr->msr->encoding);
-    return -1;
+    ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+    ms_log (1, "Warning: cannot trim %s (%s), unknown encoding (%d)\n",
+            recptr->msr->sid, stime, recptr->msr->encoding);
+
+    return -2;
   }
 
   /* Check for supported samples types, can only trim what can be packed */
   if (sampletype != 'i' && sampletype != 'f' && sampletype != 'd')
   {
-    if (verbose)
-    {
-      ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
-      ms_log (1, "Skipping trim of %s (%s), unsupported encoding (%d: %s)\n",
-              recptr->msr->sid, stime, recptr->msr->encoding, ms_encodingstr (recptr->msr->encoding));
-    }
+    ms_nstime2timestr_n (recptr->msr->starttime, stime, sizeof (stime), ISOMONTHDAY_Z, NANO_MICRO);
+    ms_log (1, "Warning: cannot trim %s (%s), unsupported encoding (%d: %s)\n",
+            recptr->msr->sid, stime, recptr->msr->encoding, ms_encodingstr (recptr->msr->encoding));
 
-    return 0;
+    return -2;
   }
 
   /* Decode data samples */
