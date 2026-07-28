@@ -232,10 +232,12 @@ main (int argc, char **argv)
   /* Set flags to:
    * - validate CRCs (if present)
    * - extract start-stop range from file names
-   * - construct a record-list for each segment */
+   * - construct a record-list for each segment
+   * - do not store extra headers in the record list */
   flags |= MSF_VALIDATECRC;
   flags |= MSF_PNAMERANGE;
   flags |= MSF_RECORDLIST;
+  flags |= MSF_RECORDLIST_NOEXTRAS;
 
   if (skipnotdata)
     flags |= MSF_SKIPNOTDATA;
