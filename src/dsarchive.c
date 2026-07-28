@@ -49,6 +49,7 @@ static int ds_openfile (DataStream *datastream, const char *filename);
 static int ds_closeidle (DataStream *datastream, int idletimeout);
 static void ds_shutdown (DataStream *datastream);
 static int strparse (const char *string, const char *delim, strlist **list);
+static void addstring (char *dest, size_t destsize, size_t *destlen, const char *source);
 
 static int dsverbose;
 
@@ -91,7 +92,8 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
   char definition[400] = {0};
   char pathformat[600] = {0};
   char tstr[20] = {0};
-  int fnlen = 0;
+  size_t fnlen = 0;
+  size_t deflen = 0;
   ssize_t nwritten;
   ssize_t written;
 
@@ -127,7 +129,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
   {
     if (fnptr->next != 0)
     {
-      strncat (filename, "/", sizeof (filename) - 1);
+      addstring (filename, sizeof (filename), &fnlen, "/");
       fnptr = fnptr->next;
     }
     else
@@ -175,95 +177,83 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
     {
       def = (*w == '%');
       *w = '\0';
-      strncat (filename, p, (sizeof (filename) - fnlen));
-      fnlen = strlen (filename);
+      addstring (filename, sizeof (filename), &fnlen, p);
 
       w += 1;
 
       switch (*w)
       {
       case 'n':
-        strncat (filename, network, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, network);
         if (def)
-          strncat (definition, network, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, network);
         p = w + 1;
         break;
       case 's':
-        strncat (filename, station, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, station);
         if (def)
-          strncat (definition, station, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, station);
         p = w + 1;
         break;
       case 'l':
-        strncat (filename, location, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, location);
         if (def)
-          strncat (definition, location, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, location);
         p = w + 1;
         break;
       case 'c':
-        strncat (filename, channel, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, channel);
         if (def)
-          strncat (definition, channel, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, channel);
         p = w + 1;
         break;
       case 'Y':
         snprintf (tstr, sizeof (tstr), "%04u", year);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'y':
         snprintf (tstr, sizeof (tstr), "%02u", year % 100);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'j':
         snprintf (tstr, sizeof (tstr), "%03u", yday);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'H':
         snprintf (tstr, sizeof (tstr), "%02u", hour);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'M':
         snprintf (tstr, sizeof (tstr), "%02d", (int)min);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'S':
         snprintf (tstr, sizeof (tstr), "%02d", (int)sec);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'N':
         snprintf (tstr, sizeof (tstr), "%09u", nsec);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'q':
@@ -285,52 +275,45 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
         else
           snprintf (tstr, sizeof (tstr), "%u", msr->pubversion);
 
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'v':
         snprintf (tstr, sizeof (tstr), "%u", msr->pubversion);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'L':
         snprintf (tstr, sizeof (tstr), "%d", reclen);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'r':
         snprintf (tstr, sizeof (tstr), "%ld", (long int)(msr->samprate + 0.5));
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case 'R':
         snprintf (tstr, sizeof (tstr), "%.6f", msr->samprate);
-        strncat (filename, tstr, (sizeof (filename) - fnlen));
+        addstring (filename, sizeof (filename), &fnlen, tstr);
         if (def)
-          strncat (definition, tstr, (sizeof (definition) - fnlen));
-        fnlen = strlen (filename);
+          addstring (definition, sizeof (definition), &deflen, tstr);
         p = w + 1;
         break;
       case '%':
-        strncat (filename, "%", (sizeof (filename) - fnlen));
-        fnlen = strlen (filename);
+        addstring (filename, sizeof (filename), &fnlen, "%");
         p = w + 1;
         break;
       case '#':
-        strncat (filename, "#", (sizeof (filename) - fnlen));
-        fnlen = strlen (filename);
+        addstring (filename, sizeof (filename), &fnlen, "#");
         p = w + 1;
         break;
       default:
@@ -340,8 +323,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
       }
     }
 
-    strncat (filename, p, (sizeof (filename) - fnlen));
-    fnlen = strlen (filename);
+    addstring (filename, sizeof (filename), &fnlen, p);
 
     /* If not the last entry then it should be a directory */
     if (fnptr->next != 0)
@@ -368,8 +350,7 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, int reclen, int verbose,
         }
       }
 
-      strncat (filename, "/", (sizeof (filename) - fnlen));
-      fnlen++;
+      addstring (filename, sizeof (filename), &fnlen, "/");
     }
 
     fnptr = fnptr->next;
@@ -828,3 +809,33 @@ strparse (const char *string, const char *delim, strlist **list)
     return 0;
   }
 } /* End of strparse() */
+
+/***************************************************************************
+ * addstring:
+ *
+ * Append 'source' to 'dest' of 'destsize' bytes at the offset given by
+ * 'destlen', which is updated to the new length.  The appended string is
+ * truncated as needed to fit and 'dest' is always NULL terminated.
+ ***************************************************************************/
+static void
+addstring (char *dest, size_t destsize, size_t *destlen, const char *source)
+{
+  size_t length;
+
+  if (!dest || !destlen || !source || destsize == 0)
+    return;
+
+  /* Nothing to do if no space remains for the terminator */
+  if (*destlen >= destsize - 1)
+    return;
+
+  length = strlen (source);
+
+  if (length > (destsize - *destlen - 1))
+    length = destsize - *destlen - 1;
+
+  memcpy (dest + *destlen, source, length);
+
+  *destlen += length;
+  dest[*destlen] = '\0';
+} /* End of addstring() */
