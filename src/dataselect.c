@@ -1420,6 +1420,7 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
   TimeRange *newrange;
   Coverage *cov;
   nstime_t effstarttime, effendtime;
+  nstime_t newstarttime, newendtime;
   nstime_t nsperiod, nstimetol;
   char stime[32] = {0};
   char etime[32] = {0};
@@ -1489,8 +1490,15 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
 
           newrange = (TimeRange *)recptr->prvtptr;
 
-          /* Set new end time boundary including specified time tolerance */
-          newrange->endtime = cov->starttime - nsperiod + nstimetol;
+          /* Set new end time boundary including specified time tolerance, limited
+           * to the record and retaining a more restrictive boundary if already set */
+          newendtime = cov->starttime - nsperiod + nstimetol;
+
+          if (newendtime > recptr->endtime)
+            newendtime = recptr->endtime;
+
+          if (newrange->endtime == NSTUNSET || newendtime < newrange->endtime)
+            newrange->endtime = newendtime;
 
           if (newrange->starttime != NSTUNSET && newrange->endtime < newrange->starttime)
           {
@@ -1530,8 +1538,15 @@ trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid, Coverage *coverag
 
           newrange = (TimeRange *)recptr->prvtptr;
 
-          /* Set Record new start time boundary including specified time tolerance */
-          newrange->starttime = cov->endtime + nsperiod - nstimetol;
+          /* Set new start time boundary including specified time tolerance, limited
+           * to the record and retaining a more restrictive boundary if already set */
+          newstarttime = cov->endtime + nsperiod - nstimetol;
+
+          if (newstarttime < recptr->msr->starttime)
+            newstarttime = recptr->msr->starttime;
+
+          if (newrange->starttime == NSTUNSET || newstarttime > newrange->starttime)
+            newrange->starttime = newstarttime;
 
           if (newrange->endtime != NSTUNSET && newrange->starttime > newrange->endtime)
           {

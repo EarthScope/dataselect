@@ -5,6 +5,8 @@
 	- Write re-packed record lengths to archive files, instead of original lengths.
 	- Do not drop records that cannot be trimmed, write them untrimmed with a warning.
 	- Set the v2 data quality indicator in the output record, fixes -Q for re-packed records.
+	- Retain the most restrictive record bounds when pruning, instead of overwriting
+	selection limits.
 	- Update libmseed to v3.5.2.
 
 2026.177: v4.2.2
