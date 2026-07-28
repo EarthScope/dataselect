@@ -767,10 +767,14 @@ writetraces (MS3TraceList *mstl)
     flp = flp->next;
   }
 
-  /* Close output file if used */
+  /* Close output file if used, the standard streams are only flushed */
   if (ofp)
   {
-    fclose (ofp);
+    if (ofp == stdout || ofp == stderr)
+      fflush (ofp);
+    else
+      fclose (ofp);
+
     ofp = NULL;
   }
 
@@ -1829,7 +1833,10 @@ printwritten (MS3TraceList *mstl)
     id = id->next[0];
   }
 
-  if (ofp != stdout && fclose (ofp))
+  /* The standard streams are only flushed, never closed */
+  if (ofp == stdout || ofp == stderr)
+    fflush (ofp);
+  else if (fclose (ofp))
     ms_log (2, "Cannot close output file: %s (%s)\n",
             writtenfile, strerror (errno));
 

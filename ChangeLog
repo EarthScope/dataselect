@@ -11,6 +11,8 @@
 	- Document the %N archive layout code, replacing the unimplemented %F.
 	- Fix off-by-one bounds in archive path construction.
 	- Consistently return 1 for errors as documented.
+	- Never close the standard output or error streams, fixes a lost -out summary
+	when data is written to stdout.
 	- Update libmseed to v3.5.2.
 
 2026.177: v4.2.2
