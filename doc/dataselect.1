@@ -119,11 +119,13 @@ Limit input to records that match this globbing pattern, the
 \fImatch\fP is tested against the full FDSN Source ID
 \&'FDSN:NET_STA_LOC_B_S_SS'.  The pattern is applied as a logical
 "contains", i.e. it does not need to match the entire Source ID.
+This option may be used multiple times; a Source ID matching any
+\fB-m\fP pattern is selected.
 
-The \fB-m\fP, \fB-ts\fP and \fB-te\fP options are combined into a
-single selection.  When they are used together with \fB-s\fP this
-selection is \fIadditional\fP to those in the selection file, records
-matching any selection are processed.
+Each \fB-m\fP pattern is combined with \fB-ts\fP and \fB-te\fP into a
+selection.  When used together with \fB-s\fP these selections are
+\fIadditional\fP to those in the selection file, records matching any
+selection are processed.
 
 .IP "-r \fIreject\fP"
 Limit input by excluding records that match this globbing pattern, the

@@ -77,9 +77,9 @@ Each input file may be specified with an explicit byte range to read. The progra
   Limit processing to miniSEED records that end before or contain <i>time</i>.  The preferred format of the <i>time</i> argument is: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'.
 
 - -m <i>match</i>
-  Limit input to records that match this globbing pattern, the <i>match</i> is tested against the full FDSN Source ID \&amp;'FDSN:NET_STA_LOC_B_S_SS'.  The pattern is applied as a logical "contains", i.e. it does not need to match the entire Source ID.
+  Limit input to records that match this globbing pattern, the <i>match</i> is tested against the full FDSN Source ID \&amp;'FDSN:NET_STA_LOC_B_S_SS'.  The pattern is applied as a logical "contains", i.e. it does not need to match the entire Source ID.  This option may be used multiple times; a Source ID matching any <b>-m</b> pattern is selected.
 
-  The <b>-m</b>, <b>-ts</b> and <b>-te</b> options are combined into a single selection.  When they are used together with <b>-s</b> this selection is <i>additional</i> to those in the selection file, records matching any selection are processed.
+  Each <b>-m</b> pattern is combined with <b>-ts</b> and <b>-te</b> into a selection.  When used together with <b>-s</b> these selections are <i>additional</i> to those in the selection file, records matching any selection are processed.
 
 - -r <i>reject</i>
   Limit input by excluding records that match this globbing pattern, the inverse of <b>-m</b>.  The <i>reject</i> is tested against the full FDSN Source ID \&amp;'FDSN:NET_STA_LOC_B_S_SS' as a logical "contains".  This option may be used multiple times; a Source ID matching any <b>-r</b> pattern is rejected.  Rejection is applied after selection, taking precedence over <b>-s</b>, <b>-m</b>, <b>-ts</b> and <b>-te</b>.

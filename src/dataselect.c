@@ -206,6 +206,7 @@ static int addlistfile (char *filename);
 static int addarchive (const char *path, const char *layout);
 static int addselection (MS3Selections **ppselections, const char *pattern,
                          nstime_t starttime, nstime_t endtime);
+static int addmatchpattern (char *pattern);
 static void usage (int level);
 
 static int8_t verbose = 0;
@@ -244,6 +245,8 @@ static size_t fileindexsize = 0;         /* Allocated entries in fileindex */
 static Filelink *filecache = NULL;       /* Most recently found input file */
 static MS3Selections *selections = NULL; /* Data selection criteria, SIDs and time ranges */
 static MS3Selections *rejections = NULL; /* Data rejection criteria, SIDs */
+static char **matchpatterns = NULL;      /* SourceID match patterns, from -m and -M */
+static size_t matchpatterncount = 0;     /* Entries in matchpatterns */
 
 static char *writtenfile = NULL;       /* File to write summary of output records */
 static char *writtenprefix = NULL;     /* Prefix for summary of output records */
@@ -2596,11 +2599,11 @@ processparam (int argcount, char **argvec)
 {
   nstime_t timestart = NSTUNSET;
   nstime_t timeend = NSTUNSET;
-  char matchpattern[100] = {0};
   char *selectfile = NULL;
   char *tptr = NULL;
   char *endptr = NULL;
   unsigned long ulong;
+  size_t index;
   int optind;
 
   /* Process all command line arguments */
@@ -2669,7 +2672,8 @@ processparam (int argcount, char **argvec)
       tptr = getoptval (argcount, argvec, optind++);
       if (strspn (tptr, "-[]*?:_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrtsuvwxyz0123456789") == strlen (tptr))
       {
-        strncpy (matchpattern, tptr, sizeof (matchpattern) - 1);
+        if (addmatchpattern (tptr))
+          return -1;
       }
       else
       {
@@ -2680,7 +2684,8 @@ processparam (int argcount, char **argvec)
     }
     else if (strcmp (argvec[optind], "-m") == 0)
     {
-      strncpy (matchpattern, getoptval (argcount, argvec, optind++), sizeof (matchpattern) - 1);
+      if (addmatchpattern (getoptval (argcount, argvec, optind++)))
+        return -1;
     }
     else if (strcmp (argvec[optind], "-r") == 0)
     {
@@ -2850,12 +2855,21 @@ processparam (int argcount, char **argvec)
     }
   }
 
-  /* Combine SourceID match pattern, time start and end into a selection entry */
-  if (matchpattern[0] || timestart != NSTUNSET || timeend != NSTUNSET)
+  /* Combine each SourceID match pattern with time start and end into selection entries */
+  if (matchpatterncount)
   {
-    if (addselection (&selections, matchpattern, timestart, timeend))
+    for (index = 0; index < matchpatterncount; index++)
+      if (addselection (&selections, matchpatterns[index], timestart, timeend))
+        return -1;
+  }
+  else if (timestart != NSTUNSET || timeend != NSTUNSET)
+  {
+    if (addselection (&selections, NULL, timestart, timeend))
       return -1;
   }
+
+  free (matchpatterns);
+  matchpatterns = NULL;
 
   /* Report the program version */
   if (verbose)
@@ -3166,6 +3180,32 @@ addselection (MS3Selections **ppselections, const char *pattern,
 } /* End of addselection() */
 
 /***************************************************************************
+ * Add a SourceID match pattern, from -m or -M, to the matchpatterns array.
+ * The array is grown as needed; pattern is expected to point into argv
+ * and is not copied.
+ *
+ * Returns 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+addmatchpattern (char *pattern)
+{
+  char **newmem;
+
+  newmem = (char **)realloc (matchpatterns, (matchpatterncount + 1) * sizeof (char *));
+
+  if (newmem == NULL)
+  {
+    ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+    return -1;
+  }
+
+  matchpatterns = newmem;
+  matchpatterns[matchpatterncount++] = pattern;
+
+  return 0;
+} /* End of addmatchpattern() */
+
+/***************************************************************************
  * Print the usage message.
  ***************************************************************************/
 static void
@@ -3193,7 +3233,7 @@ usage (int level)
            " -m match     Limit to records containing the specified pattern\n"
            " -r reject    Limit to records not containing the specified pattern\n"
            "                Patterns are applied to: 'FDSN:NET_STA_LOC_BAND_SOURCE_SS'\n"
-           "                The -r option may be specified multiple times\n"
+           "                The -m and -r options may be specified multiple times\n"
            "\n"
            " ## Output options ##\n"
            " -o file      Specify a single output file, use +o file to append\n"

@@ -305,6 +305,34 @@ class Selection(DataselectTest):
         code, _, _ = run("-m", "ZZ_NOSUCH", V3, "-o", os.devnull)
         self.assertEqual(code, 1)
 
+    def test_match_multiple(self):
+        other = craft3(V3, tmp("other_match.mseed3"), sid="FDSN:YY_ABCD__B_H_Z")
+        combined = tmp("two_sids_match.mseed3")
+        with open(combined, "wb") as handle:
+            for path in (V3, other):
+                with open(path, "rb") as part:
+                    handle.write(part.read())
+
+        code, stdout, err = run(
+            "-v", "-m", "XX_TEST", "-m", "YY_ABCD", combined, "-o", os.devnull
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(wrote(stdout + err), (3672, 8))
+
+    def test_match_multiple_one_matches(self):
+        code, stdout, err = run(
+            "-v", "-m", "ZZ_NOSUCH", "-m", "XX_TEST", V3, "-o", os.devnull
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(wrote(stdout + err), (1836, 4))
+
+    def test_match_multiple_with_time_window(self):
+        code, stdout, err = run(
+            "-v", "-m", "ZZ_NOSUCH", "-m", "XX_TEST", *WINDOW, V3, "-o", os.devnull
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(wrote(stdout + err), (1521, 3))
+
     def test_reject(self):
         other = craft3(V3, tmp("other_sid.mseed3"), sid="FDSN:YY_ABCD__B_H_Z")
         combined = tmp("two_sids.mseed3")
