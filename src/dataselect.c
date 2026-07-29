@@ -126,6 +126,37 @@ typedef struct Coverage_s
   struct Coverage_s *next;
 } Coverage;
 
+/* Index of a single MS3TraceSeg, used while pruning a SourceID group */
+typedef struct SegIndex_s
+{
+  MS3TraceSeg *seg;
+  nstime_t maxendtime; /* Latest end time of this and all earlier segments of the ID */
+  nstime_t runstart;   /* Coverage of the record list when it forms a single run */
+  nstime_t runend;
+  int8_t runstate; /* 0 = walk the records, 1 = single run, 2 = no records */
+} SegIndex;
+
+/* Index of a single MS3TraceID, a slice of SidGroup.segpool */
+typedef struct IDIndex_s
+{
+  MS3TraceID *id;
+  uint32_t segoffset; /* Offset of the first segment in SidGroup.segpool */
+  uint32_t numsegs;
+} IDIndex;
+
+/* Index of all MS3TraceIDs sharing a SourceID, reused for each group */
+typedef struct SidGroup_s
+{
+  IDIndex *ids;
+  uint32_t numids;
+  uint32_t idcapacity;
+  SegIndex *segpool;
+  uint32_t numsegs;
+  uint32_t segcapacity;
+  TimeRange *spans; /* Scratch for the overlap test, segment times sorted */
+  nstime_t maxtimetol;
+} SidGroup;
+
 /* Holder for data passed to the record writer */
 typedef struct WriterData_s
 {
@@ -138,12 +169,23 @@ typedef struct WriterData_s
 
 static int setselectionlimits (MS3TraceList *mstl);
 
+static size_t filehash (const char *filename);
+static int buildfileindex (void);
+static Filelink *findfile (const char *filename);
+
 static int writetraces (MS3TraceList *mstl);
 static int trimrecord (MS3RecordPtr *rec, char *recbuf, WriterData *writerdata);
 static void writerecord (char *record, int reclen, void *handlerdata);
 
 static int prunetraces (MS3TraceList *mstl);
-static int findcoverage (MS3TraceList *mstl, MS3TraceID *targetid,
+static int buildsidgroup (SidGroup *group, MS3TraceID *first, MS3TraceID *last);
+static int groupoverlaps (SidGroup *group);
+static void cachesegruns (SegIndex *entry);
+static int spancmp (const void *a, const void *b);
+static Coverage *addcoverage (Coverage **ppcoverage, Coverage *previous,
+                              uint8_t pubversion, double samprate,
+                              nstime_t starttime, nstime_t endtime);
+static int findcoverage (const SidGroup *group, uint32_t targetidx,
                          MS3TraceSeg *targetseg, Coverage **ppcoverage);
 static int trimtrace (MS3TraceSeg *targetseg, const char *targetsourceid,
                       Coverage *coverage);
@@ -194,6 +236,9 @@ static char recordbuf[MAXRECLEN]; /* Global record buffer */
 
 static Filelink *filelist = NULL;        /* List of input files */
 static Filelink *filelisttail = NULL;    /* Tail of list of input files */
+static Filelink **fileindex = NULL;      /* Input files keyed on file name pointer */
+static size_t fileindexsize = 0;         /* Allocated entries in fileindex */
+static Filelink *filecache = NULL;       /* Most recently found input file */
 static MS3Selections *selections = NULL; /* Data selection criteria, SIDs and time ranges */
 
 static char *writtenfile = NULL;       /* File to write summary of output records */
@@ -385,96 +430,239 @@ setselectionlimits (MS3TraceList *mstl)
 {
   const MS3Selections *select = NULL;
   const MS3SelectTime *selecttime = NULL;
+  const MS3SelectTime **matched = NULL;
+  const char *lastsid = NULL;
   MS3TraceID *id = NULL;
   MS3TraceSeg *seg = NULL;
   MS3RecordPtr *recptr = NULL;
   TimeRange *timerange = NULL;
   nstime_t newstart;
   nstime_t newend;
+  size_t matchedcount = 0;
+  size_t matchedsize = 0;
+  size_t index;
+  int retval = 0;
 
   if (!mstl)
     return -1;
 
   /* Set new record times based on selection times */
   id = mstl->traces.next[0];
-  while (id)
+  while (id && retval == 0)
   {
+    /* Collect the selection time windows matching this SourceID.  Only the
+     * time comparisons below depend on the individual record, so the pattern
+     * matching is done once for all records of the ID.  Windows that cannot
+     * intersect a record are skipped there, so collecting every window of a
+     * matching entry gives the same result as searching per record. */
+    if (lastsid == NULL || strcmp (lastsid, id->sid) != 0)
+    {
+      matchedcount = 0;
+      select = selections;
+
+      while ((select = ms3_matchselect (select, id->sid, NSTUNSET, NSTUNSET,
+                                        0, &selecttime)))
+      {
+        for (selecttime = select->timewindows; selecttime; selecttime = selecttime->next)
+        {
+          if (selecttime->starttime == NSTUNSET && selecttime->endtime == NSTUNSET)
+            continue;
+
+          if (matchedcount >= matchedsize)
+          {
+            size_t newsize = (matchedsize) ? matchedsize * 2 : 16;
+            void *newmem = realloc (matched, newsize * sizeof (const MS3SelectTime *));
+
+            if (newmem == NULL)
+            {
+              ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+              free (matched);
+              return -1;
+            }
+
+            matched = (const MS3SelectTime **)newmem;
+            matchedsize = newsize;
+          }
+
+          matched[matchedcount++] = selecttime;
+        }
+
+        select = select->next;
+      }
+
+      lastsid = id->sid;
+    }
+
+    if (matchedcount == 0)
+    {
+      id = id->next[0];
+      continue;
+    }
+
     seg = id->first;
     while (seg)
     {
       recptr = seg->recordlist->first;
       while (recptr)
       {
-        select = selections;
-        while ((select = ms3_matchselect (select,
-                                          recptr->msr->sid,
-                                          recptr->msr->starttime,
-                                          recptr->endtime,
-                                          0,
-                                          &selecttime)))
+        for (index = 0; index < matchedcount; index++)
         {
-          while (selecttime)
+          selecttime = matched[index];
+
+          /* Records are either completely or partially selected by time limits */
+          newstart = NSTUNSET;
+          newend = NSTUNSET;
+
+          if (selecttime->starttime != NSTUNSET &&
+              selecttime->starttime > recptr->msr->starttime &&
+              selecttime->starttime < recptr->endtime)
           {
-            /* Records are either completely or partially selected by time limits */
-            newstart = NSTUNSET;
-            newend = NSTUNSET;
-
-            if (selecttime->starttime != NSTUNSET &&
-                selecttime->starttime > recptr->msr->starttime &&
-                selecttime->starttime < recptr->endtime)
-            {
-              newstart = selecttime->starttime;
-            }
-
-            if (selecttime->endtime != NSTUNSET &&
-                selecttime->endtime > recptr->msr->starttime &&
-                selecttime->endtime < recptr->endtime)
-            {
-              newend = selecttime->endtime;
-            }
-
-            if (newstart == NSTUNSET && newend == NSTUNSET)
-            {
-              selecttime = selecttime->next;
-              continue;
-            }
-
-            /* Allocate TimeRange for new time boundaries */
-            if (recptr->prvtptr == NULL)
-            {
-              if ((recptr->prvtptr = (TimeRange *)malloc (sizeof (TimeRange))) == NULL)
-              {
-                ms_log (2, "%s(): Cannot allocate memory\n", __func__);
-                return -1;
-              }
-
-              ((TimeRange *)recptr->prvtptr)->starttime = NSTUNSET;
-              ((TimeRange *)recptr->prvtptr)->endtime = NSTUNSET;
-            }
-
-            timerange = (TimeRange *)recptr->prvtptr;
-
-            if (newstart != NSTUNSET &&
-                (timerange->starttime == NSTUNSET || newstart < timerange->starttime))
-              timerange->starttime = newstart;
-
-            if (newend != NSTUNSET &&
-                (timerange->endtime == NSTUNSET || newend > timerange->endtime))
-              timerange->endtime = newend;
-
-            selecttime = selecttime->next;
+            newstart = selecttime->starttime;
           }
-          select = select->next;
+
+          if (selecttime->endtime != NSTUNSET &&
+              selecttime->endtime > recptr->msr->starttime &&
+              selecttime->endtime < recptr->endtime)
+          {
+            newend = selecttime->endtime;
+          }
+
+          if (newstart == NSTUNSET && newend == NSTUNSET)
+          {
+            continue;
+          }
+
+          /* Allocate TimeRange for new time boundaries */
+          if (recptr->prvtptr == NULL)
+          {
+            if ((recptr->prvtptr = (TimeRange *)malloc (sizeof (TimeRange))) == NULL)
+            {
+              ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+              retval = -1;
+              break;
+            }
+
+            ((TimeRange *)recptr->prvtptr)->starttime = NSTUNSET;
+            ((TimeRange *)recptr->prvtptr)->endtime = NSTUNSET;
+          }
+
+          timerange = (TimeRange *)recptr->prvtptr;
+
+          if (newstart != NSTUNSET &&
+              (timerange->starttime == NSTUNSET || newstart < timerange->starttime))
+            timerange->starttime = newstart;
+
+          if (newend != NSTUNSET &&
+              (timerange->endtime == NSTUNSET || newend > timerange->endtime))
+            timerange->endtime = newend;
         }
+
+        if (retval)
+          break;
+
         recptr = recptr->next;
       }
+
+      if (retval)
+        break;
+
       seg = seg->next;
     }
+
     id = id->next[0];
   }
 
-  return 0;
+  free (matched);
+
+  return retval;
 } /* End of setselectionlimits() */
+
+/***************************************************************************
+ * Return a hash of an input file name pointer.
+ ***************************************************************************/
+static size_t
+filehash (const char *filename)
+{
+  uint64_t key = (uint64_t)(uintptr_t)filename;
+
+  key *= 0x9E3779B97F4A7C15ULL;
+
+  return (size_t)(key >> 32);
+}
+
+/***************************************************************************
+ * Build an index of the input files, keyed on the file name pointer that
+ * libmseed stores with each record, which is the pointer supplied when the
+ * file was read.  The table is sized to twice the number of files so an
+ * open addressed probe always finds an empty slot.
+ *
+ * Returns 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+buildfileindex (void)
+{
+  Filelink *flp;
+  size_t count = 0;
+  size_t slot;
+
+  for (flp = filelist; flp; flp = flp->next)
+    count++;
+
+  fileindexsize = 16;
+  while (fileindexsize < (count * 2))
+    fileindexsize *= 2;
+
+  if ((fileindex = (Filelink **)calloc (fileindexsize, sizeof (Filelink *))) == NULL)
+  {
+    ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+    return -1;
+  }
+
+  for (flp = filelist; flp; flp = flp->next)
+  {
+    slot = filehash (flp->infilename_raw) & (fileindexsize - 1);
+
+    while (fileindex[slot])
+      slot = (slot + 1) & (fileindexsize - 1);
+
+    fileindex[slot] = flp;
+  }
+
+  return 0;
+} /* End of buildfileindex() */
+
+/***************************************************************************
+ * Find the input file entry a record was read from.
+ *
+ * Returns a pointer to the Filelink on success and NULL when not found.
+ ***************************************************************************/
+static Filelink *
+findfile (const char *filename)
+{
+  size_t slot;
+
+  /* Consecutive records commonly come from the same file */
+  if (filecache && filecache->infilename_raw == filename)
+    return filecache;
+
+  if (filename == NULL || fileindex == NULL)
+    return NULL;
+
+  slot = filehash (filename) & (fileindexsize - 1);
+
+  while (fileindex[slot])
+  {
+    if (fileindex[slot]->infilename_raw == filename)
+    {
+      filecache = fileindex[slot];
+      return filecache;
+    }
+
+    slot = (slot + 1) & (fileindexsize - 1);
+  }
+
+  return NULL;
+} /* End of findfile() */
 
 /***************************************************************************
  * Write all MS3TraceSeg associated records to output file(s).  If an
@@ -509,7 +697,6 @@ writetraces (MS3TraceList *mstl)
   MS3RecordList *groupreclist = NULL;
 
   TimeRange *newrange;
-  Filelink *flpsearch;
   Filelink *flp;
 
   FILE *ofp = NULL;
@@ -526,6 +713,10 @@ writetraces (MS3TraceList *mstl)
   if (verbose)
     ms_log (1, "Writing output data\n");
 
+  /* Index the input files for lookup of the file each record was read from */
+  if (buildfileindex ())
+    return 1;
+
   /* Open the output file if specified */
   if (outputfile)
   {
@@ -540,7 +731,13 @@ writetraces (MS3TraceList *mstl)
     {
       ms_log (2, "Cannot open output file: %s (%s)\n",
               outputfile, strerror (errno));
-      return 1;
+      errflag = 1;
+    }
+    else
+    {
+      /* Enlarge the output buffer to reduce the number of write calls.
+       * The standard streams are left alone, they are already in use. */
+      setvbuf (ofp, NULL, _IOFBF, 1024 * 1024);
     }
   }
 
@@ -549,7 +746,7 @@ writetraces (MS3TraceList *mstl)
    * from which segment the record was originally associated. */
   id = mstl->traces.next[0];
   groupid = id;
-  while (id)
+  while (id && errflag == 0)
   {
     /* Check if new group ID is needed */
     if (groupid != id && strcmp (groupid->sid, id->sid) != 0)
@@ -563,7 +760,8 @@ writetraces (MS3TraceList *mstl)
       if ((id->prvtptr = (MS3RecordList *)malloc (sizeof (MS3RecordList))) == NULL)
       {
         ms_log (2, "%s(): Cannot allocate memory\n", __func__);
-        return 1;
+        errflag = 1;
+        break;
       }
 
       groupreclist = (MS3RecordList *)id->prvtptr;
@@ -665,18 +863,7 @@ writetraces (MS3TraceList *mstl)
         }
 
         /* Find the matching input file entry */
-        flp = NULL;
-        flpsearch = filelist;
-        while (flpsearch)
-        {
-          if (flpsearch->infilename_raw == recptr->filename)
-          {
-            flp = flpsearch;
-            break;
-          }
-
-          flpsearch = flpsearch->next;
-        }
+        flp = findfile (recptr->filename);
 
         if (flp == NULL)
         {
@@ -780,13 +967,28 @@ writetraces (MS3TraceList *mstl)
     flp = flp->next;
   }
 
-  /* Close output file if used, the standard streams are only flushed */
+  free (fileindex);
+  fileindex = NULL;
+  fileindexsize = 0;
+  filecache = NULL;
+
+  /* Close output file if used, the standard streams are only flushed.
+   * Buffered data is written by the close, so errors can surface here. */
   if (ofp)
   {
     if (ofp == stdout || ofp == stderr)
-      fflush (ofp);
-    else
-      fclose (ofp);
+    {
+      if (fflush (ofp))
+      {
+        ms_log (2, "Cannot write to '%s'\n", outputfile);
+        errflag = 1;
+      }
+    }
+    else if (fclose (ofp))
+    {
+      ms_log (2, "Cannot write to '%s'\n", outputfile);
+      errflag = 1;
+    }
 
     ofp = NULL;
   }
@@ -915,16 +1117,18 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   if (newrange->starttime != NSTUNSET && nsperiod)
   {
     nstime_t newstarttime;
+    int64_t trimcount;
 
-    /* Determine new start time and the number of samples to trim */
-    trimsamples = 0;
-    newstarttime = msr->starttime;
+    /* Determine the number of samples to trim, the count of sample periods
+     * needed to reach the new boundary, limited to the samples present */
+    trimcount = newrange->starttime - msr->starttime;
+    trimcount = (trimcount > 0) ? (trimcount + nsperiod - 1) / nsperiod : 0;
 
-    while (newstarttime < newrange->starttime && trimsamples < msr->samplecnt)
-    {
-      newstarttime += nsperiod;
-      trimsamples++;
-    }
+    if (trimcount > msr->samplecnt)
+      trimcount = msr->samplecnt;
+
+    trimsamples = (int)trimcount;
+    newstarttime = msr->starttime + trimcount * nsperiod;
 
     if (trimsamples >= msr->samplecnt)
     {
@@ -955,16 +1159,18 @@ trimrecord (MS3RecordPtr *recptr, char *recordbuf, WriterData *writerdata)
   if (newrange->endtime != NSTUNSET && nsperiod)
   {
     nstime_t newendtime;
+    int64_t trimcount;
 
-    /* Determine new end time and the number of samples to trim */
-    trimsamples = 0;
-    newendtime = recptr->endtime;
+    /* Determine the number of samples to trim, the count of sample periods
+     * needed to reach the new boundary, limited to the samples present */
+    trimcount = recptr->endtime - newrange->endtime;
+    trimcount = (trimcount > 0) ? (trimcount + nsperiod - 1) / nsperiod : 0;
 
-    while (newendtime > newrange->endtime && trimsamples < msr->samplecnt)
-    {
-      newendtime -= nsperiod;
-      trimsamples++;
-    }
+    if (trimcount > msr->samplecnt)
+      trimcount = msr->samplecnt;
+
+    trimsamples = (int)trimcount;
+    newendtime = recptr->endtime - trimcount * nsperiod;
 
     if (trimsamples >= msr->samplecnt)
     {
@@ -1159,9 +1365,13 @@ static int
 prunetraces (MS3TraceList *mstl)
 {
   MS3TraceID *id = NULL;
+  MS3TraceID *groupend = NULL;
   MS3TraceSeg *seg = NULL;
   Coverage *coverage = NULL;
-  int retval;
+  SidGroup group;
+  uint32_t idx;
+  uint32_t segidx;
+  int retval = 0;
 
   if (!mstl)
     return -1;
@@ -1172,48 +1382,326 @@ prunetraces (MS3TraceList *mstl)
   if (verbose)
     ms_log (1, "Pruning trace data\n");
 
+  memset (&group, 0, sizeof (group));
+
   /* For each MS3TraceSeg determine the coverage of the overlapping
    * Records from the other traces with a higher priority and prune
-   * the overlap. */
+   * the overlap.  Only traces sharing a SourceID can overlap, so the
+   * work is done one SourceID group at a time. */
   id = mstl->traces.next[0];
-  while (id)
+  while (id && retval == 0)
   {
-    seg = id->first;
-    while (seg)
+    /* Find the run of MS3TraceIDs sharing this SourceID, the list is
+     * ordered by SourceID so matching entries are contiguous. */
+    groupend = id;
+    while (groupend->next[0] && strcmp (groupend->next[0]->sid, id->sid) == 0)
+      groupend = groupend->next[0];
+
+    if (buildsidgroup (&group, id, groupend))
     {
-      /* Determine overlapping trace coverage */
-      retval = findcoverage (mstl, id, seg, &coverage);
-
-      if (retval)
-      {
-        ms_log (2, "cannot findcoverage()\n");
-        return -1;
-      }
-      else if (coverage)
-      {
-        if (trimtrace (seg, id->sid, coverage) < 0)
-        {
-          ms_log (2, "cannot trimtraces()\n");
-          return -1;
-        }
-      }
-
-      /* Free the coverage */
-      while (coverage)
-      {
-        Coverage *next = coverage->next;
-        free (coverage);
-        coverage = next;
-      }
-
-      seg = seg->next;
+      retval = -1;
+      break;
     }
 
-    id = id->next[0];
+    /* Coverage is only ever built from overlapping segments, when no two
+     * segments of the group overlap there is nothing to prune. */
+    if (group.numsegs >= 2 && groupoverlaps (&group))
+    {
+      /* Summarize each record list once, rather than for every target */
+      for (segidx = 0; segidx < group.numsegs; segidx++)
+        cachesegruns (group.segpool + segidx);
+
+      for (idx = 0; idx < group.numids && retval == 0; idx++)
+      {
+        for (segidx = 0; segidx < group.ids[idx].numsegs; segidx++)
+        {
+          seg = group.segpool[group.ids[idx].segoffset + segidx].seg;
+
+          /* Determine overlapping trace coverage */
+          if (findcoverage (&group, idx, seg, &coverage))
+          {
+            ms_log (2, "cannot findcoverage()\n");
+            retval = -1;
+          }
+          else if (coverage)
+          {
+            int modcount = trimtrace (seg, group.ids[idx].id->sid, coverage);
+
+            if (modcount < 0)
+            {
+              ms_log (2, "cannot trimtraces()\n");
+              retval = -1;
+            }
+            /* The record list changed, refresh the summary of this segment */
+            else if (modcount > 0)
+            {
+              cachesegruns (group.segpool + group.ids[idx].segoffset + segidx);
+            }
+          }
+
+          /* Free the coverage */
+          while (coverage)
+          {
+            Coverage *next = coverage->next;
+            free (coverage);
+            coverage = next;
+          }
+
+          if (retval)
+            break;
+        }
+      }
+    }
+
+    id = groupend->next[0];
+  }
+
+  free (group.ids);
+  free (group.segpool);
+  free (group.spans);
+
+  return retval;
+} /* End of prunetraces() */
+
+/***************************************************************************
+ * Index the MS3TraceIDs from 'first' through 'last', which all share a
+ * SourceID, and their segments.  The index allows the segments that can
+ * overlap a given time to be found without walking the whole list.
+ *
+ * The allocations are retained in the SidGroup and reused for each group.
+ *
+ * Returns 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+buildsidgroup (SidGroup *group, MS3TraceID *first, MS3TraceID *last)
+{
+  MS3TraceID *id;
+  MS3TraceSeg *seg;
+  IDIndex *idx;
+  nstime_t maxendtime = NSTUNSET;
+  nstime_t nsperiod;
+  nstime_t nstimetol;
+  void *newmem;
+
+  group->numids = 0;
+  group->numsegs = 0;
+  group->maxtimetol = 0;
+
+  for (id = first; id; id = id->next[0])
+  {
+    if (group->numids >= group->idcapacity)
+    {
+      uint32_t capacity = (group->idcapacity) ? group->idcapacity * 2 : 8;
+
+      if ((newmem = realloc (group->ids, capacity * sizeof (IDIndex))) == NULL)
+      {
+        ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+        return -1;
+      }
+
+      group->ids = (IDIndex *)newmem;
+      group->idcapacity = capacity;
+    }
+
+    idx = group->ids + group->numids;
+    idx->id = id;
+    idx->segoffset = group->numsegs;
+    idx->numsegs = 0;
+
+    for (seg = id->first; seg; seg = seg->next)
+    {
+      if (group->numsegs >= group->segcapacity)
+      {
+        uint32_t capacity = (group->segcapacity) ? group->segcapacity * 2 : 64;
+
+        if ((newmem = realloc (group->segpool, capacity * sizeof (SegIndex))) == NULL)
+        {
+          ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+          return -1;
+        }
+
+        group->segpool = (SegIndex *)newmem;
+
+        if ((newmem = realloc (group->spans, capacity * sizeof (TimeRange))) == NULL)
+        {
+          ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+          return -1;
+        }
+
+        group->spans = (TimeRange *)newmem;
+        group->segcapacity = capacity;
+      }
+
+      /* Track the latest end time of this and all earlier segments of the ID,
+       * segments are ordered by start time so this prefix maximum is monotonic
+       * and can be searched to skip segments that end before a given time. */
+      if (idx->numsegs == 0 || seg->endtime > maxendtime)
+        maxendtime = seg->endtime;
+
+      group->segpool[group->numsegs].seg = seg;
+      group->segpool[group->numsegs].maxendtime = maxendtime;
+
+      /* Track the largest time tolerance of the group, the tolerance used
+       * when searching depends on the segment being pruned. */
+      nsperiod = (seg->samprate) ? (nstime_t)(NSTMODULUS / seg->samprate + 0.5) : 0;
+      nstimetol = (timetol == -1.0) ? (nsperiod / 2) : (nstime_t)(NSTMODULUS * timetol);
+
+      if (nstimetol > group->maxtimetol)
+        group->maxtimetol = nstimetol;
+
+      group->numsegs++;
+      idx->numsegs++;
+    }
+
+    group->numids++;
+
+    if (id == last)
+      break;
   }
 
   return 0;
-} /* End of prunetraces() */
+} /* End of buildsidgroup() */
+
+/***************************************************************************
+ * Determine if any two segments of the group overlap within the largest
+ * time tolerance of the group.  The tolerance used elsewhere depends on
+ * the segment being pruned, so the largest is used here to keep a negative
+ * answer conservative.
+ *
+ * Returns 1 when a pair of segments overlap and 0 when none do.
+ ***************************************************************************/
+static int
+groupoverlaps (SidGroup *group)
+{
+  nstime_t maxendtime;
+  uint32_t idx;
+
+  for (idx = 0; idx < group->numsegs; idx++)
+  {
+    group->spans[idx].starttime = group->segpool[idx].seg->starttime;
+    group->spans[idx].endtime = group->segpool[idx].seg->endtime;
+  }
+
+  /* Segments are ordered within an ID but not across the IDs of the group */
+  if (group->numids > 1)
+    qsort (group->spans, group->numsegs, sizeof (TimeRange), spancmp);
+
+  maxendtime = group->spans[0].endtime;
+
+  for (idx = 1; idx < group->numsegs; idx++)
+  {
+    if (group->spans[idx].starttime <= (maxendtime + group->maxtimetol))
+      return 1;
+
+    if (group->spans[idx].endtime > maxendtime)
+      maxendtime = group->spans[idx].endtime;
+  }
+
+  return 0;
+} /* End of groupoverlaps() */
+
+/***************************************************************************
+ * Summarize the record list of a segment as a single time range when the
+ * contributing records form one contiguous run, which is the common case.
+ * findcoverage() can then use the range directly instead of walking the
+ * records again for every segment it is compared against.
+ *
+ * The run is determined with the sample period of the segment itself, so a
+ * caller must only use it when its own period is the same.
+ ***************************************************************************/
+static void
+cachesegruns (SegIndex *entry)
+{
+  MS3TraceSeg *seg = entry->seg;
+  MS3RecordPtr *recptr;
+  TimeRange *newrange;
+  nstime_t nsperiod;
+  nstime_t nstimetol;
+  nstime_t effstarttime;
+  nstime_t effendtime;
+  int runs = 0;
+
+  /* Walk the records when the run cannot be determined */
+  entry->runstate = 0;
+
+  nsperiod = (seg->samprate) ? (nstime_t)(NSTMODULUS / seg->samprate + 0.5) : 0;
+  nstimetol = (timetol == -1.0) ? (nsperiod / 2) : (nstime_t)(NSTMODULUS * timetol);
+
+  for (recptr = seg->recordlist->first; recptr; recptr = recptr->next)
+  {
+    /* Skip records marked as non-contributing */
+    if (recptr->msr->reclen == 0)
+      continue;
+
+    newrange = (TimeRange *)recptr->prvtptr;
+
+    effstarttime = (newrange && newrange->starttime != NSTUNSET) ? newrange->starttime : recptr->msr->starttime;
+    effendtime = (newrange && newrange->endtime != NSTUNSET) ? newrange->endtime : recptr->endtime;
+
+    if (runs == 0)
+    {
+      entry->runstart = effstarttime;
+      runs = 1;
+    }
+    /* A break in the time-series means more than one range is needed */
+    else if (llabs ((entry->runend + nsperiod) - effstarttime) > nstimetol)
+    {
+      return;
+    }
+
+    entry->runend = effendtime;
+  }
+
+  entry->runstate = (runs == 0) ? 2 : 1;
+} /* End of cachesegruns() */
+
+/***************************************************************************
+ * Append a new entry to a coverage list.
+ *
+ * Returns a pointer to the new entry on success and NULL on error.
+ ***************************************************************************/
+static Coverage *
+addcoverage (Coverage **ppcoverage, Coverage *previous, uint8_t pubversion,
+             double samprate, nstime_t starttime, nstime_t endtime)
+{
+  Coverage *coverage;
+
+  if ((coverage = (Coverage *)malloc (sizeof (Coverage))) == NULL)
+  {
+    ms_log (2, "Cannot allocate memory for coverage, bah humbug.\n");
+    return NULL;
+  }
+
+  if (*ppcoverage == NULL)
+    *ppcoverage = coverage;
+  else
+    previous->next = coverage;
+
+  coverage->pubversion = pubversion;
+  coverage->samprate = samprate;
+  coverage->starttime = starttime;
+  coverage->endtime = endtime;
+  coverage->next = NULL;
+
+  return coverage;
+} /* End of addcoverage() */
+
+/***************************************************************************
+ * Compare the start times of two segment spans, for sorting.
+ ***************************************************************************/
+static int
+spancmp (const void *a, const void *b)
+{
+  nstime_t starta = ((const TimeRange *)a)->starttime;
+  nstime_t startb = ((const TimeRange *)b)->starttime;
+
+  if (starta < startb)
+    return -1;
+  else if (starta > startb)
+    return 1;
+
+  return 0;
+} /* End of spancmp() */
 
 /***************************************************************************
  * Search an MS3TraceList for entries that overlap the target MS3TraceSeg
@@ -1235,22 +1723,31 @@ prunetraces (MS3TraceList *mstl)
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
 static int
-findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
+findcoverage (const SidGroup *group, uint32_t targetidx, MS3TraceSeg *targetseg,
               Coverage **ppcoverage)
 {
+  MS3TraceID *targetid = NULL;
   MS3TraceID *id = NULL;
   MS3TraceSeg *seg = NULL;
   MS3RecordPtr *recptr;
   Coverage *coverage = NULL;
   Coverage *prevcoverage = NULL;
   TimeRange *newrange;
+  const IDIndex *idx;
+  const SegIndex *segs;
   nstime_t nsperiod, nstimetol;
   nstime_t effstarttime, effendtime;
+  nstime_t threshold;
+  uint32_t first, last, middle;
+  uint32_t segidx;
+  uint32_t index;
   int priority;
   int newsegment;
 
-  if (!mstl || !targetid || !targetseg || !ppcoverage)
+  if (!group || targetidx >= group->numids || !targetseg || !ppcoverage)
     return -1;
+
+  targetid = group->ids[targetidx].id;
 
   *ppcoverage = NULL;
 
@@ -1260,27 +1757,38 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
   /* Determine time tolerance in high precision time ticks */
   nstimetol = (timetol == -1.0) ? (nsperiod / 2) : (nstime_t)(NSTMODULUS * timetol);
 
-  /* Loop through each MS3TraceID in the list */
-  id = mstl->traces.next[0];
-  while (id)
+  /* Segments ending before this time cannot overlap the target segment */
+  threshold = targetseg->starttime - nstimetol;
+
+  /* Loop through each MS3TraceID sharing the SourceID of the target */
+  for (index = 0; index < group->numids; index++)
   {
-    /* Continue with next if SourceID is different */
-    if (targetid != id)
+    idx = group->ids + index;
+    id = idx->id;
+    segs = group->segpool + idx->segoffset;
+
+    /* Find the first segment that can reach the target, the latest end time
+     * of each segment and those before it is monotonic within an ID. */
+    first = 0;
+    last = idx->numsegs;
+
+    while (first < last)
     {
-      if (strcmp (id->sid, targetid->sid))
-      {
-        id = id->next[0];
-        continue;
-      }
+      middle = first + (last - first) / 2;
+
+      if (segs[middle].maxendtime < threshold)
+        first = middle + 1;
+      else
+        last = middle;
     }
 
-    seg = id->first;
-    while (seg)
+    for (segidx = first; segidx < idx->numsegs; segidx++)
     {
+      seg = segs[segidx].seg;
+
       /* Skip target segment */
       if (seg == targetseg)
       {
-        seg = seg->next;
         continue;
       }
 
@@ -1294,14 +1802,12 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
       /* Skip segments with no time coverage (0 samprate) */
       if (seg->samprate == 0.0)
       {
-        seg = seg->next;
         continue;
       }
 
       /* Continue with next if sample rate are different */
       if (!MS_ISRATETOLERABLE (seg->samprate, targetseg->samprate))
       {
-        seg = seg->next;
         continue;
       }
 
@@ -1313,7 +1819,6 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
         if (seg->starttime >= coverage->starttime &&
             seg->endtime <= coverage->endtime)
         {
-          seg = seg->next;
           continue;
         }
       }
@@ -1350,6 +1855,23 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
         /* If overlapping trace is a higher priority than targetseg add to coverage */
         if (priority == -1)
         {
+          /* Use the summarized record list when it forms a single contiguous
+           * run and the sample period matches the one used to summarize it */
+          if (segs[segidx].runstate != 0 && seg->samprate == targetseg->samprate)
+          {
+            if (segs[segidx].runstate == 1)
+            {
+              prevcoverage = coverage;
+
+              if ((coverage = addcoverage (ppcoverage, prevcoverage, id->pubversion,
+                                           seg->samprate, segs[segidx].runstart,
+                                           segs[segidx].runend)) == NULL)
+                return -1;
+            }
+
+            continue;
+          }
+
           /* Loop through list of records, and determine contiguous coverage */
           recptr = seg->recordlist->first;
           newsegment = 1;
@@ -1379,21 +1901,9 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
 
               prevcoverage = coverage;
 
-              if ((coverage = (Coverage *)malloc (sizeof (Coverage))) == NULL)
-              {
-                ms_log (2, "Cannot allocate memory for coverage, bah humbug.\n");
+              if ((coverage = addcoverage (ppcoverage, prevcoverage, id->pubversion,
+                                           seg->samprate, effstarttime, effendtime)) == NULL)
                 return -1;
-              }
-
-              if (*ppcoverage == NULL)
-                *ppcoverage = coverage;
-              else
-                prevcoverage->next = coverage;
-
-              coverage->pubversion = id->pubversion;
-              coverage->samprate = seg->samprate;
-              coverage->starttime = effstarttime;
-              coverage->next = NULL;
             }
 
             if (coverage)
@@ -1405,11 +1915,7 @@ findcoverage (MS3TraceList *mstl, MS3TraceID *targetid, MS3TraceSeg *targetseg,
           }
         }
       }
-
-      seg = seg->next;
     }
-
-    id = id->next[0];
   }
 
   return 0;

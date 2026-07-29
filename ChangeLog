@@ -1,4 +1,18 @@
 2026.209:
+	- Optimization:
+	  * Calculate the samples to trim from a record directly instead of counting
+	    sample periods one at a time.
+	  * Prune one SourceID group at a time, instead of searching the whole trace
+	    list for each segment.
+	  * Skip pruning a SourceID entirely when none of its segments overlap.
+	  * Search for the first segment that can overlap, instead of scanning from
+	    the start of the list for each segment.
+	  * Summarize each record list once when building overlap coverage, instead
+	    of walking the records again for every segment.
+	  * Index the input files for lookup, instead of searching the file list for
+	    every record written.
+	  * Match selection entries once per SourceID, instead of for every record.
+	  * Buffer output file writes and report errors detected when closing.
 	- Avoid storing unnecessary extra headers in record list to reduce memory usage.
 	- Detect write errors and partial writes when saving records to archive files.
 	- Retry opening archive files on later records instead of reusing a failed descriptor.
@@ -6,17 +20,18 @@
 	- Do not drop records that cannot be trimmed, write them untrimmed with a warning.
 	- Set the v2 data quality indicator in the output record, fixes -Q for re-packed records.
 	- Retain the most restrictive record bounds when pruning, instead of overwriting
-	selection limits.
+	  selection limits.
 	- Fix %y archive layout code rendering century years as three digits.
 	- Document the %N archive layout code, replacing the unimplemented %F.
 	- Fix off-by-one bounds in archive path construction.
 	- Consistently return 1 for errors as documented.
 	- Never close the standard output or error streams, fixes a lost -out summary
-	when data is written to stdout.
+	  when data is written to stdout.
 	- Avoid a crash if allocation of the written byte counter fails.
 	- Close archive files when done, reporting errors on the final writes.
 	- Free the partial string list when path format parsing cannot allocate.
 	- Add test suite for usage coverage tests (Python), run with "make test".
+	- Add bad data generator and A/B comparison scripts for benchmarking.
 	- Update libmseed to v3.5.2.
 
 2026.177: v4.2.2
