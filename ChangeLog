@@ -13,6 +13,7 @@
 	    every record written.
 	  * Match selection entries once per SourceID, instead of for every record.
 	  * Buffer output file writes and report errors detected when closing.
+	- Add -r option to reject records matching a globbing pattern, may be used multiple times.
 	- Avoid storing unnecessary extra headers in record list to reduce memory usage.
 	- Detect write errors and partial writes when saving records to archive files.
 	- Retry opening archive files on later records instead of reusing a failed descriptor.

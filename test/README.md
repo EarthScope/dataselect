@@ -28,7 +28,7 @@ place when one does not.
 ### What is covered
 
 Program invocation (`-V`, `-h`, `-H`), input forms (plain files, byte ranges, list
-files, miniSEED 2 and 3), selection (`-ts`, `-te`, `-s`, `-m`), pruning (`-Pr`,
+files, miniSEED 2 and 3), selection (`-ts`, `-te`, `-s`, `-m`, `-r`), pruning (`-Pr`,
 `-Ps`, `-Pe`, `-E`, `-F`, `-tt`, `-rt`), output (`-o`, `+o`, `-Q`), archive writing
 (`-A`, every layout code, all eight presets), summary logging (`-out`,
 `-outprefix`), and exit status.

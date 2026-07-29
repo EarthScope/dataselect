@@ -118,7 +118,7 @@ def records3(path):
 def craft3(src, dst, **fields):
     """Copy a miniSEED 3 file patching header fields, recomputing each CRC.
 
-    Supported fields: year, encoding.
+    Supported fields: year, encoding, sid (must be the same length as the original).
     """
     recs = records3(src)
     with open(src, "rb") as handle:
@@ -132,6 +132,14 @@ def craft3(src, dst, **fields):
             struct.pack_into("<H", record, MS3_YEAR, fields["year"])
         if "encoding" in fields:
             record[MS3_ENCODING] = fields["encoding"]
+        if "sid" in fields:
+            sidlen = len(rec["sid"])
+            newsid = fields["sid"]
+            if len(newsid) != sidlen:
+                raise ValueError(
+                    "replacement sid must be %d bytes, got %d" % (sidlen, len(newsid))
+                )
+            record[MS3_HEADERLEN : MS3_HEADERLEN + sidlen] = newsid.encode()
 
         struct.pack_into("<I", record, MS3_CRC, 0)
         struct.pack_into("<I", record, MS3_CRC, crc32c(bytes(record)))
@@ -296,6 +304,52 @@ class Selection(DataselectTest):
     def test_match_selects_nothing(self):
         code, _, _ = run("-m", "ZZ_NOSUCH", V3, "-o", os.devnull)
         self.assertEqual(code, 1)
+
+    def test_reject(self):
+        other = craft3(V3, tmp("other_sid.mseed3"), sid="FDSN:YY_ABCD__B_H_Z")
+        combined = tmp("two_sids.mseed3")
+        with open(combined, "wb") as handle:
+            for path in (V3, other):
+                with open(path, "rb") as part:
+                    handle.write(part.read())
+
+        code, stdout, err = run("-v", "-r", "YY_ABCD", combined, "-o", os.devnull)
+        self.assertEqual(code, 0)
+        self.assertEqual(wrote(stdout + err), (1836, 4))
+
+    def test_reject_multiple(self):
+        other = craft3(V3, tmp("other_sid2.mseed3"), sid="FDSN:YY_ABCD__B_H_Z")
+        combined = tmp("two_sids2.mseed3")
+        with open(combined, "wb") as handle:
+            for path in (V3, other):
+                with open(path, "rb") as part:
+                    handle.write(part.read())
+
+        code, stdout, err = run(
+            "-v", "-r", "XX_TEST", "-r", "YY_ABCD", combined, "-o", os.devnull
+        )
+        self.assertEqual(code, 0)
+        self.assertIn(b"No data selected", stdout + err)
+
+    def test_reject_overrides_match(self):
+        code, stdout, err = run(
+            "-v", "-m", "XX_TEST", "-r", "XX_TEST", V3, "-o", os.devnull
+        )
+        self.assertEqual(code, 0)
+        self.assertIn(b"No data selected", stdout + err)
+
+    def test_reject_output_valid(self):
+        other = craft3(V3, tmp("other_sid3.mseed3"), sid="FDSN:YY_ABCD__B_H_Z")
+        combined = tmp("two_sids3.mseed3")
+        with open(combined, "wb") as handle:
+            for path in (V3, other):
+                with open(path, "rb") as part:
+                    handle.write(part.read())
+
+        out = tmp("reject.mseed")
+        code, _, _ = run("-r", "YY_ABCD", combined, "-o", out)
+        self.assertEqual(code, 0)
+        self.assert_valid_ms3(out)
 
 
 class Pruning(DataselectTest):

@@ -1,4 +1,4 @@
-.TH DATASELECT 1 2026/07/28
+.TH DATASELECT 1 2026/07/29
 .SH NAME
 dataselect \- miniSEED data selection, sorting and pruning
 
@@ -124,6 +124,14 @@ The \fB-m\fP, \fB-ts\fP and \fB-te\fP options are combined into a
 single selection.  When they are used together with \fB-s\fP this
 selection is \fIadditional\fP to those in the selection file, records
 matching any selection are processed.
+
+.IP "-r \fIreject\fP"
+Limit input by excluding records that match this globbing pattern, the
+inverse of \fB-m\fP.  The \fIreject\fP is tested against the full FDSN
+Source ID \&'FDSN:NET_STA_LOC_B_S_SS' as a logical "contains".  This
+option may be used multiple times; a Source ID matching any \fB-r\fP
+pattern is rejected.  Rejection is applied after selection, taking
+precedence over \fB-s\fP, \fB-m\fP, \fB-ts\fP and \fB-te\fP.
 
 .IP "-o \fIfile\fP"
 Write all output data to output \fIfile\fP.  If '-' is specified as

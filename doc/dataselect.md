@@ -81,6 +81,9 @@ Each input file may be specified with an explicit byte range to read. The progra
 
   The <b>-m</b>, <b>-ts</b> and <b>-te</b> options are combined into a single selection.  When they are used together with <b>-s</b> this selection is <i>additional</i> to those in the selection file, records matching any selection are processed.
 
+- -r <i>reject</i>
+  Limit input by excluding records that match this globbing pattern, the inverse of <b>-m</b>.  The <i>reject</i> is tested against the full FDSN Source ID \&amp;'FDSN:NET_STA_LOC_B_S_SS' as a logical "contains".  This option may be used multiple times; a Source ID matching any <b>-r</b> pattern is rejected.  Rejection is applied after selection, taking precedence over <b>-s</b>, <b>-m</b>, <b>-ts</b> and <b>-te</b>.
+
 - -o <i>file</i>
   Write all output data to output <i>file</i>.  If '-' is specified as the output file all output data will be written to standard out.  By default the output file will be overwritten, changing the option to <i>+o file</i> appends to the output file.  This option may be combined with <b>-A</b> to write the same output to more than one destination.
 
@@ -277,4 +280,4 @@ EarthScope Data Services
 
 ---
 
-*Generated from man page dated 2026/07/28.*
+*Generated from man page dated 2026/07/29.*

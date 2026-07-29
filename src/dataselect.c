@@ -168,6 +168,7 @@ typedef struct WriterData_s
 } WriterData;
 
 static int setselectionlimits (MS3TraceList *mstl);
+static int rejecttraces (MS3TraceList *mstl);
 
 static size_t filehash (const char *filename);
 static int buildfileindex (void);
@@ -203,6 +204,8 @@ static int setofilelimit (int limit);
 static int addfile (char *filename);
 static int addlistfile (char *filename);
 static int addarchive (const char *path, const char *layout);
+static int addselection (MS3Selections **ppselections, const char *pattern,
+                         nstime_t starttime, nstime_t endtime);
 static void usage (int level);
 
 static int8_t verbose = 0;
@@ -240,6 +243,7 @@ static Filelink **fileindex = NULL;      /* Input files keyed on file name point
 static size_t fileindexsize = 0;         /* Allocated entries in fileindex */
 static Filelink *filecache = NULL;       /* Most recently found input file */
 static MS3Selections *selections = NULL; /* Data selection criteria, SIDs and time ranges */
+static MS3Selections *rejections = NULL; /* Data rejection criteria, SIDs */
 
 static char *writtenfile = NULL;       /* File to write summary of output records */
 static char *writtenprefix = NULL;     /* Prefix for summary of output records */
@@ -345,6 +349,10 @@ main (int argc, char **argv)
   /* Increase open file limit if necessary, in general we need the
    * filecount + ds_maxopenfiles and some wiggle room. */
   setofilelimit (totalfiles + ds_maxopenfiles + 20);
+
+  /* Remove rejected SourceIDs before pruning so they do not contribute */
+  if (rejections && rejecttraces (mstl))
+    return 1;
 
   /* Set time limits based on selections when pruning to specific time limits */
   if ((prunedata == 's' || prunedata == 'e') &&
@@ -576,6 +584,80 @@ setselectionlimits (MS3TraceList *mstl)
 
   return retval;
 } /* End of setselectionlimits() */
+
+/***************************************************************************
+ * Remove trace IDs matching the reject criteria from the trace list.
+ *
+ * A SourceID is tested once against the reject selections; if it matches,
+ * the entire MS3TraceID, including all of its segments and records, is
+ * unlinked from the trace list skip list and freed.
+ *
+ * Return 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+rejecttraces (MS3TraceList *mstl)
+{
+  MS3TraceID *prev[MSTRACEID_SKIPLIST_HEIGHT];
+  MS3TraceID *id = NULL;
+  MS3TraceID *nextid = NULL;
+  MS3TraceID *rejected = NULL;
+  MS3TraceID *rejectedtail = NULL;
+  MS3TraceList *rejectedlist = NULL;
+  int level;
+
+  if (!mstl)
+    return -1;
+
+  for (level = 0; level < MSTRACEID_SKIPLIST_HEIGHT; level++)
+    prev[level] = &mstl->traces;
+
+  id = mstl->traces.next[0];
+  while (id)
+  {
+    nextid = id->next[0];
+
+    if (ms3_matchselect (rejections, id->sid, NSTUNSET, NSTUNSET, 0, NULL))
+    {
+      if (verbose)
+        ms_log (1, "Rejected: %s\n", id->sid);
+
+      /* Unlink at every skip list level this ID participates in */
+      for (level = 0; level < id->height; level++)
+        prev[level]->next[level] = id->next[level];
+
+      mstl->numtraceids--;
+
+      /* Chain onto a throwaway list, freed below via mstl3_free() */
+      id->next[0] = NULL;
+      if (rejectedtail)
+        rejectedtail->next[0] = id;
+      else
+        rejected = id;
+      rejectedtail = id;
+    }
+    else
+    {
+      for (level = 0; level < id->height; level++)
+        prev[level] = id;
+    }
+
+    id = nextid;
+  }
+
+  if (rejected)
+  {
+    if ((rejectedlist = mstl3_init (NULL)) == NULL)
+    {
+      ms_log (2, "%s(): Cannot allocate memory\n", __func__);
+      return -1;
+    }
+
+    rejectedlist->traces.next[0] = rejected;
+    mstl3_free (&rejectedlist, 1);
+  }
+
+  return 0;
+} /* End of rejecttraces() */
 
 /***************************************************************************
  * Return a hash of an input file name pointer.
@@ -2600,6 +2682,12 @@ processparam (int argcount, char **argvec)
     {
       strncpy (matchpattern, getoptval (argcount, argvec, optind++), sizeof (matchpattern) - 1);
     }
+    else if (strcmp (argvec[optind], "-r") == 0)
+    {
+      if (addselection (&rejections, getoptval (argcount, argvec, optind++),
+                        NSTUNSET, NSTUNSET))
+        return -1;
+    }
     else if (strcmp (argvec[optind], "-o") == 0)
     {
       outputfile = getoptval (argcount, argvec, optind++);
@@ -2765,27 +2853,8 @@ processparam (int argcount, char **argvec)
   /* Combine SourceID match pattern, time start and end into a selection entry */
   if (matchpattern[0] || timestart != NSTUNSET || timeend != NSTUNSET)
   {
-    size_t mplength = strlen (matchpattern);
-
-    /* Add wildcards to match pattern for logical "contains" */
-    if (matchpattern[0] && mplength < (sizeof (matchpattern) - 3))
-    {
-      memmove (matchpattern + 1, matchpattern, mplength);
-      matchpattern[0] = '*';
-      matchpattern[mplength + 1] = '*';
-      matchpattern[mplength + 2] = '\0';
-    }
-    else if (matchpattern[0] == 0)
-    {
-      matchpattern[0] = '*';
-      matchpattern[1] = '\0';
-    }
-
-    if (ms3_addselect (&selections, matchpattern, timestart, timeend, 0))
-    {
-      ms_log (2, "Unable to add selection: '%s'\n", tptr);
+    if (addselection (&selections, matchpattern, timestart, timeend))
       return -1;
-    }
   }
 
   /* Report the program version */
@@ -3056,6 +3125,47 @@ addarchive (const char *path, const char *layout)
 } /* End of addarchive() */
 
 /***************************************************************************
+ * Add a SourceID pattern, wrapped for logical "contains" matching, along
+ * with an optional time range, as a new entry in a selection list.
+ *
+ * Returns 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+addselection (MS3Selections **ppselections, const char *pattern,
+              nstime_t starttime, nstime_t endtime)
+{
+  char sidpattern[100] = {0};
+  size_t patlength = (pattern) ? strlen (pattern) : 0;
+
+  /* Add wildcards to pattern for logical "contains" */
+  if (patlength && patlength < (sizeof (sidpattern) - 3))
+  {
+    sidpattern[0] = '*';
+    memcpy (sidpattern + 1, pattern, patlength);
+    sidpattern[patlength + 1] = '*';
+    sidpattern[patlength + 2] = '\0';
+  }
+  else if (patlength == 0)
+  {
+    sidpattern[0] = '*';
+    sidpattern[1] = '\0';
+  }
+  else
+  {
+    ms_log (2, "Pattern too long: '%s'\n", pattern);
+    return -1;
+  }
+
+  if (ms3_addselect (ppselections, sidpattern, starttime, endtime, 0))
+  {
+    ms_log (2, "Unable to add selection: '%s'\n", pattern);
+    return -1;
+  }
+
+  return 0;
+} /* End of addselection() */
+
+/***************************************************************************
  * Print the usage message.
  ***************************************************************************/
 static void
@@ -3081,7 +3191,9 @@ usage (int level)
            " -te time     Limit to records that contain or end before time\n"
            "                time format: 'YYYY-MM-DD[THH:MM:SS.FFFFFFFFF]'\n"
            " -m match     Limit to records containing the specified pattern\n"
+           " -r reject    Limit to records not containing the specified pattern\n"
            "                Patterns are applied to: 'FDSN:NET_STA_LOC_BAND_SOURCE_SS'\n"
+           "                The -r option may be specified multiple times\n"
            "\n"
            " ## Output options ##\n"
            " -o file      Specify a single output file, use +o file to append\n"
