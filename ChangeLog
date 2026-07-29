@@ -1,4 +1,4 @@
-2026.209:
+2026.209: v4.3.0
 	- Optimization:
 	  * Calculate the samples to trim from a record directly instead of counting
 	    sample periods one at a time.
