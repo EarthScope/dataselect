@@ -27,12 +27,23 @@
 #include "internalstate.h"
 #include "libmseed.h"
 
+static MS3TraceID *lm_addID (MS3TraceList *mstl, MS3TraceID *id, MS3TraceID **prev);
 static MS3TraceSeg *lm_msr2seg (const MS3Record *msr, nstime_t endtime);
 static MS3TraceSeg *lm_addmsrtoseg (MS3TraceSeg *seg, const MS3Record *msr, nstime_t endtime,
                                     int8_t whence);
 static MS3TraceSeg *lm_addsegtoseg (MS3TraceSeg *seg1, MS3TraceSeg *seg2);
 static MS3RecordPtr *lm_add_recordptr (MS3TraceSeg *seg, const MS3Record *msr, nstime_t endtime,
                                        int8_t whence, uint32_t flags);
+
+static void lm_recentseg_touch (LMTraceIDNode *idnode, MS3TraceSeg *seg);
+static void lm_recentseg_remove (LMTraceIDNode *idnode, MS3TraceSeg *seg);
+static void lm_endbound_fold (LMTraceIDNode *idnode, nstime_t endtime);
+static int lm_seg_listorder (const MS3TraceSeg *a, const MS3TraceSeg *b, int *order);
+static int lm_scan_recent (LMTraceIDNode *idnode, const MS3Record *msr, nstime_t endtime,
+                           nstime_t nsperiod, nstime_t nstimetol, nstime_t nnstimetol,
+                           double sampratehz, double sampratetol, int8_t autoheal,
+                           MS3TraceSeg **psegbefore, MS3TraceSeg **psegafter,
+                           MS3TraceSeg **pfollowseg);
 
 static void lm_free_segment_memory (MS3TraceSeg *seg, int8_t freeprvtptr);
 static int lm_remove_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg,
@@ -45,7 +56,7 @@ static nstime_t lm_packed_starttime (const MS3TraceSeg *seg, int64_t packedsampl
 /* Test if two sample rates are similar using either specified tolerance (if non-negative) or
  * default tolerance */
 #define IS_SAMPRATE_SIMILAR(SR1, SR2, SRT) \
-  ((SRT >= 0.0) ? fabs (SR1 - SR2) <= SRT : MS_ISRATETOLERABLE (SR1, SR2))
+  ((SR1) == (SR2) || ((SRT >= 0.0) ? fabs (SR1 - SR2) <= SRT : MS_ISRATETOLERABLE (SR1, SR2)))
 
 /* Test if a MS3TraceSeg represents time coverage */
 #define SEGMENT_HAS_TIME_COVERAGE(seg) ((seg)->samplecnt > 0 && (seg)->samprate != 0.0)
@@ -73,7 +84,7 @@ mstl3_init (MS3TraceList *mstl)
     mstl3_free (&mstl, 1);
   }
 
-  mstl = (MS3TraceList *)libmseed_memory.malloc (sizeof (MS3TraceList));
+  mstl = (MS3TraceList *)libmseed_memory.malloc (sizeof (LMTraceListNode));
 
   if (mstl == NULL)
   {
@@ -81,7 +92,7 @@ mstl3_init (MS3TraceList *mstl)
     return NULL;
   }
 
-  memset (mstl, 0, sizeof (MS3TraceList));
+  memset (mstl, 0, sizeof (LMTraceListNode));
 
   /* Seed PRNG with 1, we only need random distribution */
   mstl->prngstate = 1;
@@ -236,6 +247,19 @@ mstl3_findID (MS3TraceList *mstl, const char *sid, uint8_t pubversion, MS3TraceI
 MS3TraceID *
 mstl3_addID (MS3TraceList *mstl, MS3TraceID *id, MS3TraceID **prev)
 {
+  /* An ID added through this public entry point may not carry the private
+   * tail this library allocates internally, so disable the state that
+   * relies on it for the containing list. */
+  if (mstl)
+    ((LMTraceListNode *)mstl)->foreignid = 1;
+
+  return lm_addID (mstl, id, prev);
+} /* End of mstl3_addID() */
+
+/* Add a MS3TraceID to a MS3TraceList, see mstl3_addID() for the public entry point. */
+static MS3TraceID *
+lm_addID (MS3TraceList *mstl, MS3TraceID *id, MS3TraceID **prev)
+{
   MS3TraceID *local_prev[MSTRACEID_SKIPLIST_HEIGHT] = {NULL};
   int level;
 
@@ -281,7 +305,279 @@ mstl3_addID (MS3TraceList *mstl, MS3TraceID *id, MS3TraceID **prev)
   mstl->numtraceids++;
 
   return id;
-} /* End of mstl3_addID() */
+} /* End of lm_addID() */
+
+/***************************************************************************
+ * Move a segment into the most-recently-used slot of a trace ID's recent
+ * set, evicting the least-recently-used entry if the segment was not
+ * already tracked.  An evicted segment's current end time is folded into
+ * the non-recent end-time bound before it is dropped.
+ ***************************************************************************/
+static void
+lm_recentseg_touch (LMTraceIDNode *idnode, MS3TraceSeg *seg)
+{
+  MS3TraceSeg *evicted;
+  int found = -1;
+  int i;
+
+  if (!seg)
+    return;
+
+  for (i = 0; i < LM_RECENTSEGS; i++)
+  {
+    if (idnode->recentseg[i] == seg)
+    {
+      found = i;
+      break;
+    }
+  }
+
+  /* Only the least-recently-used slot is evicted, and only when the
+   * segment being touched was not already present */
+  evicted = (found < 0) ? idnode->recentseg[LM_RECENTSEGS - 1] : NULL;
+
+  /* Shift entries from the found (or last) slot down to make room at the front */
+  for (i = (found < 0) ? LM_RECENTSEGS - 1 : found; i > 0; i--)
+  {
+    idnode->recentseg[i] = idnode->recentseg[i - 1];
+  }
+
+  idnode->recentseg[0] = seg;
+
+  if (evicted)
+    lm_endbound_fold (idnode, evicted->endtime);
+} /* End of lm_recentseg_touch() */
+
+/***************************************************************************
+ * Remove a segment from a trace ID's recent set, if present, compacting the
+ * array.  The end-time bound is not lowered; it may now overestimate for
+ * this segment, which only costs search performance.
+ ***************************************************************************/
+static void
+lm_recentseg_remove (LMTraceIDNode *idnode, MS3TraceSeg *seg)
+{
+  int i, j;
+
+  for (i = 0; i < LM_RECENTSEGS; i++)
+  {
+    if (idnode->recentseg[i] == seg)
+    {
+      for (j = i; j < LM_RECENTSEGS - 1; j++)
+        idnode->recentseg[j] = idnode->recentseg[j + 1];
+
+      idnode->recentseg[LM_RECENTSEGS - 1] = NULL;
+      break;
+    }
+  }
+} /* End of lm_recentseg_remove() */
+
+/***************************************************************************
+ * Raise a trace ID's non-recent end-time bound to cover a known end time.
+ * The bound only ever grows.
+ ***************************************************************************/
+static void
+lm_endbound_fold (LMTraceIDNode *idnode, nstime_t endtime)
+{
+  if (endtime > idnode->nonrecentendbound)
+    idnode->nonrecentendbound = endtime;
+} /* End of lm_endbound_fold() */
+
+/***************************************************************************
+ * Determine the list order of two segments: starttime ascending, endtime
+ * descending.  Segments with fully equal keys are adjacent in the list;
+ * such ties are resolved by walking a bounded number of hops from 'a' in
+ * each direction looking for 'b'.
+ *
+ * On success returns 1 and sets *order to -1 (a before b), 0 (a is b), or
+ * 1 (a after b).  Returns 0 if the order could not be resolved within the
+ * walk bound.
+ ***************************************************************************/
+static int
+lm_seg_listorder (const MS3TraceSeg *a, const MS3TraceSeg *b, int *order)
+{
+  const MS3TraceSeg *walk;
+  int hops;
+
+  if (a == b)
+  {
+    *order = 0;
+    return 1;
+  }
+
+  if (a->starttime != b->starttime)
+  {
+    *order = (a->starttime < b->starttime) ? -1 : 1;
+    return 1;
+  }
+
+  if (a->endtime != b->endtime)
+  {
+    *order = (a->endtime > b->endtime) ? -1 : 1;
+    return 1;
+  }
+
+  for (walk = a->next, hops = 0; walk && hops < LM_RECENTSEGS_MAXWALK; walk = walk->next, hops++)
+  {
+    if (walk == b)
+    {
+      *order = -1;
+      return 1;
+    }
+  }
+
+  for (walk = a->prev, hops = 0; walk && hops < LM_RECENTSEGS_MAXWALK; walk = walk->prev, hops++)
+  {
+    if (walk == b)
+    {
+      *order = 1;
+      return 1;
+    }
+  }
+
+  return 0;
+} /* End of lm_seg_listorder() */
+
+/***************************************************************************
+ * Reproduce the segment-list search of _mstl3_addmsr_impl() using only
+ * the recent segments of a trace ID.  Callable only when every segment not
+ * in the recent set is provably out of range for segbefore, segafter, and
+ * the autoheal exact match, and necessarily sorts before the record (see
+ * the guard at the call site); under that condition the outcome of the
+ * recent segments alone matches a full scan.
+ *
+ * This loop body mirrors the general search in _mstl3_addmsr_impl() and
+ * must be kept in lockstep with it.
+ *
+ * Returns 1 with *psegbefore, *psegafter and *pfollowseg set (any may be
+ * NULL) when the shortcut applies. Returns 0, with the outputs untouched,
+ * when the search cannot be resolved from the recent set and the caller
+ * must fall back to a full scan.
+ ***************************************************************************/
+static int
+lm_scan_recent (LMTraceIDNode *idnode, const MS3Record *msr, nstime_t endtime, nstime_t nsperiod,
+                nstime_t nstimetol, nstime_t nnstimetol, double sampratehz, double sampratetol,
+                int8_t autoheal, MS3TraceSeg **psegbefore, MS3TraceSeg **psegafter,
+                MS3TraceSeg **pfollowseg)
+{
+  MS3TraceSeg *recent[LM_RECENTSEGS];
+  MS3TraceSeg *searchseg;
+  MS3TraceSeg *segbefore = NULL;
+  MS3TraceSeg *segafter = NULL;
+  MS3TraceSeg *followseg = NULL;
+  nstime_t postgap;
+  nstime_t pregap;
+  int order;
+  int count = 0;
+  int i, j;
+
+  /* Collect the tracked recent segments */
+  for (i = 0; i < LM_RECENTSEGS; i++)
+  {
+    if (idnode->recentseg[i])
+      recent[count++] = idnode->recentseg[i];
+  }
+
+  /* Sort the collected segments into list order; a small insertion sort
+   * is sufficient for this fixed, small-size array */
+  for (i = 1; i < count; i++)
+  {
+    for (j = i; j > 0; j--)
+    {
+      if (!lm_seg_listorder (recent[j - 1], recent[j], &order))
+        return 0;
+
+      if (order <= 0)
+        break;
+
+      searchseg = recent[j - 1];
+      recent[j - 1] = recent[j];
+      recent[j] = searchseg;
+    }
+  }
+
+  /* Identical loop body to the general search in _mstl3_addmsr_impl(),
+   * run over the recent segments only, in list order */
+  for (i = 0; i < count; i++)
+  {
+    searchseg = recent[i];
+
+    /* Done searching when segment starts beyond the record end plus tolerance */
+    if (searchseg->starttime > endtime + nsperiod + nstimetol)
+      break;
+
+    /* Skip segments with no time coverage, these cannot be extended */
+    if (!SEGMENT_HAS_TIME_COVERAGE (searchseg))
+      continue;
+
+    /* Done searching if autohealing and record exactly matches a segment */
+    if (autoheal && msr->starttime == searchseg->starttime && endtime == searchseg->endtime)
+    {
+      followseg = searchseg;
+      break;
+    }
+
+    if (msr->starttime > searchseg->starttime)
+      followseg = searchseg;
+
+    if (!segbefore)
+    {
+      postgap = msr->starttime - searchseg->endtime - nsperiod;
+
+      if (postgap <= nstimetol && postgap >= nnstimetol &&
+          IS_SAMPRATE_SIMILAR (sampratehz, searchseg->samprate, sampratetol))
+        segbefore = searchseg;
+    }
+
+    if (!segafter)
+    {
+      pregap = searchseg->starttime - endtime - nsperiod;
+
+      if (pregap <= nstimetol && pregap >= nnstimetol &&
+          IS_SAMPRATE_SIMILAR (sampratehz, searchseg->samprate, sampratetol))
+        segafter = searchseg;
+    }
+
+    /* Done searching if both before and after segments are found */
+    if (segbefore && segafter)
+      break;
+    /* Done searching if not autohealing and one match found */
+    else if (!autoheal && (segbefore || segafter))
+      break;
+  }
+
+  /* If nothing matched, followseg must be the globally latest-starting
+   * coverage segment before the record, which may be outside the recent
+   * set: walk backward from the list end, skipping segments that start
+   * at/after the record (necessarily recent, already considered above) or
+   * that lack coverage. */
+  if (!segbefore && !segafter && !followseg)
+  {
+    int hops;
+
+    searchseg = idnode->id.last;
+
+    for (hops = 0; searchseg && hops < LM_RECENTSEGS_MAXWALK; hops++)
+    {
+      if (SEGMENT_HAS_TIME_COVERAGE (searchseg) && searchseg->starttime < msr->starttime)
+      {
+        followseg = searchseg;
+        break;
+      }
+
+      searchseg = searchseg->prev;
+    }
+
+    /* Walk bound exceeded without resolving followseg, refuse the shortcut */
+    if (!followseg && searchseg)
+      return 0;
+  }
+
+  *psegbefore = segbefore;
+  *psegafter = segafter;
+  *pfollowseg = followseg;
+
+  return 1;
+} /* End of lm_scan_recent() */
 
 /***************************************************************************
  * Implementation of MS3TraceList addition functions
@@ -338,12 +634,12 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
   /* If no matching ID was found create new MS3TraceID and MS3TraceSeg entries */
   if (!id)
   {
-    if (!(id = (MS3TraceID *)libmseed_memory.malloc (sizeof (MS3TraceID))))
+    if (!(id = (MS3TraceID *)libmseed_memory.malloc (sizeof (LMTraceIDNode))))
     {
       ms_log (2, "Error allocating memory\n");
       return NULL;
     }
-    memset (id, 0, sizeof (MS3TraceID));
+    memset (id, 0, sizeof (LMTraceIDNode));
 
     /* Populate MS3TraceID */
     memcpy (id->sid, msr->sid, sizeof (id->sid));
@@ -351,6 +647,9 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
     id->earliest = msr->starttime;
     id->latest = endtime;
     id->numsegments = 1;
+
+    /* End-time bound starts below any possible end time, recent set starts empty */
+    ((LMTraceIDNode *)id)->nonrecentendbound = INT64_MIN;
 
     if (!(seg = lm_msr2seg (msr, endtime)))
     {
@@ -368,7 +667,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
     }
 
     /* Add new MS3TraceID to MS3TraceList */
-    if (mstl3_addID (mstl, id, previd) == NULL)
+    if (lm_addID (mstl, id, previd) == NULL)
     {
       ms_log (2, "Error adding new ID to trace list\n");
       lm_free_segment_memory (seg, 0);
@@ -448,7 +747,12 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
 
       /* Add MS3RecordPtr if requested */
       if (pprecptr && !(*pprecptr = lm_add_recordptr (seg, msr, endtime, 1, flags)))
+      {
+        /* seg's end time was already extended above; keep the end-time bound valid */
+        if (!((LMTraceListNode *)mstl)->foreignid)
+          lm_endbound_fold ((LMTraceIDNode *)id, seg->endtime);
         return NULL;
+      }
     }
     /* Record coverage is after all other coverage */
     else if ((msr->starttime - nsperiod - nstimetol) > id->latest)
@@ -467,7 +771,12 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
 
       /* Add MS3RecordPtr if requested */
       if (pprecptr && !(*pprecptr = lm_add_recordptr (seg, msr, endtime, 0, flags)))
+      {
+        /* seg is already linked into the list; keep the end-time bound valid */
+        if (!((LMTraceListNode *)mstl)->foreignid)
+          lm_endbound_fold ((LMTraceIDNode *)id, seg->endtime);
         return NULL;
+      }
     }
     /* Record coverage is before all other coverage */
     else if ((endtime + nsperiod + nstimetol) < id->earliest)
@@ -486,7 +795,12 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
 
       /* Add MS3RecordPtr if requested */
       if (pprecptr && !(*pprecptr = lm_add_recordptr (seg, msr, endtime, 0, flags)))
+      {
+        /* seg is already linked into the list; keep the end-time bound valid */
+        if (!((LMTraceListNode *)mstl)->foreignid)
+          lm_endbound_fold ((LMTraceIDNode *)id, seg->endtime);
         return NULL;
+      }
     }
     /* Record coverage fits at beginning of first segment */
     else if (firstgap <= nstimetol && firstgap >= nnstimetol &&
@@ -512,57 +826,110 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
       segbefore = NULL; /* The first segment end that matches the record start (within tolerance) */
       segafter = NULL;  /* The first segment start that matches the record end (within tolerance) */
       followseg = NULL; /* The segment with latest start time before the record start */
-      searchseg = id->first;
-      while (searchseg)
+
+      /* A zero rate record cannot match segbefore/segafter without an explicit
+       * tolerance, so only followseg is needed: search backward from the last segment. */
+      if (sampratehz == 0.0 && sampratetol < 0.0)
       {
-        /* Skip segments with no time coverage, these cannot be extended */
-        if (!SEGMENT_HAS_TIME_COVERAGE (searchseg))
+        searchseg = id->last;
+        while (searchseg)
         {
+          /* Skip segments with no time coverage, these cannot be extended */
+          if (!SEGMENT_HAS_TIME_COVERAGE (searchseg))
+          {
+            searchseg = searchseg->prev;
+            continue;
+          }
+
+          /* Done searching if autohealing and record exactly matches a segment.
+           *
+           * Rationale: autohealing would have combined this segment
+           * with another if that were possible, so this record will
+           * also not fit with any other segment. */
+          if (autoheal && msr->starttime == searchseg->starttime && endtime == searchseg->endtime)
+          {
+            followseg = searchseg;
+            break;
+          }
+
+          /* Done searching at the first (i.e. latest) segment starting before the record */
+          if (searchseg->starttime < msr->starttime)
+          {
+            followseg = searchseg;
+            break;
+          }
+
+          searchseg = searchseg->prev;
+        }
+      }
+      /* If every segment outside the recent set is provably too old to match,
+       * the recent set alone determines the result of the search below. */
+      else if (!((LMTraceListNode *)mstl)->foreignid &&
+               (msr->starttime - nsperiod - nstimetol) > ((LMTraceIDNode *)id)->nonrecentendbound &&
+               lm_scan_recent ((LMTraceIDNode *)id, msr, endtime, nsperiod, nstimetol, nnstimetol,
+                               sampratehz, sampratetol, autoheal, &segbefore, &segafter,
+                               &followseg))
+      {
+        /* segbefore, segafter and followseg set by lm_scan_recent() */
+      }
+      else
+      {
+        searchseg = id->first;
+        while (searchseg)
+        {
+          /* Done searching when segment starts beyond the record end plus tolerance */
+          if (searchseg->starttime > endtime + nsperiod + nstimetol)
+            break;
+
+          /* Skip segments with no time coverage, these cannot be extended */
+          if (!SEGMENT_HAS_TIME_COVERAGE (searchseg))
+          {
+            searchseg = searchseg->next;
+            continue;
+          }
+
+          /* Done searching if autohealing and record exactly matches a segment.
+           *
+           * Rationale: autohealing would have combined this segment
+           * with another if that were possible, so this record will
+           * also not fit with any other segment. */
+          if (autoheal && msr->starttime == searchseg->starttime && endtime == searchseg->endtime)
+          {
+            followseg = searchseg;
+            break;
+          }
+
+          if (msr->starttime > searchseg->starttime)
+            followseg = searchseg;
+
+          if (!segbefore)
+          {
+            postgap = msr->starttime - searchseg->endtime - nsperiod;
+
+            if (postgap <= nstimetol && postgap >= nnstimetol &&
+                IS_SAMPRATE_SIMILAR (sampratehz, searchseg->samprate, sampratetol))
+              segbefore = searchseg;
+          }
+
+          if (!segafter)
+          {
+            pregap = searchseg->starttime - endtime - nsperiod;
+
+            if (pregap <= nstimetol && pregap >= nnstimetol &&
+                IS_SAMPRATE_SIMILAR (sampratehz, searchseg->samprate, sampratetol))
+              segafter = searchseg;
+          }
+
+          /* Done searching if both before and after segments are found */
+          if (segbefore && segafter)
+            break;
+          /* Done searching if not autohealing and one match found */
+          else if (!autoheal && (segbefore || segafter))
+            break;
+
           searchseg = searchseg->next;
-          continue;
-        }
-
-        /* Done searching if autohealing and record exactly matches a segment.
-         *
-         * Rationale: autohealing would have combined this segment
-         * with another if that were possible, so this record will
-         * also not fit with any other segment. */
-        if (autoheal && msr->starttime == searchseg->starttime && endtime == searchseg->endtime)
-        {
-          followseg = searchseg;
-          break;
-        }
-
-        if (msr->starttime > searchseg->starttime)
-          followseg = searchseg;
-
-        if (!segbefore)
-        {
-          postgap = msr->starttime - searchseg->endtime - nsperiod;
-
-          if (postgap <= nstimetol && postgap >= nnstimetol &&
-              IS_SAMPRATE_SIMILAR (sampratehz, searchseg->samprate, sampratetol))
-            segbefore = searchseg;
-        }
-
-        if (!segafter)
-        {
-          pregap = searchseg->starttime - endtime - nsperiod;
-
-          if (pregap <= nstimetol && pregap >= nnstimetol &&
-              IS_SAMPRATE_SIMILAR (sampratehz, searchseg->samprate, sampratetol))
-            segafter = searchseg;
-        }
-
-        /* Done searching if both before and after segments are found */
-        if (segbefore && segafter)
-          break;
-        /* Done searching if not autohealing and one match found */
-        else if (!autoheal && (segbefore || segafter))
-          break;
-
-        searchseg = searchseg->next;
-      } /* Done looping through segments */
+        } /* Done looping through segments */
+      }
 
       /* Add MS3Record coverage to end of segment before */
       if (segbefore)
@@ -575,6 +942,9 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
         /* Add MS3RecordPtr if requested */
         if (pprecptr && !(*pprecptr = lm_add_recordptr (segbefore, msr, endtime, 1, flags)))
         {
+          /* segbefore's end time was already extended above; keep the end-time bound valid */
+          if (!((LMTraceListNode *)mstl)->foreignid)
+            lm_endbound_fold ((LMTraceIDNode *)id, segbefore->endtime);
           return NULL;
         }
 
@@ -584,6 +954,8 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
           /* Add segafter coverage to segbefore */
           if (!lm_addsegtoseg (segbefore, segafter))
           {
+            if (!((LMTraceListNode *)mstl)->foreignid)
+              lm_endbound_fold ((LMTraceIDNode *)id, segbefore->endtime);
             return NULL;
           }
 
@@ -596,6 +968,10 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
             segafter->prev->next = segafter->next;
           if (segafter->next)
             segafter->next->prev = segafter->prev;
+
+          /* Drop segafter from the recent set before it is freed */
+          if (!((LMTraceListNode *)mstl)->foreignid)
+            lm_recentseg_remove ((LMTraceIDNode *)id, segafter);
 
           /* Free all memory associated with the segment after that has been merged */
           lm_free_segment_memory (segafter, 1);
@@ -726,6 +1102,13 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
 
     if (id->last == seg)
       id->last = segbefore;
+  }
+
+  /* Track the most-recently-active segments to bound future searches */
+  if (seg && !((LMTraceListNode *)mstl)->foreignid)
+  {
+    lm_recentseg_touch ((LMTraceIDNode *)id, seg);
+    lm_recentseg_touch ((LMTraceIDNode *)id, id->last);
   }
 
   /* Store update time at seg.prvtptr, allocate if needed */
@@ -3438,6 +3821,10 @@ lm_remove_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg, int8_t 
 
   /* Decrement segment count */
   id->numsegments -= 1;
+
+  /* Drop the segment from the recent set before it is freed */
+  if (!((LMTraceListNode *)mstl)->foreignid)
+    lm_recentseg_remove ((LMTraceIDNode *)id, seg);
 
   /* Free all memory associated with the segment */
   lm_free_segment_memory (seg, freeprvtptr);

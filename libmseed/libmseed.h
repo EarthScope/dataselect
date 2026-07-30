@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.5.2"    //!< Library version
-#define LIBMSEED_RELEASE "2026.208" //!< Library release date
+#define LIBMSEED_VERSION "3.5.3"    //!< Library version
+#define LIBMSEED_RELEASE "2026.211" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -146,8 +146,8 @@ typedef unsigned __int64 uint64_t;
 #define LM_SIDLEN 64 //!< Length of source ID string
 
 /** @def MS_ISRATETOLERABLE
-    @brief Macro to test default sample rate tolerance: abs(1-sr1/sr2) < 0.0001 */
-#define MS_ISRATETOLERABLE(A, B) (fabs (1.0 - ((A) / (B))) < 0.0001)
+    @brief Macro to test default sample rate tolerance: abs(sr2-sr1) < 0.0001*abs(sr2) */
+#define MS_ISRATETOLERABLE(A, B) (fabs ((B) - (A)) < 0.0001 * fabs (B))
 
 /** @def MS2_ISDATAINDICATOR
     @brief Macro to test a character for miniSEED 2.x data record/quality indicators */
