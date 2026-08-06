@@ -593,13 +593,13 @@ setselectionlimits (MS3TraceList *mstl)
 
           if (selecttime->starttime != NSTUNSET &&
               selecttime->starttime > recptr->msr->starttime &&
-              selecttime->starttime < recptr->endtime)
+              selecttime->starttime <= recptr->endtime)
           {
             newstart = selecttime->starttime;
           }
 
           if (selecttime->endtime != NSTUNSET &&
-              selecttime->endtime > recptr->msr->starttime &&
+              selecttime->endtime >= recptr->msr->starttime &&
               selecttime->endtime < recptr->endtime)
           {
             newend = selecttime->endtime;

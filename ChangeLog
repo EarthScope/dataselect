@@ -1,3 +1,7 @@
+2026.218:
+	- Fix -ts/-te limits landing exactly on a record boundary sample leaving the
+	  whole record untrimmed.
+
 2026.211: v4.3.1
 	- Update libmseed to v3.5.2.  Including a major optimization for reading near
 	  time ordered data.

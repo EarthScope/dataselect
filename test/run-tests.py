@@ -287,6 +287,30 @@ class Selection(DataselectTest):
         self.assertEqual(code, 0)
         self.assertEqual(wrote(stdout + err), (1521, 3))
 
+    def test_window_start_on_record_end(self):
+        """-ts on the last sample of a record leaves that sample, not the record."""
+        out = tmp("start-bound.mseed")
+        # 00:00:06.15 is the last sample of the first record of V3
+        code, stdout, err = run(
+            "-v", "-v", "-v", "-Ps", "-ts", "2012-05-12T00:00:06.15", V3, "-o", out
+        )
+        self.assertEqual(code, 0)
+        self.assertIn(b"Removing 246 samples from the start", stdout + err)
+        self.assertEqual(size(out), 1452)
+        self.assert_valid_ms3(out)
+
+    def test_window_end_on_record_start(self):
+        """-te on the first sample of a record leaves that sample, not the record."""
+        out = tmp("end-bound.mseed")
+        # 00:00:11.35 is the first sample of the last record of V3
+        code, stdout, err = run(
+            "-v", "-v", "-v", "-Ps", "-te", "2012-05-12T00:00:11.35", V3, "-o", out
+        )
+        self.assertEqual(code, 0)
+        self.assertIn(b"Removing 44 samples from the end", stdout + err)
+        self.assertEqual(size(out), 1644)
+        self.assert_valid_ms3(out)
+
     def test_selection_file(self):
         selection = tmp("selection.txt")
         with open(selection, "w") as handle:
