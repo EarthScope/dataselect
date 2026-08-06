@@ -1,10 +1,10 @@
-#include <tau/tau.h>
 #include <libmseed.h>
+#include <tau/tau.h>
 
 TEST (selection, match)
 {
-  MS3Selections *selections      = NULL;
-  const MS3Selections *match     = NULL;
+  MS3Selections *selections = NULL;
+  const MS3Selections *match = NULL;
   const MS3SelectTime *timematch = NULL;
   nstime_t starttime;
   nstime_t endtime;
@@ -63,13 +63,13 @@ TEST (selection, match)
 
 TEST (selection, openended)
 {
-  MS3Selections *selections     = NULL;
-  const MS3Selections *match     = NULL;
+  MS3Selections *selections = NULL;
+  const MS3Selections *match = NULL;
   const MS3SelectTime *timematch = NULL;
   nstime_t winstart = ms_timestr2nstime ("2010-01-01T00:00:00Z");
-  nstime_t winend   = ms_timestr2nstime ("2010-01-02T00:00:00Z");
-  nstime_t before   = ms_timestr2nstime ("2009-12-01T00:00:00Z");
-  nstime_t after    = ms_timestr2nstime ("2010-02-01T00:00:00Z");
+  nstime_t winend = ms_timestr2nstime ("2010-01-02T00:00:00Z");
+  nstime_t before = ms_timestr2nstime ("2009-12-01T00:00:00Z");
+  nstime_t after = ms_timestr2nstime ("2010-02-01T00:00:00Z");
   int rv;
 
   /* Selection with a single bounded time window */
@@ -104,10 +104,10 @@ TEST (selection, openended)
 
 TEST (selection, error)
 {
-  MS3Selections *selections  = NULL;
+  MS3Selections *selections = NULL;
   const MS3Selections *match = NULL;
   nstime_t starttime = ms_timestr2nstime ("2010-02-27T06:50:00.069539Z");
-  nstime_t endtime   = ms_timestr2nstime ("2010-02-27T07:55:51.069539Z");
+  nstime_t endtime = ms_timestr2nstime ("2010-02-27T07:55:51.069539Z");
   int rv;
 
   rv = ms3_addselect (NULL, "FDSN:XX_*", NSTUNSET, NSTUNSET, 0);

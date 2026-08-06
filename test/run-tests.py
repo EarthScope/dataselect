@@ -326,8 +326,10 @@ class Selection(DataselectTest):
         self.assertEqual(wrote(stdout + err), (1836, 4))
 
     def test_match_selects_nothing(self):
-        code, _, _ = run("-m", "ZZ_NOSUCH", V3, "-o", os.devnull)
-        self.assertEqual(code, 1)
+        """A match pattern that selects no data is not an error."""
+        code, stdout, err = run("-v", "-m", "ZZ_NOSUCH", V3, "-o", os.devnull)
+        self.assertEqual(code, 0)
+        self.assertIn(b"No data selected", stdout + err)
 
     def test_match_multiple(self):
         other = craft3(V3, tmp("other_match.mseed3"), sid="FDSN:YY_ABCD__B_H_Z")

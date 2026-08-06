@@ -1,5 +1,5 @@
-#include <tau/tau.h>
 #include <libmseed.h>
+#include <tau/tau.h>
 
 #include "testdata.h"
 
@@ -54,34 +54,34 @@ static char *soh_json_headers = "{"
 extern int cmpfiles (char *fileA, char *fileB);
 
 /* Write test output files.  Reference files are at "data/reference-<name>" */
-#define TESTFILE_TEXT_V2    "testdata-text.mseed2"
+#define TESTFILE_TEXT_V2 "testdata-text.mseed2"
 #define TESTFILE_FLOAT32_V2 "testdata-float32.mseed2"
 #define TESTFILE_FLOAT64_V2 "testdata-float64.mseed2"
-#define TESTFILE_INT16_V2   "testdata-int16.mseed2"
-#define TESTFILE_INT32_V2   "testdata-int32.mseed2"
-#define TESTFILE_STEIM1_V2  "testdata-steim1.mseed2"
-#define TESTFILE_STEIM2_V2  "testdata-steim2.mseed2"
-#define TESTFILE_DEFAULTS_V2  "testdata-defaults.mseed2"
+#define TESTFILE_INT16_V2 "testdata-int16.mseed2"
+#define TESTFILE_INT32_V2 "testdata-int32.mseed2"
+#define TESTFILE_STEIM1_V2 "testdata-steim1.mseed2"
+#define TESTFILE_STEIM2_V2 "testdata-steim2.mseed2"
+#define TESTFILE_DEFAULTS_V2 "testdata-defaults.mseed2"
 #define TESTFILE_HEADERONLY_V2 "testdata-headeronly.mseed2"
-#define TESTFILE_NSEC_V2    "testdata-nsec.mseed2"
-#define TESTFILE_OLDEN_V2   "testdata-olden.mseed2"
+#define TESTFILE_NSEC_V2 "testdata-nsec.mseed2"
+#define TESTFILE_OLDEN_V2 "testdata-olden.mseed2"
 #define TESTFILE_ODDRATE_V2 "testdata-oddrate.mseed2"
 #define TESTFILE_MSTLPACK_V2 "testdata-mstlpack.mseed2"
 #define TESTFILE_FLUSHIDLE_V2 "testdata-flushidle.mseed2"
 
-#define TESTFILE_TEXT_V3    "testdata-text.mseed3"
+#define TESTFILE_TEXT_V3 "testdata-text.mseed3"
 #define TESTFILE_FLOAT32_V3 "testdata-float32.mseed3"
 #define TESTFILE_FLOAT64_V3 "testdata-float64.mseed3"
-#define TESTFILE_INT16_V3   "testdata-int16.mseed3"
-#define TESTFILE_INT32_V3   "testdata-int32.mseed3"
-#define TESTFILE_STEIM1_V3  "testdata-steim1.mseed3"
-#define TESTFILE_STEIM2_V3  "testdata-steim2.mseed3"
-#define TESTFILE_DEFAULTS_V3  "testdata-defaults.mseed3"
+#define TESTFILE_INT16_V3 "testdata-int16.mseed3"
+#define TESTFILE_INT32_V3 "testdata-int32.mseed3"
+#define TESTFILE_STEIM1_V3 "testdata-steim1.mseed3"
+#define TESTFILE_STEIM2_V3 "testdata-steim2.mseed3"
+#define TESTFILE_DEFAULTS_V3 "testdata-defaults.mseed3"
 #define TESTFILE_HEADERONLY_V3 "testdata-headeronly.mseed3"
-#define TESTFILE_NSEC_V3    "testdata-nsec.mseed3"
-#define TESTFILE_OLDEN_V3   "testdata-olden.mseed3"
+#define TESTFILE_NSEC_V3 "testdata-nsec.mseed3"
+#define TESTFILE_OLDEN_V3 "testdata-olden.mseed3"
 #define TESTFILE_ODDRATE_V3 "testdata-oddrate.mseed3"
-#define TESTFILE_MSTLPACK_V3  "testdata-mstlpack.mseed3"
+#define TESTFILE_MSTLPACK_V3 "testdata-mstlpack.mseed3"
 #define TESTFILE_FLUSHIDLE_V3 "testdata-flushidle.mseed3"
 
 #define TESTFILE_MSTLPACK_ROLLINGBUFFER "testdata-mstlpack-rollingbuffer.mseed"
@@ -123,89 +123,99 @@ TEST (write, msr3_writemseed_encodings)
 
   /* Text encoding */
   strcpy (msr->sid, "FDSN:XX_TEST__L_O_G");
-  msr->samprate    = 0;
-  msr->encoding    = DE_TEXT;
-  msr->numsamples  = strlen (textdata);
+  msr->samprate = 0;
+  msr->encoding = DE_TEXT;
+  msr->numsamples = strlen (textdata);
   msr->datasamples = textdata;
-  msr->sampletype  = 't';
+  msr->sampletype = 't';
 
   rv = msr3_writemseed (msr, TESTFILE_TEXT_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_TEXT_V3, "data/reference-" TESTFILE_TEXT_V3), "Text encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_TEXT_V3, "data/reference-" TESTFILE_TEXT_V3),
+         "Text encoding write mismatch");
 
   strcpy (msr->sid, "FDSN:XX_TEST__B_H_Z");
   msr->samprate = 40.0;
 
   /* Float32 encoding*/
   msr->encoding = DE_FLOAT32;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = fsinedata;
-  msr->sampletype  = 'f';
+  msr->sampletype = 'f';
 
   rv = msr3_writemseed (msr, TESTFILE_FLOAT32_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_FLOAT32_V3, "data/reference-" TESTFILE_FLOAT32_V3), "Float32 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_FLOAT32_V3, "data/reference-" TESTFILE_FLOAT32_V3),
+         "Float32 encoding write mismatch");
 
   /* Float64 encoding */
   msr->encoding = DE_FLOAT64;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = dsinedata;
-  msr->sampletype  = 'd';
+  msr->sampletype = 'd';
 
   rv = msr3_writemseed (msr, TESTFILE_FLOAT64_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_FLOAT64_V3, "data/reference-" TESTFILE_FLOAT64_V3), "Float64 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_FLOAT64_V3, "data/reference-" TESTFILE_FLOAT64_V3),
+         "Float64 encoding write mismatch");
 
   /* Int16 encoding */
   msr->encoding = DE_INT16;
-  msr->numsamples  = 220; /* Limit to first 220 samples, which can be represented in 16-bits */
+  msr->numsamples = 220; /* Limit to first 220 samples, which can be represented in 16-bits */
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_INT16_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_INT16_V3, "data/reference-" TESTFILE_INT16_V3), "Int16 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_INT16_V3, "data/reference-" TESTFILE_INT16_V3),
+         "Int16 encoding write mismatch");
 
   /* Int32 encoding */
   msr->encoding = DE_INT32;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_INT32_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_INT32_V3, "data/reference-" TESTFILE_INT32_V3), "Int32 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_INT32_V3, "data/reference-" TESTFILE_INT32_V3),
+         "Int32 encoding write mismatch");
 
   /* Steim1 encoding */
   msr->encoding = DE_STEIM1;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_STEIM1_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_STEIM1_V3, "data/reference-" TESTFILE_STEIM1_V3), "Steim1 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_STEIM1_V3, "data/reference-" TESTFILE_STEIM1_V3),
+         "Steim1 encoding write mismatch");
 
   /* Steim2 encoding */
   msr->encoding = DE_STEIM2;
-  msr->numsamples  = SINE_DATA_SAMPLES - 1; /* All but last sample for which the difference cannot be represented */
+  msr->numsamples = SINE_DATA_SAMPLES -
+                    1; /* All but last sample for which the difference cannot be represented */
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_STEIM2_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_STEIM2_V3, "data/reference-" TESTFILE_STEIM2_V3), "Steim2 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_STEIM2_V3, "data/reference-" TESTFILE_STEIM2_V3),
+         "Steim2 encoding write mismatch");
 
   /* Default encoding (Steim2) and record length (4096) */
   msr->encoding = -1;
   msr->reclen = -1;
-  msr->numsamples  = SINE_DATA_SAMPLES - 1; /* All but last sample for which the difference cannot be represented */
+  msr->numsamples = SINE_DATA_SAMPLES -
+                    1; /* All but last sample for which the difference cannot be represented */
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_DEFAULTS_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_DEFAULTS_V3, "data/reference-" TESTFILE_DEFAULTS_V3), "Default encoding/reclen write mismatch");
+  CHECK (!cmpfiles (TESTFILE_DEFAULTS_V3, "data/reference-" TESTFILE_DEFAULTS_V3),
+         "Default encoding/reclen write mismatch");
 
   msr->extra = NULL;
   msr->extralength = 0;
@@ -217,89 +227,99 @@ TEST (write, msr3_writemseed_encodings)
 
   /* Text encoding */
   strcpy (msr->sid, "FDSN:XX_TEST__L_O_G");
-  msr->samprate    = 0;
-  msr->encoding    = DE_TEXT;
-  msr->numsamples  = strlen (textdata);
+  msr->samprate = 0;
+  msr->encoding = DE_TEXT;
+  msr->numsamples = strlen (textdata);
   msr->datasamples = textdata;
-  msr->sampletype  = 't';
+  msr->sampletype = 't';
 
   rv = msr3_writemseed (msr, TESTFILE_TEXT_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_TEXT_V2, "data/reference-" TESTFILE_TEXT_V2), "Text encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_TEXT_V2, "data/reference-" TESTFILE_TEXT_V2),
+         "Text encoding write mismatch");
 
   strcpy (msr->sid, "FDSN:XX_TEST__B_H_Z");
   msr->samprate = 40.0;
 
   /* Float32 encoding*/
   msr->encoding = DE_FLOAT32;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = fsinedata;
-  msr->sampletype  = 'f';
+  msr->sampletype = 'f';
 
   rv = msr3_writemseed (msr, TESTFILE_FLOAT32_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_FLOAT32_V2, "data/reference-" TESTFILE_FLOAT32_V2), "Float32 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_FLOAT32_V2, "data/reference-" TESTFILE_FLOAT32_V2),
+         "Float32 encoding write mismatch");
 
   /* Float64 encoding */
   msr->encoding = DE_FLOAT64;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = dsinedata;
-  msr->sampletype  = 'd';
+  msr->sampletype = 'd';
 
   rv = msr3_writemseed (msr, TESTFILE_FLOAT64_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_FLOAT64_V2, "data/reference-" TESTFILE_FLOAT64_V2), "Float64 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_FLOAT64_V2, "data/reference-" TESTFILE_FLOAT64_V2),
+         "Float64 encoding write mismatch");
 
   /* Int16 encoding */
   msr->encoding = DE_INT16;
-  msr->numsamples  = 220; /* Limit to first 220 samples, which can be represented in 16-bits */
+  msr->numsamples = 220; /* Limit to first 220 samples, which can be represented in 16-bits */
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_INT16_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_INT16_V2, "data/reference-" TESTFILE_INT16_V2), "Int16 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_INT16_V2, "data/reference-" TESTFILE_INT16_V2),
+         "Int16 encoding write mismatch");
 
   /* Int32 encoding */
   msr->encoding = DE_INT32;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_INT32_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_INT32_V2, "data/reference-" TESTFILE_INT32_V2), "Int32 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_INT32_V2, "data/reference-" TESTFILE_INT32_V2),
+         "Int32 encoding write mismatch");
 
   /* Steim1 encoding */
   msr->encoding = DE_STEIM1;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_STEIM1_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_STEIM1_V2, "data/reference-" TESTFILE_STEIM1_V2), "Steim1 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_STEIM1_V2, "data/reference-" TESTFILE_STEIM1_V2),
+         "Steim1 encoding write mismatch");
 
   /* Steim2 encoding */
   msr->encoding = DE_STEIM2;
-  msr->numsamples  = SINE_DATA_SAMPLES - 1; /* All but last sample for which the difference cannot be represented */
+  msr->numsamples = SINE_DATA_SAMPLES -
+                    1; /* All but last sample for which the difference cannot be represented */
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_STEIM2_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_STEIM2_V2, "data/reference-" TESTFILE_STEIM2_V2), "Steim2 encoding write mismatch");
+  CHECK (!cmpfiles (TESTFILE_STEIM2_V2, "data/reference-" TESTFILE_STEIM2_V2),
+         "Steim2 encoding write mismatch");
 
-/* Default encoding (Steim2) and record length (4096) */
+  /* Default encoding (Steim2) and record length (4096) */
   msr->encoding = -1;
   msr->reclen = -1;
-  msr->numsamples  = SINE_DATA_SAMPLES - 1; /* All but last sample for which the difference cannot be represented */
+  msr->numsamples = SINE_DATA_SAMPLES -
+                    1; /* All but last sample for which the difference cannot be represented */
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   rv = msr3_writemseed (msr, TESTFILE_DEFAULTS_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_DEFAULTS_V2, "data/reference-" TESTFILE_DEFAULTS_V2), "Default encoding/reclen write mismatch");
+  CHECK (!cmpfiles (TESTFILE_DEFAULTS_V2, "data/reference-" TESTFILE_DEFAULTS_V2),
+         "Default encoding/reclen write mismatch");
 
   msr->extra = NULL;
   msr->extralength = 0;
@@ -404,59 +424,62 @@ TEST (write, msr3_writemseed_nanosecond)
   msr->samprate = 40.0;
   msr->pubversion = 1;
 
-  /* V3 Nanosecond time resolution with Int32 data and a timing exception and 512 max record length */
+  /* V3 Nanosecond time resolution with Int32 data and a timing exception and 512 max record length
+   */
   msr->starttime = ms_timestr2nstime ("2012-05-12T00:00:00.123456789Z");
   msr->formatversion = 3;
   msr->encoding = DE_INT32;
   msr->reclen = 512;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
-  msr->extra       = "{\"FDSN\":{"
-                     "\"Time\":{"
-                     "\"Exception\":[{"
-                     "\"Time\":\"2012-05-12T00:00:26.987654321Z\","
-                     "\"VCOCorrection\":50.7080078125,"
-                     "\"ReceptionQuality\":100,"
-                     "\"Count\":7654,"
-                     "\"Type\":\"Valid\","
-                     "\"ClockStatus\":\"Drift=-1973usec, Satellite SNR in dB=23, 0, 26, 25, 29, 28\""
-                     "}]},"
-                     "\"Clock\":{"
-                     "\"Model\":\"Acme Corporation GPS3\""
-                     "}}}";
+  msr->sampletype = 'i';
+  msr->extra = "{\"FDSN\":{"
+               "\"Time\":{"
+               "\"Exception\":[{"
+               "\"Time\":\"2012-05-12T00:00:26.987654321Z\","
+               "\"VCOCorrection\":50.7080078125,"
+               "\"ReceptionQuality\":100,"
+               "\"Count\":7654,"
+               "\"Type\":\"Valid\","
+               "\"ClockStatus\":\"Drift=-1973usec, Satellite SNR in dB=23, 0, 26, 25, 29, 28\""
+               "}]},"
+               "\"Clock\":{"
+               "\"Model\":\"Acme Corporation GPS3\""
+               "}}}";
   msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_NSEC_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_NSEC_V3, "data/reference-" TESTFILE_NSEC_V3), "Nanosecond timing write mismatch");
+  CHECK (!cmpfiles (TESTFILE_NSEC_V3, "data/reference-" TESTFILE_NSEC_V3),
+         "Nanosecond timing write mismatch");
 
   /* V2 Nanosecond time resolution with Int32 data and a timing exception and 512 record length */
   msr->starttime = ms_timestr2nstime ("2012-05-12T00:00:00.123456789Z");
   msr->formatversion = 2;
   msr->encoding = DE_INT32;
   msr->reclen = 512;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
-  msr->extra       = "{\"FDSN\":{"
-                     "\"Time\":{"
-                     "\"Exception\":[{"
-                     "\"Time\":\"2012-05-12T00:00:26.987654321Z\","
-                     "\"VCOCorrection\":50.7080078125,"
-                     "\"ReceptionQuality\":100,"
-                     "\"Count\":7654,"
-                     "\"Type\":\"Valid\","
-                     "\"ClockStatus\":\"Drift=-1973usec, Satellite SNR in dB=23, 0, 26, 25, 29, 28\""
-                     "}]},"
-                     "\"Clock\":{"
-                     "\"Model\":\"Acme Corporation GPS3\""
-                     "}}}";
+  msr->sampletype = 'i';
+  msr->extra = "{\"FDSN\":{"
+               "\"Time\":{"
+               "\"Exception\":[{"
+               "\"Time\":\"2012-05-12T00:00:26.987654321Z\","
+               "\"VCOCorrection\":50.7080078125,"
+               "\"ReceptionQuality\":100,"
+               "\"Count\":7654,"
+               "\"Type\":\"Valid\","
+               "\"ClockStatus\":\"Drift=-1973usec, Satellite SNR in dB=23, 0, 26, 25, 29, 28\""
+               "}]},"
+               "\"Clock\":{"
+               "\"Model\":\"Acme Corporation GPS3\""
+               "}}}";
   msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_NSEC_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_NSEC_V2, "data/reference-" TESTFILE_NSEC_V2), "Nanosecond timing write mismatch");
+  CHECK (!cmpfiles (TESTFILE_NSEC_V2, "data/reference-" TESTFILE_NSEC_V2),
+         "Nanosecond timing write mismatch");
 
   msr->extra = NULL;
   msr->extralength = 0;
@@ -494,50 +517,52 @@ TEST (write, msr3_writemseed_olden)
   msr->formatversion = 3;
   msr->encoding = DE_INT32;
   msr->reclen = 4096;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
-  msr->extra       = "{\"FDSN\":{"
-                     "\"Time\":{"
-                     "\"Exception\":[{"
-                     "\"Time\":\"1964-03-27T21:11:48.123456789Z\","
-                     "\"Count\":1,"
-                     "\"Type\":\"Unexpected\","
-                     "\"ClockStatus\":\"Clock tower destroyed\""
-                     "}]},"
-                     "\"Clock\":{"
-                     "\"Model\":\"Ye Olde Clock Tower Company\""
-                     "}}}";
+  msr->sampletype = 'i';
+  msr->extra = "{\"FDSN\":{"
+               "\"Time\":{"
+               "\"Exception\":[{"
+               "\"Time\":\"1964-03-27T21:11:48.123456789Z\","
+               "\"Count\":1,"
+               "\"Type\":\"Unexpected\","
+               "\"ClockStatus\":\"Clock tower destroyed\""
+               "}]},"
+               "\"Clock\":{"
+               "\"Model\":\"Ye Olde Clock Tower Company\""
+               "}}}";
   msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_OLDEN_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_OLDEN_V3, "data/reference-" TESTFILE_OLDEN_V3), "Old, pre-epoch times write mismatch");
+  CHECK (!cmpfiles (TESTFILE_OLDEN_V3, "data/reference-" TESTFILE_OLDEN_V3),
+         "Old, pre-epoch times write mismatch");
 
   /* V2 Old, pre-epoch times with Int32 data and a timing exception and 4096 record length */
   msr->starttime = ms_timestr2nstime ("1964-03-27T21:11:24.987654321Z");
   msr->formatversion = 2;
   msr->encoding = DE_INT32;
   msr->reclen = 4096;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
-  msr->extra       = "{\"FDSN\":{"
-                     "\"Time\":{"
-                     "\"Exception\":[{"
-                     "\"Time\":\"1964-03-27T21:11:48.123456789Z\","
-                     "\"Count\":1,"
-                     "\"Type\":\"Unexpected\","
-                     "\"ClockStatus\":\"Clock tower destroyed\""
-                     "}]},"
-                     "\"Clock\":{"
-                     "\"Model\":\"Ye Olde Clock Tower Company\""
-                     "}}}";
+  msr->sampletype = 'i';
+  msr->extra = "{\"FDSN\":{"
+               "\"Time\":{"
+               "\"Exception\":[{"
+               "\"Time\":\"1964-03-27T21:11:48.123456789Z\","
+               "\"Count\":1,"
+               "\"Type\":\"Unexpected\","
+               "\"ClockStatus\":\"Clock tower destroyed\""
+               "}]},"
+               "\"Clock\":{"
+               "\"Model\":\"Ye Olde Clock Tower Company\""
+               "}}}";
   msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_OLDEN_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_OLDEN_V2, "data/reference-" TESTFILE_OLDEN_V2), "Old, pre-epoch times write mismatch");
+  CHECK (!cmpfiles (TESTFILE_OLDEN_V2, "data/reference-" TESTFILE_OLDEN_V2),
+         "Old, pre-epoch times write mismatch");
 
   msr->extra = NULL;
   msr->extralength = 0;
@@ -574,9 +599,9 @@ TEST (write, msr3_writemseed_oddrate)
   msr->starttime = ms_timestr2nstime ("2025-05-12T21:11:24.987654321Z");
   msr->encoding = DE_INT32;
   msr->reclen = 512;
-  msr->numsamples  = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   /* Odd rate (1080.0) with an repeating decimal period */
   msr->samprate = 1080.0;
@@ -586,14 +611,16 @@ TEST (write, msr3_writemseed_oddrate)
 
   rv = msr3_writemseed (msr, TESTFILE_ODDRATE_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_ODDRATE_V3, "data/reference-" TESTFILE_ODDRATE_V3), "Odd rate write mismatch");
+  CHECK (!cmpfiles (TESTFILE_ODDRATE_V3, "data/reference-" TESTFILE_ODDRATE_V3),
+         "Odd rate write mismatch");
 
   /* V2 */
   msr->formatversion = 2;
 
   rv = msr3_writemseed (msr, TESTFILE_ODDRATE_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_ODDRATE_V2, "data/reference-" TESTFILE_ODDRATE_V2), "Odd rate write mismatch");
+  CHECK (!cmpfiles (TESTFILE_ODDRATE_V2, "data/reference-" TESTFILE_ODDRATE_V2),
+         "Odd rate write mismatch");
 
   msr->datasamples = NULL;
   msr3_free (&msr);
@@ -643,10 +670,10 @@ TEST (write, msr3_writemseed_v2_continuation_timecarry)
   msr->pubversion = 1;
   msr->samprate = 1.0;
   msr->encoding = DE_INT32;
-  msr->numsamples  = SINE_DATA_SAMPLES;
-  msr->samplecnt   = SINE_DATA_SAMPLES;
+  msr->numsamples = SINE_DATA_SAMPLES;
+  msr->samplecnt = SINE_DATA_SAMPLES;
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   /* Start time fraction (.999980s) is within the 50 microsecond carry band */
   starttime = ms_timestr2nstime ("2012-01-01T00:00:00.999980Z");
@@ -708,10 +735,10 @@ TEST (write, msr3_writemseed_v2_btime_timecarry)
   msr->starttime = ms_timestr2nstime ("2012-06-01T00:00:00Z");
   msr->samprate = 1.0;
   msr->encoding = DE_INT32;
-  msr->numsamples  = 4;
-  msr->samplecnt   = 4;
+  msr->numsamples = 4;
+  msr->samplecnt = 4;
   msr->datasamples = sampledata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   /* Exception time fraction (.999980s) is within the 50 microsecond carry band */
   msr->extra = "{\"FDSN\":{\"Time\":{\"Exception\":["
@@ -740,7 +767,8 @@ TEST (write, msr3_writemseed_v2_btime_timecarry)
   expected = ms_timestr2nstime ("2012-06-01T12:00:00.999980Z");
   got = ms_timestr2nstime (gottime);
 
-  CHECK (got == expected, "Decoded Blockette 500 time does not match encoded time (BTIME time carry)");
+  CHECK (got == expected,
+         "Decoded Blockette 500 time does not match encoded time (BTIME time carry)");
 
   ms3_readmsr (&rmsr, NULL, 0, 0);
 }
@@ -759,8 +787,14 @@ TEST (write, msr3_writemseed_v2_btime_timecarry)
 #define B500TEST_TYPE_FULL "0123456789ABCDEF"
 /* Exactly 128 characters, matching the Blockette 500 ClockStatus field width */
 #define B500TEST_CLOCKSTATUS_FULL \
-  "0123456789ABCDEF" "0123456789ABCDEF" "0123456789ABCDEF" "0123456789ABCDEF" \
-  "0123456789ABCDEF" "0123456789ABCDEF" "0123456789ABCDEF" "0123456789ABCDEF"
+  "0123456789ABCDEF"              \
+  "0123456789ABCDEF"              \
+  "0123456789ABCDEF"              \
+  "0123456789ABCDEF"              \
+  "0123456789ABCDEF"              \
+  "0123456789ABCDEF"              \
+  "0123456789ABCDEF"              \
+  "0123456789ABCDEF"
 /* Exactly 32 characters, matching the Clock Model field width */
 #define B500TEST_MODEL_FULL "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
 
@@ -774,9 +808,12 @@ TEST (write, msr3_writemseed_v2_b500_full_fields)
   int64_t rv;
   int rrv;
 
-  REQUIRE (strlen (B500TEST_TYPE_FULL) == 16, "Test fixture 'B500TEST_TYPE_FULL' is not 16 characters");
-  REQUIRE (strlen (B500TEST_CLOCKSTATUS_FULL) == 128, "Test fixture 'B500TEST_CLOCKSTATUS_FULL' is not 128 characters");
-  REQUIRE (strlen (B500TEST_MODEL_FULL) == 32, "Test fixture 'B500TEST_MODEL_FULL' is not 32 characters");
+  REQUIRE (strlen (B500TEST_TYPE_FULL) == 16,
+           "Test fixture 'B500TEST_TYPE_FULL' is not 16 characters");
+  REQUIRE (strlen (B500TEST_CLOCKSTATUS_FULL) == 128,
+           "Test fixture 'B500TEST_CLOCKSTATUS_FULL' is not 128 characters");
+  REQUIRE (strlen (B500TEST_MODEL_FULL) == 32,
+           "Test fixture 'B500TEST_MODEL_FULL' is not 32 characters");
 
   msr = msr3_init (msr);
   REQUIRE (msr != NULL, "msr3_init() returned unexpected NULL");
@@ -787,16 +824,17 @@ TEST (write, msr3_writemseed_v2_b500_full_fields)
   msr->starttime = ms_timestr2nstime ("2012-06-01T00:00:00Z");
   msr->samprate = 1.0;
   msr->encoding = DE_INT32;
-  msr->numsamples  = 4;
-  msr->samplecnt   = 4;
+  msr->numsamples = 4;
+  msr->samplecnt = 4;
   msr->datasamples = sampledata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
-  msr->extra = "{\"FDSN\":{\"Time\":{\"Exception\":["
-               "{\"Time\":\"2012-06-01T00:00:01Z\",\"Type\":\"" B500TEST_TYPE_FULL
-               "\",\"ClockStatus\":\"" B500TEST_CLOCKSTATUS_FULL "\"},"
-               "{\"Time\":\"2012-06-01T00:00:02Z\",\"Type\":\"Short\",\"ClockStatus\":\"Brief status\"}"
-               "]},\"Clock\":{\"Model\":\"" B500TEST_MODEL_FULL "\"}}}";
+  msr->extra =
+      "{\"FDSN\":{\"Time\":{\"Exception\":["
+      "{\"Time\":\"2012-06-01T00:00:01Z\",\"Type\":\"" B500TEST_TYPE_FULL
+      "\",\"ClockStatus\":\"" B500TEST_CLOCKSTATUS_FULL "\"},"
+      "{\"Time\":\"2012-06-01T00:00:02Z\",\"Type\":\"Short\",\"ClockStatus\":\"Brief status\"}"
+      "]},\"Clock\":{\"Model\":\"" B500TEST_MODEL_FULL "\"}}}";
   msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_B500FIELDS_V2, 1, flags, 0);
@@ -814,12 +852,14 @@ TEST (write, msr3_writemseed_v2_b500_full_fields)
   /* Full-width Type must decode intact, not truncated and not run into ClockStatus */
   rrv = mseh_get_string (rmsr, "/FDSN/Time/Exception/0/Type", gotstr, sizeof (gotstr));
   CHECK (rrv == 0, "mseh_get_string() did not find decoded full-width Type");
-  CHECK (strcmp (gotstr, B500TEST_TYPE_FULL) == 0, "Decoded full-width Type does not match encoded value");
+  CHECK (strcmp (gotstr, B500TEST_TYPE_FULL) == 0,
+         "Decoded full-width Type does not match encoded value");
 
   /* Full-width ClockStatus must decode intact and not carry a leaked Type prefix */
   rrv = mseh_get_string (rmsr, "/FDSN/Time/Exception/0/ClockStatus", gotstr, sizeof (gotstr));
   CHECK (rrv == 0, "mseh_get_string() did not find decoded full-width ClockStatus");
-  CHECK (strcmp (gotstr, B500TEST_CLOCKSTATUS_FULL) == 0, "Decoded full-width ClockStatus does not match encoded value");
+  CHECK (strcmp (gotstr, B500TEST_CLOCKSTATUS_FULL) == 0,
+         "Decoded full-width ClockStatus does not match encoded value");
 
   /* Short values in the second exception must decode without trailing pad */
   rrv = mseh_get_string (rmsr, "/FDSN/Time/Exception/1/Type", gotstr, sizeof (gotstr));
@@ -828,11 +868,13 @@ TEST (write, msr3_writemseed_v2_b500_full_fields)
 
   rrv = mseh_get_string (rmsr, "/FDSN/Time/Exception/1/ClockStatus", gotstr, sizeof (gotstr));
   CHECK (rrv == 0, "mseh_get_string() did not find decoded short ClockStatus");
-  CHECK (strcmp (gotstr, "Brief status") == 0, "Decoded short ClockStatus does not match encoded value");
+  CHECK (strcmp (gotstr, "Brief status") == 0,
+         "Decoded short ClockStatus does not match encoded value");
 
   rrv = mseh_get_string (rmsr, "/FDSN/Clock/Model", gotstr, sizeof (gotstr));
   CHECK (rrv == 0, "mseh_get_string() did not find decoded Clock Model");
-  CHECK (strcmp (gotstr, B500TEST_MODEL_FULL) == 0, "Decoded Clock Model does not match encoded value");
+  CHECK (strcmp (gotstr, B500TEST_MODEL_FULL) == 0,
+         "Decoded Clock Model does not match encoded value");
 
   ms3_readmsr (&rmsr, NULL, 0, 0);
 }
@@ -872,10 +914,10 @@ TEST (write, msr3_writemseed_v2_samplecount_overflow)
   msr->starttime = ms_timestr2nstime ("2012-01-01T00:00:00Z");
   msr->samprate = 0;
   msr->encoding = DE_TEXT;
-  msr->numsamples  = numsamples;
-  msr->samplecnt   = numsamples;
+  msr->numsamples = numsamples;
+  msr->samplecnt = numsamples;
   msr->datasamples = textdata_big;
-  msr->sampletype  = 't';
+  msr->sampletype = 't';
 
   rv = msr3_writemseed (msr, TESTFILE_SAMPLECOUNT_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
@@ -888,8 +930,7 @@ TEST (write, msr3_writemseed_v2_samplecount_overflow)
    * single record may exceed the 16-bit field. */
   while ((rrv = ms3_readmsr (&rmsr, TESTFILE_SAMPLECOUNT_V2, 0, 0)) == MS_NOERROR)
   {
-    CHECK (rmsr->samplecnt <= UINT16_MAX,
-           "Record sample count exceeds the 16-bit v2 FSDH field");
+    CHECK (rmsr->samplecnt <= UINT16_MAX, "Record sample count exceeds the 16-bit v2 FSDH field");
 
     total += rmsr->samplecnt;
     reccount++;
@@ -933,17 +974,19 @@ TEST (write, mstl3_writemseed)
   msr->starttime = ms_timestr2nstime ("2012-05-12T00:00:00");
 
   strcpy (msr->sid, "FDSN:XX_TEST__B_H_Z");
-  msr->samprate    = 40.0;
-  msr->numsamples  = SINE_DATA_SAMPLES - 1; /* All but last sample for which the difference cannot be represented */
+  msr->samprate = 40.0;
+  msr->numsamples = SINE_DATA_SAMPLES -
+                    1; /* All but last sample for which the difference cannot be represented */
   msr->datasamples = isinedata;
-  msr->sampletype  = 'i';
+  msr->sampletype = 'i';
 
   seg = mstl3_addmsr (mstl, msr, 0, 1, 0, NULL);
   REQUIRE (seg != NULL, "mstl3_addmsr() returned unexpected NULL");
 
   rv = mstl3_writemseed (mstl, TESTFILE_STEIM2_V3 ".trace", 1, 512, DE_STEIM2, flags, 0);
   REQUIRE (rv == 4, "mstl3_writemseed() return unexpected value");
-  CHECK (!cmpfiles (TESTFILE_STEIM2_V3 ".trace", "data/reference-" TESTFILE_STEIM2_V3), "Steim2 encoding trace write mismatch");
+  CHECK (!cmpfiles (TESTFILE_STEIM2_V3 ".trace", "data/reference-" TESTFILE_STEIM2_V3),
+         "Steim2 encoding trace write mismatch");
 
   mstl3_free (&mstl, 0);
 
@@ -1033,7 +1076,8 @@ TEST (pack, mstl3_pack_v2)
 
   fclose (ofp);
 
-  CHECK (!cmpfiles (TESTFILE_MSTLPACK_V2, "data/reference-" TESTFILE_MSTLPACK_V2), "Trace list packing v2 mismatch");
+  CHECK (!cmpfiles (TESTFILE_MSTLPACK_V2, "data/reference-" TESTFILE_MSTLPACK_V2),
+         "Trace list packing v2 mismatch");
 
   /* Check that contents of the MS3TraceList have been removed */
   CHECK (mstl->numtraceids == 0, "MS3TraceList ID count is not 0");
@@ -1555,16 +1599,24 @@ TEST (pack, mstl3_pack_maintainmstl)
   CHECK (mstl->numtraceids == 2, "MS3TraceList ID count is not 0");
   CHECK (mstl->traces.next[0] != NULL, "MS3TraceList ID list is NULL");
   CHECK (mstl->traces.next[0] == bhz_id, "MS3TraceList ID list is not expected B_H_Z ID");
-  CHECK (mstl->traces.next[0]->first == bhz_seg, "MS3TraceList ID list does not have expected first segment");
-  CHECK (mstl->traces.next[0]->last == bhz_seg, "MS3TraceList ID list does not have expected last segment");
+  CHECK (mstl->traces.next[0]->first == bhz_seg,
+         "MS3TraceList ID list does not have expected first segment");
+  CHECK (mstl->traces.next[0]->last == bhz_seg,
+         "MS3TraceList ID list does not have expected last segment");
   CHECK (mstl->traces.next[0]->next[0] == hhz_id, "MS3TraceList ID list is not expected H_H_Z ID");
-  CHECK (mstl->traces.next[0]->next[0]->first == hhz_seg, "MS3TraceList ID list does not have expected first segment");
-  CHECK (mstl->traces.next[0]->next[0]->last == hhz_seg, "MS3TraceList ID list does not have expected last segment");
+  CHECK (mstl->traces.next[0]->next[0]->first == hhz_seg,
+         "MS3TraceList ID list does not have expected first segment");
+  CHECK (mstl->traces.next[0]->next[0]->last == hhz_seg,
+         "MS3TraceList ID list does not have expected last segment");
 
-  CHECK (mstl->traces.next[0]->first->numsamples == SINE_DATA_SAMPLES, "MS3TraceList segment does not have expected number of samples");
-  CHECK (mstl->traces.next[0]->last->numsamples == SINE_DATA_SAMPLES, "MS3TraceList segment does not have expected number of samples");
-  CHECK (mstl->traces.next[0]->next[0]->first->numsamples == SINE_DATA_SAMPLES, "MS3TraceList segment does not have expected number of samples");
-  CHECK (mstl->traces.next[0]->next[0]->last->numsamples == SINE_DATA_SAMPLES, "MS3TraceList segment does not have expected number of samples");
+  CHECK (mstl->traces.next[0]->first->numsamples == SINE_DATA_SAMPLES,
+         "MS3TraceList segment does not have expected number of samples");
+  CHECK (mstl->traces.next[0]->last->numsamples == SINE_DATA_SAMPLES,
+         "MS3TraceList segment does not have expected number of samples");
+  CHECK (mstl->traces.next[0]->next[0]->first->numsamples == SINE_DATA_SAMPLES,
+         "MS3TraceList segment does not have expected number of samples");
+  CHECK (mstl->traces.next[0]->next[0]->last->numsamples == SINE_DATA_SAMPLES,
+         "MS3TraceList segment does not have expected number of samples");
 
   mstl3_free (&mstl, 0);
 }
@@ -1655,16 +1707,24 @@ TEST (pack, mstl3_pack_next_maintainmstl)
   CHECK (mstl->numtraceids == 2, "MS3TraceList ID count is not 0");
   CHECK (mstl->traces.next[0] != NULL, "MS3TraceList ID list is NULL");
   CHECK (mstl->traces.next[0] == bhz_id, "MS3TraceList ID list is not expected B_H_Z ID");
-  CHECK (mstl->traces.next[0]->first == bhz_seg, "MS3TraceList ID list does not have expected first segment");
-  CHECK (mstl->traces.next[0]->last == bhz_seg, "MS3TraceList ID list does not have expected last segment");
+  CHECK (mstl->traces.next[0]->first == bhz_seg,
+         "MS3TraceList ID list does not have expected first segment");
+  CHECK (mstl->traces.next[0]->last == bhz_seg,
+         "MS3TraceList ID list does not have expected last segment");
   CHECK (mstl->traces.next[0]->next[0] == hhz_id, "MS3TraceList ID list is not expected H_H_Z ID");
-  CHECK (mstl->traces.next[0]->next[0]->first == hhz_seg, "MS3TraceList ID list does not have expected first segment");
-  CHECK (mstl->traces.next[0]->next[0]->last == hhz_seg, "MS3TraceList ID list does not have expected last segment");
+  CHECK (mstl->traces.next[0]->next[0]->first == hhz_seg,
+         "MS3TraceList ID list does not have expected first segment");
+  CHECK (mstl->traces.next[0]->next[0]->last == hhz_seg,
+         "MS3TraceList ID list does not have expected last segment");
 
-  CHECK (mstl->traces.next[0]->first->numsamples == SINE_DATA_SAMPLES, "MS3TraceList segment does not have expected number of samples");
-  CHECK (mstl->traces.next[0]->last->numsamples == SINE_DATA_SAMPLES, "MS3TraceList segment does not have expected number of samples");
-  CHECK (mstl->traces.next[0]->next[0]->first->numsamples == SINE_DATA_SAMPLES, "MS3TraceList segment does not have expected number of samples");
-  CHECK (mstl->traces.next[0]->next[0]->last->numsamples == SINE_DATA_SAMPLES, "MS3TraceList segment does not have expected number of samples");
+  CHECK (mstl->traces.next[0]->first->numsamples == SINE_DATA_SAMPLES,
+         "MS3TraceList segment does not have expected number of samples");
+  CHECK (mstl->traces.next[0]->last->numsamples == SINE_DATA_SAMPLES,
+         "MS3TraceList segment does not have expected number of samples");
+  CHECK (mstl->traces.next[0]->next[0]->first->numsamples == SINE_DATA_SAMPLES,
+         "MS3TraceList segment does not have expected number of samples");
+  CHECK (mstl->traces.next[0]->next[0]->last->numsamples == SINE_DATA_SAMPLES,
+         "MS3TraceList segment does not have expected number of samples");
 
   mstl3_free (&mstl, 0);
 }
@@ -1971,8 +2031,8 @@ TEST (pack, mstl3_pack_ppupdate_flushidle_v2)
   /* Pack v2 miniSEED records flushing only idle segments */
   int64_t packedsamples = 0;
   flags |= MSF_PACKVER2;
-  rv = mstl3_pack_ppupdate_flushidle (mstl, record_handler_int, ofp, 4096, DE_STEIM1, &packedsamples,
-                                      flags, 0, NULL, flush_idle_seconds);
+  rv = mstl3_pack_ppupdate_flushidle (mstl, record_handler_int, ofp, 4096, DE_STEIM1,
+                                      &packedsamples, flags, 0, NULL, flush_idle_seconds);
   REQUIRE (rv == 1, "mstl3_pack_ppupdate_flushidle() return unexpected value");
   CHECK (packedsamples == SINE_DATA_SAMPLES, "Packed samples mismatch");
 
@@ -2056,8 +2116,8 @@ TEST (pack, mstl3_pack_ppupdate_flushidle_v3)
 
   /* Pack v3 miniSEED records flushing only idle segments */
   int64_t packedsamples = 0;
-  rv = mstl3_pack_ppupdate_flushidle (mstl, record_handler_int, ofp, 4096, DE_STEIM1, &packedsamples,
-                                      flags, 0, NULL, flush_idle_seconds);
+  rv = mstl3_pack_ppupdate_flushidle (mstl, record_handler_int, ofp, 4096, DE_STEIM1,
+                                      &packedsamples, flags, 0, NULL, flush_idle_seconds);
   REQUIRE (rv == 1, "mstl3_pack_ppupdate_flushidle() return unexpected value");
   CHECK (packedsamples == SINE_DATA_SAMPLES, "Packed samples mismatch");
 
@@ -2160,11 +2220,13 @@ TEST (pack, mstl3_pack_rollingbuffer)
 
   totalpackedsamples += packedsamples;
 
-  CHECK (totalpackedsamples == SINE_DATA_SAMPLES + SINE_DATA_SAMPLES, "Total packed samples mismatch");
+  CHECK (totalpackedsamples == SINE_DATA_SAMPLES + SINE_DATA_SAMPLES,
+         "Total packed samples mismatch");
 
   fclose (ofp);
 
-  CHECK (!cmpfiles (TESTFILE_MSTLPACK_ROLLINGBUFFER, "data/reference-" TESTFILE_MSTLPACK_ROLLINGBUFFER),
+  CHECK (!cmpfiles (TESTFILE_MSTLPACK_ROLLINGBUFFER,
+                    "data/reference-" TESTFILE_MSTLPACK_ROLLINGBUFFER),
          "Trace list packing callback rollingbuffer reference file mismatch");
 
   /* Check that contents of the MS3TraceList have been removed */
@@ -2285,7 +2347,8 @@ TEST (pack, mstl3_pack_next_rollingbuffer)
 
   fclose (ofp);
 
-  CHECK (!cmpfiles (TESTFILE_MSTLPACK_NEXT_ROLLINGBUFFER, "data/reference-" TESTFILE_MSTLPACK_NEXT_ROLLINGBUFFER),
+  CHECK (!cmpfiles (TESTFILE_MSTLPACK_NEXT_ROLLINGBUFFER,
+                    "data/reference-" TESTFILE_MSTLPACK_NEXT_ROLLINGBUFFER),
          "Trace list packing generator rollingbuffer reference file mismatch");
 
   /* Check that contents of the MS3TraceList have been removed */
@@ -2537,11 +2600,13 @@ TEST (pack, msr3_pack_v2_calibration_abort)
          "A calibration sequence with only an end time was rejected for v2");
 
   /* An abort without an end time has no content to write */
-  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"ABORT\"}]}}}") < 0,
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"ABORT\"}]}}}") <
+             0,
          "A calibration abort without an end time was not rejected");
 
   /* An end time must be a string to be converted */
-  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"EndTime\":12345}]}}}") < 0,
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"EndTime\":12345}]}}}") <
+             0,
          "A non-string calibration end time was not rejected");
 
   /* An unrecognized type cannot be mapped to a blockette */

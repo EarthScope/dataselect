@@ -1,5 +1,5 @@
-#include <math.h>
 #include <libmseed.h>
+#include <math.h>
 #include <tau/tau.h>
 
 extern int cmpfiles (char *fileA, char *fileB);
@@ -35,7 +35,7 @@ TEST (repack, v3)
 
   /* Read v2 input data */
   flags = MSF_UNPACKDATA;
-  rv    = ms3_readmsr (&msr, V2INPUT_RECORD, flags, 0);
+  rv = ms3_readmsr (&msr, V2INPUT_RECORD, flags, 0);
 
   CHECK (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
@@ -66,7 +66,7 @@ TEST (repack, v3)
 
   CHECK (rv == 0, "Repacked v3 record does not match reference");
 
-  ms3_readmsr(&msr, NULL, flags, 0);
+  ms3_readmsr (&msr, NULL, flags, 0);
 }
 
 TEST (repack, v2)
@@ -79,7 +79,7 @@ TEST (repack, v2)
 
   /* Read v2 input data */
   flags = MSF_UNPACKDATA;
-  rv    = ms3_readmsr (&msr, V2INPUT_RECORD, flags, 0);
+  rv = ms3_readmsr (&msr, V2INPUT_RECORD, flags, 0);
 
   CHECK (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
@@ -110,7 +110,7 @@ TEST (repack, v2)
 
   CHECK (rv == 0, "Repacked v2 record does not match reference");
 
-  ms3_readmsr(&msr, NULL, flags, 0);
+  ms3_readmsr (&msr, NULL, flags, 0);
 }
 
 /* Test that negative /FDSN/Time/Correction values round-trip through a v2
@@ -160,7 +160,8 @@ TEST (repack, v2_negative_time_correction)
   msr3_parse (packbuf, (uint64_t)packbuflen, &parsed, 0, 0);
   rv = mseh_get_number (parsed, "/FDSN/Time/Correction", &correction);
   CHECK (rv == 0, "mseh_get_number() returned unexpected non-match");
-  CHECK (fabs (correction - (-0.0001)) < 0.00001, "/FDSN/Time/Correction did not round-trip -0.00012s");
+  CHECK (fabs (correction - (-0.0001)) < 0.00001,
+         "/FDSN/Time/Correction did not round-trip -0.00012s");
 
   msr->extra = NULL;
   msr->extralength = 0;

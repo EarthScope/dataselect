@@ -1,5 +1,5 @@
-#include <tau/tau.h>
 #include <libmseed.h>
+#include <tau/tau.h>
 
 TEST (msr3, utils)
 {
@@ -18,7 +18,7 @@ TEST (msr3, utils)
   CHECK (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
   REQUIRE (msr != NULL, "ms3_readmsr() did not populate 'msr'");
 
-  msr_dup = msr3_duplicate(msr, 1);
+  msr_dup = msr3_duplicate (msr, 1);
   REQUIRE (msr_dup != NULL, "msr3_duplicate() did not complete successfully");
 
   CHECK_EQ (msr->reclen, msr_dup->reclen);
@@ -40,7 +40,7 @@ TEST (msr3, utils)
   CHECK_EQ (msr->sampletype, msr_dup->sampletype);
 
   /* Clean up original MS3Record and file reading parameters */
-  ms3_readmsr(&msr, NULL, flags, 0);
+  ms3_readmsr (&msr, NULL, flags, 0);
 
   /* Test first and last 4 decoded sample values */
   REQUIRE (msr_dup->datasamples != NULL, "msr_dup->datasamples is unexpected NULL");
@@ -56,13 +56,13 @@ TEST (msr3, utils)
   CHECK (samples[134] == -496168, "Decoded sample value mismatch");
 
   endtime = ms_timestr2nstime ("2010-02-27T06:52:14.069539Z");
-  CHECK_EQ (msr3_endtime(msr_dup), endtime);
+  CHECK_EQ (msr3_endtime (msr_dup), endtime);
 
-  CHECK_EQ (msr3_sampratehz(msr_dup), 1.0);
+  CHECK_EQ (msr3_sampratehz (msr_dup), 1.0);
 
-  CHECK_EQ (msr3_nsperiod(msr_dup), 1000000000);
+  CHECK_EQ (msr3_nsperiod (msr_dup), 1000000000);
 
-  msr3_free(&msr_dup);
+  msr3_free (&msr_dup);
 }
 
 TEST (msr3, duplicate_extra)
@@ -120,4 +120,3 @@ TEST (msr3, duplicate_extra)
 
   ms3_readmsr (&msr, NULL, flags, 0);
 }
-

@@ -90,7 +90,7 @@
 
 #include "dsarchive.h"
 
-#define VERSION "4.3.1"
+#define VERSION "4.3.2"
 #define PACKAGE "dataselect"
 
 /* Input/output file selection information containers */

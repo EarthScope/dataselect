@@ -43,7 +43,7 @@
 MS3Record *
 msr3_init (MS3Record *msr)
 {
-  MS3Record msr_initialized = MS3Record_INITIALIZER;
+  static const MS3Record msr_initialized = MS3Record_INITIALIZER;
   void *datasamples = NULL;
   size_t datasize = 0;
 

@@ -7,6 +7,7 @@
 *.so
 *.dll
 *.dSYM/
+dataselect
 
 # Docs
 doc/working/
@@ -14,3 +15,4 @@ doc/gh-pages/
 
 TODO
 TODO.txt
+CLAUDE.md

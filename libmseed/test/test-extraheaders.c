@@ -1,5 +1,5 @@
-#include <tau/tau.h>
 #include <libmseed.h>
+#include <tau/tau.h>
 #include <yyjson.h>
 
 #include "../yyjson.h"
@@ -81,7 +81,7 @@ TEST (extraheaders, get_set_ptr_r)
   CHECK (getnum == 1.234, "/FDSN/Time/Correction is not expected 1.234");
 
   /* Key in first (0th) object of /FDSN/Event/Detection array */
-  rv = mseh_get_string (msr, "/FDSN/Event/Detection/0/Type", getstr, sizeof(getstr));
+  rv = mseh_get_string (msr, "/FDSN/Event/Detection/0/Type", getstr, sizeof (getstr));
   CHECK (rv == 0, "mseh_get_string() returned unexpected non-match");
   CHECK_STREQ (getstr, "MURDOCK");
 
@@ -125,7 +125,7 @@ TEST (extraheaders, get_set_ptr_r)
   rv = mseh_set_string (msr, "/New/String", setstr);
   CHECK (rv == 0, "mseh_set_string() returned unexpected error");
 
-  rv = mseh_get_string (msr, "/New/String", getstr, sizeof(getstr));
+  rv = mseh_get_string (msr, "/New/String", getstr, sizeof (getstr));
   CHECK (rv == 0, "mseh_get_string() returned unexpected non-match");
   CHECK_STREQ (getstr, setstr);
 
@@ -231,7 +231,7 @@ TEST (extraheaders, mergepatch)
   CHECK (rv == 0, "mseh_set_ptr_r() returned unexpected error");
   REQUIRE (msr->extra != NULL, "msr->extra cannot be NULL");
   jsondoc = patchdoc;
-  CHECK_SUBSTREQ (msr->extra, jsondoc, strlen(jsondoc));
+  CHECK_SUBSTREQ (msr->extra, jsondoc, strlen (jsondoc));
 
   /* Add the /root/array value with pointer to /root */
   patchdoc = "{\"array\": [1,2,3]}";
@@ -239,7 +239,7 @@ TEST (extraheaders, mergepatch)
   CHECK (rv == 0, "mseh_set_ptr_r() returned unexpected error");
   REQUIRE (msr->extra != NULL, "msr->extra cannot be NULL");
   jsondoc = "{\"root\":{\"string\":\"Updated value\",\"array\":[1,2,3]}}";
-  CHECK_SUBSTREQ (msr->extra, jsondoc, strlen(jsondoc));
+  CHECK_SUBSTREQ (msr->extra, jsondoc, strlen (jsondoc));
 
   /* Remove /root/string, /root/array, and add /root/boolean */
   patchdoc = "{\"root\": {\"string\": null, \"array\": null, \"boolean\": true}}";
@@ -247,7 +247,7 @@ TEST (extraheaders, mergepatch)
   CHECK (rv == 0, "mseh_set_ptr_r() returned unexpected error");
   REQUIRE (msr->extra != NULL, "msr->extra cannot be NULL");
   jsondoc = "{\"root\":{\"boolean\":true}}";
-  CHECK_SUBSTREQ (msr->extra, jsondoc, strlen(jsondoc));
+  CHECK_SUBSTREQ (msr->extra, jsondoc, strlen (jsondoc));
 
   /* Fail to set a header value with Merge Patch, no existing target value */
   patchdoc = "{\"key\":\"value\"}";
@@ -283,17 +283,17 @@ TEST (extraheaders, replace)
   /* Replace extra headers with new, compact doc */
   newdoc = "{\"new\":{\"string\":\"Updated value\"}}";
   rv = mseh_replace (msr, newdoc);
-  CHECK (rv == (int)strlen(newdoc), "mseh_replace() returned unexpected error");
+  CHECK (rv == (int)strlen (newdoc), "mseh_replace() returned unexpected error");
   REQUIRE (msr->extra != NULL, "msr->extra cannot be NULL");
-  CHECK_SUBSTREQ (msr->extra, newdoc, strlen(newdoc));
+  CHECK_SUBSTREQ (msr->extra, newdoc, strlen (newdoc));
 
   /* Replace extra headers with new, uncompact doc */
   newdoc = "{\"new\":{\"string\":\"Updated value\"}}";
   newdoc_uncompact = "{  \"new\":\n  {  \"string\"  :  \n  \"Updated value\"  }  }";
   rv = mseh_replace (msr, newdoc_uncompact);
-  CHECK (rv == (int)strlen(newdoc), "mseh_replace() returned unexpected error");
+  CHECK (rv == (int)strlen (newdoc), "mseh_replace() returned unexpected error");
   REQUIRE (msr->extra != NULL, "msr->extra cannot be NULL");
-  CHECK_SUBSTREQ (msr->extra, newdoc, strlen(newdoc));
+  CHECK_SUBSTREQ (msr->extra, newdoc, strlen (newdoc));
 
   /* Remove extra headers */
   rv = mseh_replace (msr, NULL);
@@ -322,7 +322,7 @@ TEST (extraheaders, internal)
   rv = mseh_set_ptr_r (msr, "/root/string", &mut_val, 'V', NULL);
   CHECK (rv == 0, "mseh_set_ptr_r() returned unexpected error");
   string = "{\"root\":{\"string\":\"value\"}}";
-  CHECK_SUBSTREQ (msr->extra, string, strlen(string));
+  CHECK_SUBSTREQ (msr->extra, string, strlen (string));
 
   yyjson_mut_set_real (&mut_val, 123.456);
   rv = mseh_set_ptr_r (msr, "/root/real", &mut_val, 'V', NULL);

@@ -37,6 +37,7 @@ MS3FileParam gMS3FileParam = MS3FileParam_INITIALIZER;
 
 /* Stream state flags */
 #define MSFP_RANGEAPPLIED 0x0001 //!< Byte ranging has been applied
+#define MSFP_PARSEDRECORD 0x0002 //!< A record has been parsed from the stream
 
 static char *parse_pathname_range (const char *string, int64_t *start, int64_t *end);
 
@@ -464,6 +465,8 @@ _ms3_readmsr_impl (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath,
       /* Record detected and parsed */
       if (parseval == 0)
       {
+        msfp->flags |= MSFP_PARSEDRECORD;
+
         /* Test against selections if supplied */
         if (selections && !ms3_matchselect (selections, (*ppmsr)->sid, (*ppmsr)->starttime,
                                             msr3_endtime (*ppmsr), (*ppmsr)->pubversion, NULL))
@@ -584,7 +587,7 @@ _ms3_readmsr_impl (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath,
     /* Finished when at end-of-stream or end offset and buffer contains less than MINRECLEN */
     if ((msio_feof (&msfp->input) || atrangeend) && MSFPBUFLEN (msfp) < MINRECLEN)
     {
-      if (msfp->recordcount == 0)
+      if (!(msfp->flags & MSFP_PARSEDRECORD))
       {
         ms_log (2, "%s: No data records read, not SEED?\n", msfp->path);
         retcode = MS_NOTSEED;
@@ -649,6 +652,7 @@ _ms3_readmsr_impl (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath,
  * on successful read.  On error, a (negative) libmseed error
  * code is returned and *ppmsr is set to NULL.
  * @retval ::MS_ENDOFFILE on reaching the end of a stream
+ * @retval ::MS_NOTSEED when no miniSEED records were detected
  *
  * @see @ref data-selections
  *

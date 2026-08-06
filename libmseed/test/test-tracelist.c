@@ -1,5 +1,5 @@
-#include <tau/tau.h>
 #include <libmseed.h>
+#include <tau/tau.h>
 #include <time.h>
 
 /* This test reads a miniSEED file directly into a MS3TraceList and verifies the
@@ -15,7 +15,7 @@
 TEST (tracelist, ms3_readtracelist_mixedlengths_mixedorder)
 {
   MS3TraceList *mstl = NULL;
-  MS3TraceID *id     = NULL;
+  MS3TraceID *id = NULL;
   nstime_t starttime;
   nstime_t endtime;
   uint32_t flags = 0;
@@ -42,8 +42,10 @@ TEST (tracelist, ms3_readtracelist_mixedlengths_mixedorder)
   CHECK (id->latest == endtime, "Latest time is not expected '2010-02-27T07:55:51.069539Z'");
   CHECK (id->pubversion == 1, "id->pubversion is not expected 1");
   CHECK (id->numsegments == 1, "id->numsegments is not expected 1");
-  CHECK (id->first->starttime == starttime, "Segment start is not expected '2010-02-27T06:50:00.069539Z'");
-  CHECK (id->first->endtime == endtime, "Segment start is not expected '2010-02-27T07:55:51.069539Z'");
+  CHECK (id->first->starttime == starttime,
+         "Segment start is not expected '2010-02-27T06:50:00.069539Z'");
+  CHECK (id->first->endtime == endtime,
+         "Segment start is not expected '2010-02-27T07:55:51.069539Z'");
   CHECK (id->first->samplecnt == 3952, "id->first->samplecnt is not expected 3952");
   CHECK (id->first->sampletype == 'i', "id->first->sampletype is not expected 'i'");
   CHECK (id->first->numsamples == 3952, "id->first->numsamples is not expected 3952");
@@ -60,8 +62,8 @@ TEST (tracelist, ms3_readtracelist_mixedlengths_mixedorder)
  */
 TEST (tracelist, ms3_readtracelist_recptr)
 {
-  MS3TraceList *mstl   = NULL;
-  MS3TraceID *id       = NULL;
+  MS3TraceList *mstl = NULL;
+  MS3TraceID *id = NULL;
   MS3RecordPtr *recptr = NULL;
   nstime_t endtime;
   int64_t unpacked;
@@ -95,20 +97,26 @@ TEST (tracelist, ms3_readtracelist_recptr)
   CHECK (id->first->numsamples == 0, "id->first->numsamples is not expected 0");
 
   recptr = id->first->recordlist->last;
-  CHECK (recptr->filename != NULL, "recptr->filename is unexpected NULL");     /* Record is in a file */
-  CHECK (recptr->bufferptr == NULL, "recptr->bufferptr is not expected NULL"); /* Record is not in a buffer */
-  CHECK (recptr->fileptr == NULL, "recptr->fileptr is not expected NULL");     /* File is not currently open, closed by read routine */
+  CHECK (recptr->filename != NULL, "recptr->filename is unexpected NULL"); /* Record is in a file */
+  CHECK (recptr->bufferptr == NULL,
+         "recptr->bufferptr is not expected NULL"); /* Record is not in a buffer */
+  CHECK (recptr->fileptr == NULL,
+         "recptr->fileptr is not expected NULL"); /* File is not currently open, closed by read
+                                                     routine */
   CHECK (recptr->fileoffset == 1152, "recptr->fileoffset is not expected 1152");
   CHECK (recptr->msr != NULL, "recptr->msr is not expected NULL");
-  CHECK (recptr->msr->record == NULL, "recptr->msr->record is not expected NULL"); /* Record is not in a buffer */
-  CHECK (recptr->endtime == endtime, "recptr->endtime is not expected '2010-02-27T07:55:51.069539Z'");
+  CHECK (recptr->msr->record == NULL,
+         "recptr->msr->record is not expected NULL"); /* Record is not in a buffer */
+  CHECK (recptr->endtime == endtime,
+         "recptr->endtime is not expected '2010-02-27T07:55:51.069539Z'");
   CHECK (recptr->dataoffset == 64, "recptr->dataoffset is not expected 64");
   CHECK (recptr->next == NULL, "recptr->next is not exected NULL");
 
   /* Decode data */
   unpacked = mstl3_unpack_recordlist (id, id->first, NULL, 0, 0);
 
-  CHECK (unpacked == id->first->samplecnt, "Return from mstl3_unpack_recordlist is not expected id->first->samplecnt");
+  CHECK (unpacked == id->first->samplecnt,
+         "Return from mstl3_unpack_recordlist is not expected id->first->samplecnt");
   CHECK (id->first->sampletype == 'i', "id->first->sampletype is not expected 'i'");
   CHECK (id->first->datasamples != NULL, "id->first->datasamples is unexpected NULL");
   CHECK (id->first->numsamples == 3952, "id->first->numsamples is not expected 3952");
@@ -146,7 +154,7 @@ TEST (tracelist, mstl3_readbuffer_recptr)
   fp = fopen (path, "rb");
   REQUIRE (fp != NULL, "File pointer is unexpected NULL");
 
-  rv = fread (buffer, sizeof(buffer), 1, fp);
+  rv = fread (buffer, sizeof (buffer), 1, fp);
   REQUIRE (rv == 1, "fread() did not read entire file");
 
   fclose (fp);
@@ -156,7 +164,7 @@ TEST (tracelist, mstl3_readbuffer_recptr)
   /* Set bit flag to build a record list */
   flags = MSF_RECORDLIST;
 
-  rv = mstl3_readbuffer (&mstl, buffer, sizeof(buffer), 0, flags, 0, 0);
+  rv = mstl3_readbuffer (&mstl, buffer, sizeof (buffer), 0, flags, 0, 0);
 
   CHECK (rv == 7, "mstl3_readbuffer did not return expected 7");
   CHECK (mstl != NULL, "mstl3_readbuffer did not populate 'mstl'");
@@ -176,21 +184,28 @@ TEST (tracelist, mstl3_readbuffer_recptr)
 
   recptr = id->first->recordlist->last;
   CHECK (recptr != NULL, "id->first->recordlist->last is unexpected NULL");
-  CHECK (recptr->filename == NULL, "recptr->filename is not expected NULL"); /* Record is not in a file */
-  CHECK (recptr->bufferptr != NULL, "recptr->bufferptr is unexpected NULL"); /* Record is in a buffer */
-  CHECK (recptr->fileptr == NULL, "recptr->fileptr is not expected NULL");   /* File is not currently open, closed by read routine */
+  CHECK (recptr->filename == NULL,
+         "recptr->filename is not expected NULL"); /* Record is not in a file */
+  CHECK (recptr->bufferptr != NULL,
+         "recptr->bufferptr is unexpected NULL"); /* Record is in a buffer */
+  CHECK (recptr->fileptr == NULL,
+         "recptr->fileptr is not expected NULL"); /* File is not currently open, closed by read
+                                                     routine */
 
   CHECK (recptr->fileoffset == 0, "recptr->fileoffset is not expected 0");
   CHECK (recptr->msr != NULL, "recptr->msr is not expected NULL");
-  CHECK (recptr->msr->record == recptr->bufferptr, "recptr->msr->record is not expected recptr->bufferptr");
-  CHECK (recptr->endtime == endtime, "recptr->endtime is not expected '2010-02-27T07:55:51.069539Z'");
+  CHECK (recptr->msr->record == recptr->bufferptr,
+         "recptr->msr->record is not expected recptr->bufferptr");
+  CHECK (recptr->endtime == endtime,
+         "recptr->endtime is not expected '2010-02-27T07:55:51.069539Z'");
   CHECK (recptr->dataoffset == 64, "recptr->dataoffset is not expected 64");
   CHECK (recptr->next == NULL, "recptr->next is not expected NULL");
 
   /* Decode data */
   unpacked = mstl3_unpack_recordlist (id, id->first, NULL, 0, 0);
 
-  CHECK (unpacked == id->first->samplecnt, "Return from mstl3_unpack_recordlist is not expected id->first->samplecnt");
+  CHECK (unpacked == id->first->samplecnt,
+         "Return from mstl3_unpack_recordlist is not expected id->first->samplecnt");
   CHECK (id->first->sampletype == 'i', "id->first->sampletype is not expected 'i'");
   CHECK (id->first->datasamples != NULL, "id->first->datasamples is unexpected NULL");
   CHECK (id->first->numsamples == 3952, "id->first->numsamples is not expected 3952");
@@ -212,7 +227,7 @@ TEST (tracelist, mstl3_readbuffer_recptr)
  */
 TEST (tracelist, mstl3_addmsr_recordptr_noextras)
 {
-  MS3TraceList *mstl   = NULL;
+  MS3TraceList *mstl = NULL;
   MS3RecordPtr *recptr = NULL;
   MS3Record msr = MS3Record_INITIALIZER;
   char *extra = "{\"FDSN\":{\"Time\":{\"Quality\":100}}}";
@@ -246,7 +261,8 @@ TEST (tracelist, mstl3_addmsr_recordptr_noextras)
   /* MSF_RECORDLIST_NOEXTRAS: extra headers are not copied */
   recptr = NULL;
   REQUIRE (mstl = mstl3_init (NULL), "mstl3_init() returned unexpected NULL");
-  REQUIRE (mstl3_addmsr_recordptr (mstl, &msr, &recptr, 0, 1, MSF_RECORDLIST_NOEXTRAS, NULL) != NULL,
+  REQUIRE (mstl3_addmsr_recordptr (mstl, &msr, &recptr, 0, 1, MSF_RECORDLIST_NOEXTRAS, NULL) !=
+               NULL,
            "mstl3_addmsr_recordptr() returned unexpected NULL");
 
   REQUIRE (recptr != NULL, "recptr is unexpected NULL");
@@ -535,8 +551,8 @@ TEST (tracelist, mstl3_convertsamples_outofrange)
 
     for (int8_t truncate = 0; truncate <= 1; truncate++)
     {
-      REQUIRE (convert_float_samples (samples, 2, truncate, &result, &sampletype,
-                                      &firstsample) == 0,
+      REQUIRE (convert_float_samples (samples, 2, truncate, &result, &sampletype, &firstsample) ==
+                   0,
                "Could not construct trace list for out-of-range conversion test");
       CHECK (result == -1, "mstl3_convertsamples() did not reject an out-of-range sample");
       CHECK (sampletype == 'f', "Sample type changed after a rejected conversion");

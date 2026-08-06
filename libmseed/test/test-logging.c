@@ -1,6 +1,6 @@
-#include <tau/tau.h>
 #include <libmseed.h>
 #include <string.h>
+#include <tau/tau.h>
 
 /* Helper variables to track custom print function calls */
 static int log_print_called = 0;
